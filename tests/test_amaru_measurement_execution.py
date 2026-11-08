@@ -483,6 +483,11 @@ def test_prepare_scenario_measurements_resolves_exact_live_patched_runtime(tmp_p
         "measurement_revision": "whole-microseconds-v1",
         "image_reference": f"dwarf/amaru-measurement@{AMARU_PATCHED_DIGEST}",
         "image_digest": AMARU_PATCHED_CONFIG_ID,
+        # A locally built patched target is addressed by its repository digest;
+        # the run plan freezes that digest as image_manifest_digest, so the
+        # runtime identity must carry the same field or the exact-target check
+        # fails on every portable scenario.
+        "image_manifest_digest": AMARU_PATCHED_DIGEST,
         "executable_digest": AMARU_PATCHED_EXECUTABLE,
         "build_result_sha256": "sha256:" + "b" * 64,
         "runtime_probe_log_sha256": "sha256:" + "c" * 64,

@@ -7127,6 +7127,71 @@ class RuntimeBundleAttestation(LoadPrimitive):
         )
 
 
+def _primitive_label(primitive) -> str:
+    """Registry-style name of a primitive instance (RuntimeSyscallTrace → runtime_syscall_trace)."""
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", type(primitive).__name__).lower()
+
+
+def _resolve_runtime_metadata_path(handle, params: dict[str, Any], *, primitive: str) -> Path:
+    """Locate the deployed runtime's ``runtime.json`` for a runtime-aware primitive.
+
+    Order: the runtime the run service prepared for this run (a dashboard
+    deploy or an Antithesis package), then the scenario's declared path when
+    that file exists (the legacy host layout), then the controller's retained
+    runtime for the run's profile.  Fails closed naming every candidate.
+    """
+    candidates: list[Path] = []
+    prepared = getattr(handle, "_prepared_runtime_metadata_path", None)
+    if prepared:
+        candidates.append(Path(str(prepared)))
+    declared = params.get("runtime_metadata_path")
+    if declared:
+        candidates.append(Path(str(declared)).expanduser())
+    profile_id = getattr(handle, "_profile_id", None)
+    if profile_id:
+        from profile_manager.profiles import runtime_root
+
+        candidates.append(runtime_root(str(profile_id)) / "runtime.json")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    listed = ", ".join(str(candidate) for candidate in candidates) or "no runtime metadata path"
+    raise ValueError(f"{primitive} runtime metadata missing: {listed}")
+
+
+def _runtime_metadata_node(body: dict[str, Any], target_node: str) -> dict[str, Any] | None:
+    """Find one node record by the controller's ``id`` or the legacy ``name``."""
+    nodes = (
+        list(body.get("haskell_nodes") or [])
+        + list(body.get("amaru_nodes") or [])
+        + list(body.get("nodes") or [])
+    )
+    for node in nodes:
+        if isinstance(node, dict) and target_node in (str(node.get("name")), str(node.get("id"))):
+            return node
+    return None
+
+
+def _runtime_node_endpoint(node: dict[str, Any], params: dict[str, Any]) -> tuple[str, int]:
+    """TCP endpoint a primitive uses to reach a node.
+
+    A controller-deployed node records ``container_ip`` and
+    ``container_listen_address``; runs execute attached to that topology
+    network, where the host-published loopback port is unreachable.  An
+    explicit non-loopback ``target_host`` (multi-host substrates) is honoured
+    with the node's published port; the catalog's ``127.0.0.1`` is the host-era
+    default, not a routing decision.
+    """
+    explicit_host = str(params.get("target_host") or "").strip()
+    if explicit_host and explicit_host not in {"127.0.0.1", "localhost"}:
+        return explicit_host, int(params.get("target_port") or node["port"])
+    container_ip = str(node.get("container_ip") or "").strip()
+    listen = str(node.get("container_listen_address") or "")
+    if container_ip and ":" in listen:
+        return container_ip, int(listen.rsplit(":", 1)[1])
+    return (explicit_host or "127.0.0.1"), int(node["port"])
+
+
 class ShimPeerRawBytes(LoadPrimitive):
     """Connect to one runtime node as a raw TCP peer and send caller-specified bytes.
 
@@ -7139,15 +7204,13 @@ class ShimPeerRawBytes(LoadPrimitive):
       receive_bytes           — optional recv size cap (default 64)
     """
 
-    def _runtime_node(self):
-        metadata_path = Path(self.params["runtime_metadata_path"])
-        if not metadata_path.exists():
-            raise ValueError(f"shim_peer_raw_bytes runtime metadata missing: {metadata_path}")
+    def _runtime_node(self, handle=None):
+        metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="shim_peer_raw_bytes")
         body = json.loads(metadata_path.read_text(encoding="utf-8"))
         target_node = str(self.params["target_node"])
         nodes = (body.get("haskell_nodes") or []) + (body.get("amaru_nodes") or [])
         for node in nodes:
-            if str(node.get("name")) == target_node:
+            if target_node in (str(node.get("name")), str(node.get("id"))):
                 return metadata_path, target_node, dict(node)
         raise ValueError(f"shim_peer_raw_bytes could not find target_node {target_node!r} in {metadata_path}")
 
@@ -7155,9 +7218,8 @@ class ShimPeerRawBytes(LoadPrimitive):
         import socket
         import time
 
-        metadata_path, target_node, node = self._runtime_node()
-        host = str(self.params.get("target_host", "127.0.0.1"))
-        port = int(node["port"])
+        metadata_path, target_node, node = self._runtime_node(handle)
+        host, port = _runtime_node_endpoint(node, self.params)
         payload_hex = str(self.params["payload_hex"])
         response_timeout = float(self.params.get("response_timeout_seconds", 2))
         receive_bytes = int(self.params.get("receive_bytes", 64))
@@ -7264,15 +7326,13 @@ class ShimPeerMalformedHandshake(LoadPrimitive):
         "unsupported-version-999": "8200a11903e782182af4",
     }
 
-    def _runtime_node(self):
-        metadata_path = Path(self.params["runtime_metadata_path"])
-        if not metadata_path.exists():
-            raise ValueError(f"shim_peer_malformed_handshake runtime metadata missing: {metadata_path}")
+    def _runtime_node(self, handle=None):
+        metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="shim_peer_malformed_handshake")
         body = json.loads(metadata_path.read_text(encoding="utf-8"))
         target_node = str(self.params["target_node"])
         nodes = (body.get("haskell_nodes") or []) + (body.get("amaru_nodes") or [])
         for node in nodes:
-            if str(node.get("name")) == target_node:
+            if target_node in (str(node.get("name")), str(node.get("id"))):
                 return metadata_path, target_node, dict(node)
         raise ValueError(f"shim_peer_malformed_handshake could not find target_node {target_node!r} in {metadata_path}")
 
@@ -7292,9 +7352,8 @@ class ShimPeerMalformedHandshake(LoadPrimitive):
         import socket
         import time
 
-        metadata_path, target_node, node = self._runtime_node()
-        host = str(self.params.get("target_host", "127.0.0.1"))
-        port = int(node["port"])
+        metadata_path, target_node, node = self._runtime_node(handle)
+        host, port = _runtime_node_endpoint(node, self.params)
         malformation_id = str(self.params["malformation_id"])
         payload_hex = self._HANDSHAKE_CASES.get(malformation_id)
         if payload_hex is None:
@@ -7434,15 +7493,13 @@ class ShimPeerMalformedBlockfetch(LoadPrimitive):
         "trailing-bytes-after-batch-done": "810500",
     }
 
-    def _runtime_node(self):
-        metadata_path = Path(self.params["runtime_metadata_path"])
-        if not metadata_path.exists():
-            raise ValueError(f"shim_peer_malformed_blockfetch runtime metadata missing: {metadata_path}")
+    def _runtime_node(self, handle=None):
+        metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="shim_peer_malformed_blockfetch")
         body = json.loads(metadata_path.read_text(encoding="utf-8"))
         target_node = str(self.params["target_node"])
         nodes = (body.get("haskell_nodes") or []) + (body.get("amaru_nodes") or [])
         for node in nodes:
-            if str(node.get("name")) == target_node:
+            if target_node in (str(node.get("name")), str(node.get("id"))):
                 return metadata_path, target_node, dict(node)
         raise ValueError(f"shim_peer_malformed_blockfetch could not find target_node {target_node!r} in {metadata_path}")
 
@@ -7462,9 +7519,8 @@ class ShimPeerMalformedBlockfetch(LoadPrimitive):
         import socket
         import time
 
-        metadata_path, target_node, node = self._runtime_node()
-        host = str(self.params.get("target_host", "127.0.0.1"))
-        port = int(node["port"])
+        metadata_path, target_node, node = self._runtime_node(handle)
+        host, port = _runtime_node_endpoint(node, self.params)
         malformation_id = str(self.params["malformation_id"])
         blockfetch_payload_hex = self._BLOCKFETCH_CASES.get(malformation_id)
         if blockfetch_payload_hex is None:
@@ -7656,15 +7712,13 @@ class ShimPeerMalformedTxsubmission(LoadPrimitive):
         "bad-tx-size-u32-overflow": "82018182582011111111111111111111111111111111111111111111111111111111111111111b0000000100000000",
     }
 
-    def _runtime_node(self):
-        metadata_path = Path(self.params["runtime_metadata_path"])
-        if not metadata_path.exists():
-            raise ValueError(f"shim_peer_malformed_txsubmission runtime metadata missing: {metadata_path}")
+    def _runtime_node(self, handle=None):
+        metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="shim_peer_malformed_txsubmission")
         body = json.loads(metadata_path.read_text(encoding="utf-8"))
         target_node = str(self.params["target_node"])
         nodes = (body.get("haskell_nodes") or []) + (body.get("amaru_nodes") or [])
         for node in nodes:
-            if str(node.get("name")) == target_node:
+            if target_node in (str(node.get("name")), str(node.get("id"))):
                 return metadata_path, target_node, dict(node)
         raise ValueError(
             f"shim_peer_malformed_txsubmission could not find target_node {target_node!r} in {metadata_path}"
@@ -7686,9 +7740,8 @@ class ShimPeerMalformedTxsubmission(LoadPrimitive):
         import socket
         import time
 
-        metadata_path, target_node, node = self._runtime_node()
-        host = str(self.params.get("target_host", "127.0.0.1"))
-        port = int(node["port"])
+        metadata_path, target_node, node = self._runtime_node(handle)
+        host, port = _runtime_node_endpoint(node, self.params)
         malformation_id = str(self.params["malformation_id"])
         txsubmission_payload_hex = self._TXSUBMISSION_CASES.get(malformation_id)
         if txsubmission_payload_hex is None:
@@ -7892,15 +7945,13 @@ class ShimPeerInvalidCbor(LoadPrimitive):
         },
     }
 
-    def _runtime_node(self):
-        metadata_path = Path(self.params["runtime_metadata_path"])
-        if not metadata_path.exists():
-            raise ValueError(f"shim_peer_invalid_cbor runtime metadata missing: {metadata_path}")
+    def _runtime_node(self, handle=None):
+        metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="shim_peer_invalid_cbor")
         body = json.loads(metadata_path.read_text(encoding="utf-8"))
         target_node = str(self.params["target_node"])
         nodes = (body.get("haskell_nodes") or []) + (body.get("amaru_nodes") or [])
         for node in nodes:
-            if str(node.get("name")) == target_node:
+            if target_node in (str(node.get("name")), str(node.get("id"))):
                 return metadata_path, target_node, dict(node)
         raise ValueError(f"shim_peer_invalid_cbor could not find target_node {target_node!r} in {metadata_path}")
 
@@ -7920,9 +7971,8 @@ class ShimPeerInvalidCbor(LoadPrimitive):
         import socket
         import time
 
-        metadata_path, target_node, node = self._runtime_node()
-        host = str(self.params.get("target_host", "127.0.0.1"))
-        port = int(node["port"])
+        metadata_path, target_node, node = self._runtime_node(handle)
+        host, port = _runtime_node_endpoint(node, self.params)
         invalid_cbor_id = str(self.params["invalid_cbor_id"])
         case = self._INVALID_CBOR_CASES.get(invalid_cbor_id)
         if case is None:
@@ -10129,7 +10179,9 @@ class RuntimeResourceProfile(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runtime_metadata_path = str(self.params["runtime_metadata_path"])
+        runtime_metadata_path = str(
+            _resolve_runtime_metadata_path(handle, self.params, primitive=_primitive_label(self))
+        )
         target_node = str(self.params.get("target_node", "node1"))
         sample_count = int(self.params.get("sample_count", 5))
         sample_interval_seconds = float(self.params.get("sample_interval_seconds", 0.5))
@@ -10281,7 +10333,9 @@ class RuntimeSyscallTrace(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runtime_metadata_path = str(self.params["runtime_metadata_path"])
+        runtime_metadata_path = str(
+            _resolve_runtime_metadata_path(handle, self.params, primitive=_primitive_label(self))
+        )
         target_node = str(self.params.get("target_node", "node1"))
         connect_attempts = int(self.params.get("connect_attempts", 3))
         target_host = str(self.params.get("target_host", "127.0.0.1"))
@@ -10450,7 +10504,9 @@ class RuntimeConnectionState(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runtime_metadata_path = str(self.params["runtime_metadata_path"])
+        runtime_metadata_path = str(
+            _resolve_runtime_metadata_path(handle, self.params, primitive=_primitive_label(self))
+        )
         target_node = str(self.params.get("target_node", "node1"))
         snapshot_name = str(self.params.get("snapshot_name", "snapshot"))
         target_host = str(self.params.get("target_host", "127.0.0.1"))
@@ -10622,7 +10678,9 @@ class RuntimeHaskellGcCapture(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runtime_metadata_path = str(self.params["runtime_metadata_path"])
+        runtime_metadata_path = str(
+            _resolve_runtime_metadata_path(handle, self.params, primitive=_primitive_label(self))
+        )
         target_node = str(self.params.get("target_node", "node1"))
         target_host = str(self.params.get("target_host", "127.0.0.1"))
         connect_attempts = int(self.params.get("connect_attempts", 2))
@@ -23512,20 +23570,18 @@ class FaultLocalPortDrop(FaultPrimitive):
                 [drop_input=true], [executor=]
     """
 
-    def _target_port(self):
+    def _target_port(self, handle=None):
         if "target_port" in self.params:
             return int(self.params["target_port"])
         if "target_port_file" in self.params:
             return int(Path(self.params["target_port_file"]).read_text(encoding="utf-8").strip())
         if "runtime_metadata_path" in self.params and "target_node" in self.params:
-            metadata_path = Path(self.params["runtime_metadata_path"])
-            if not metadata_path.exists():
-                raise ValueError(f"fault_local_port_drop runtime metadata missing: {metadata_path}")
+            metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="fault_local_port_drop")
             body = json.loads(metadata_path.read_text(encoding="utf-8"))
             nodes = body.get("haskell_nodes") or body.get("amaru_nodes") or []
             target_node = str(self.params["target_node"])
             for node in nodes:
-                if str(node.get("name")) == target_node:
+                if target_node in (str(node.get("name")), str(node.get("id"))):
                     try:
                         return int(node["port"])
                     except (KeyError, TypeError, ValueError) as exc:
@@ -23543,7 +23599,7 @@ class FaultLocalPortDrop(FaultPrimitive):
         import shlex as _shlex
         host = self.params.get("host", "127.0.0.1")
         protocol = self.params.get("protocol", "tcp")
-        port = self._target_port()
+        port = self._target_port(handle)
         rules = []
         if bool(self.params.get("drop_output", True)):
             rules.append(
@@ -23601,20 +23657,18 @@ class FaultLocalPortDelay(FaultPrimitive):
                 [host=127.0.0.1], [protocol=tcp], delay_ms, [jitter_ms=0]
     """
 
-    def _target_port(self):
+    def _target_port(self, handle=None):
         if "target_port" in self.params:
             return int(self.params["target_port"])
         if "target_port_file" in self.params:
             return int(Path(self.params["target_port_file"]).read_text(encoding="utf-8").strip())
         if "runtime_metadata_path" in self.params and "target_node" in self.params:
-            metadata_path = Path(self.params["runtime_metadata_path"])
-            if not metadata_path.exists():
-                raise ValueError(f"fault_local_port_delay runtime metadata missing: {metadata_path}")
+            metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="fault_local_port_delay")
             body = json.loads(metadata_path.read_text(encoding="utf-8"))
             nodes = body.get("haskell_nodes") or body.get("amaru_nodes") or []
             target_node = str(self.params["target_node"])
             for node in nodes:
-                if str(node.get("name")) == target_node:
+                if target_node in (str(node.get("name")), str(node.get("id"))):
                     try:
                         return int(node["port"])
                     except (KeyError, TypeError, ValueError) as exc:
@@ -23632,7 +23686,7 @@ class FaultLocalPortDelay(FaultPrimitive):
         return _resolve_local_executor(self.params)
 
     def apply(self, handle):
-        port = self._target_port()
+        port = self._target_port(handle)
         host = self.params.get("host", "127.0.0.1")
         protocol = self.params.get("protocol", "tcp")
         delay_ms = int(self.params["delay_ms"])
@@ -23697,15 +23751,13 @@ class FaultNodeFreeze(FaultPrimitive):
                 [freeze_timeout_seconds=5], [resume_timeout_seconds=5], [executor=]
     """
 
-    def _runtime_node(self):
-        metadata_path = Path(self.params["runtime_metadata_path"])
-        if not metadata_path.exists():
-            raise ValueError(f"fault_node_freeze runtime metadata missing: {metadata_path}")
+    def _runtime_node(self, handle=None):
+        metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="fault_node_freeze")
         body = json.loads(metadata_path.read_text(encoding="utf-8"))
         target_node = str(self.params["target_node"])
         nodes = body.get("haskell_nodes") or body.get("amaru_nodes") or []
         for node in nodes:
-            if str(node.get("name")) == target_node:
+            if target_node in (str(node.get("name")), str(node.get("id"))):
                 return metadata_path, target_node, node
         raise ValueError(f"fault_node_freeze could not find target_node {target_node!r} in {metadata_path}")
 
@@ -23767,7 +23819,7 @@ class FaultNodeFreeze(FaultPrimitive):
         raise RuntimeError(f"fault_node_freeze could not resolve runtime pid for node {node.get('name')!r}")
 
     def _resolve_target_pid(self):
-        _metadata_path, _target_node, node = self._runtime_node()
+        _metadata_path, _target_node, node = self._runtime_node(handle)
         pid_file = node.get("pid_file")
         if isinstance(pid_file, str) and pid_file:
             try:
@@ -23815,7 +23867,7 @@ class FaultNodeFreeze(FaultPrimitive):
 
     def apply(self, handle):
         executor = _resolve_local_executor(self.params)
-        metadata_path, target_node, node = self._runtime_node()
+        metadata_path, target_node, node = self._runtime_node(handle)
         pid = self._resolve_target_pid()
         result = executor(f"sudo kill -STOP {pid}", timeout=10, dry_run=False)
         if result.returncode != 0:

@@ -198,6 +198,44 @@ def _ensure_cardano_testnet_config_compatibility(
     }
 
 
+def _pin_cardano_experimental_protocols(
+    *, config_path: Path, nodes: list[dict], explicit: bool | None = None
+) -> dict:
+    """Pin ``ExperimentalProtocolsEnabled`` in a generated devnet config the way
+    profile deploys and Antithesis rigs already do (``qualify_node_versions.
+    cardano_experimental_protocols_policy``): cardano-node 11.1+ offers
+    NodeToNodeV_16 when the flag is on and Amaru drops the whole handshake, so
+    an Amaru-bearing devnet pins the public-network default (false).  An
+    explicit substrate value wins; cardano-only and pre-11.1 devnets are left
+    untouched."""
+    from qualify_node_versions import cardano_experimental_protocols_policy
+
+    cardano_versions = sorted(
+        {str(node.get("version")) for node in nodes if node.get("impl") == "cardano-node"}
+    )
+    has_amaru = any(node.get("impl") == "amaru" for node in nodes)
+    if explicit is not None:
+        value, source = bool(explicit), "explicit"
+    elif has_amaru:
+        decisions = {
+            cardano_experimental_protocols_policy("mixed", version) for version in cardano_versions
+        } - {None}
+        value = False if decisions == {False} else None
+        source = "amaru-interop-policy" if value is not None else "none"
+    else:
+        value, source = None, "none"
+    if value is not None:
+        body = json.loads(config_path.read_text(encoding="utf-8"))
+        body["ExperimentalProtocolsEnabled"] = value
+        config_path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    return {
+        "pinned": value is not None,
+        "value": value,
+        "policy_source": source,
+        "cardano_versions": cardano_versions,
+    }
+
+
 def _tip_has_real_chain_progress(tip: dict) -> bool:
     hash_value = str((tip or {}).get("hash") or "").strip()
     slot_value = (tip or {}).get("slot")
@@ -1323,6 +1361,7 @@ def _compose_substrate_docker(
     public_assets = None
     resolved_public_network_magic = None
     cardano_testnet_config_compatibility = None
+    cardano_experimental_protocols = None
     generated_workload_funding = None
     kes_genesis_override_evidence = None
     governance_guardrails_fixture_evidence = None
@@ -1390,6 +1429,11 @@ def _compose_substrate_docker(
         cardano_testnet_config_compatibility = _ensure_cardano_testnet_config_compatibility(
             config_path=env_root / "configuration.yaml",
             nodes=haskell_nodes,
+        )
+        cardano_experimental_protocols = _pin_cardano_experimental_protocols(
+            config_path=env_root / "configuration.yaml",
+            nodes=plan["nodes"],
+            explicit=plan.get("cardano_experimental_protocols"),
         )
         _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(
             genesis_path=env_root / "shelley-genesis.json",
@@ -1562,6 +1606,7 @@ def _compose_substrate_docker(
         "support_binaries": dict(support),
         "cardano_testnet_start_time_refresh": start_time_refresh,
         "cardano_testnet_config_compatibility": cardano_testnet_config_compatibility,
+        "cardano_experimental_protocols": cardano_experimental_protocols,
         "generated_workload_funding": generated_workload_funding,
         "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,

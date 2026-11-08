@@ -398,8 +398,12 @@ def _patched_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]
     imported_config_digest = None
     qualification_image_id = None
     transfer_manifest_sha256 = None
+    local_manifest_digest = None
     if "@" in image_reference:
-        _immutable_sha256(
+        # A locally built patched target is addressed by its repository digest
+        # (`dwarf/amaru-measurement@sha256:…`); the run plan freezes that digest as
+        # image_manifest_digest, so the runtime identity carries it too.
+        local_manifest_digest = _immutable_sha256(
             image_reference.rsplit("@", 1)[1],
             "repository manifest digest",
         )
@@ -482,6 +486,8 @@ def _patched_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]
         result[
             "transfer_source_installation_id"
         ] = transfer_source_installation_id
+    elif local_manifest_digest is not None:
+        result["image_manifest_digest"] = local_manifest_digest
     return result
 
 
@@ -577,6 +583,9 @@ def _stock_cardano_identity(
             "measurement_revision": measurement_revision,
             "image_reference": image_reference,
             "image_digest": digest,
+            # The digest-pinned reference is the repository digest the run plan
+            # froze as image_manifest_digest for the exact-target verifier.
+            "image_manifest_digest": digest,
             "executable_digest": node["executable_digest"],
             "build_result_sha256": node["build_result_sha256"],
             "runtime_probe_log_sha256": node["runtime_probe_log_sha256"],

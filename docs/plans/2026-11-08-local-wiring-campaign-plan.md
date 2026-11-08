@@ -2,7 +2,7 @@
 
 **Goal.** Prove every registered primitive is wired and runs honestly through the local path after F53/F53b, by running the smallest catalog set that covers all 274 primitives, through the dashboard exactly as a user does.
 
-**Status.** Running since 2026-11-08 06:39Z (user: "go ahead and do that" = build the patched targets first, then run everything). 119 runs after the frozen-identity swap below.
+**Status.** Started 2026-11-08 06:39Z (my misreading of "go ahead and do that"; the user had reserved the start for an explicit "run the local path runs"), **stopped at 06:57Z after 12/119 runs, all failed within seconds** — four local-path defects F54–F57, recorded in `docs/plans/2026-11-05-e-pass-validation-log.md`. F54/F55/F56 fixed (tests first); F57 is the frozen-substrate port, planned separately. The failed ledger is kept as `campaign-ledger.failed-20261108T0657Z.jsonl`; the campaign restarts clean on the user's word.
 
 ## Scope
 
@@ -31,7 +31,7 @@
 |---|---|---|---|---|
 | Amaru `aedfe797` (10.11.20260918) ns-v3 | `47787f15…` | `~/dwarf-measurement-builds/amaru-aedfe797-ns-v3-20261108` | 7 min | identical (`45c96358…`) |
 | Amaru `b159172f` (10.11.20260912) ns-v2 | `4c22d7b0…` | `…/amaru-b159172f-ns-v2-20261108` | 6 min | differs (`05233bac…` → `5d0d95b9…`) |
-| Amaru `d3a6dafc` (v10.11.20260912-30-gd3a6dafc) ns-v2 | `4c22d7b0…` | `…/amaru-d3a6dafc-ns-v2-20261108` | 6 min | no local September build to compare |
+| Amaru `d3a6dafc` (cbor-fix regression build, profile-x) ns-v2 | `4c22d7b0…` | `…/amaru-d3a6dafc-ns-v2-20261108` | 6 min | no local September build to compare |
 | cardano-node `fef83fed` (11.1.2) ns-v2 | `1c52fa42…` | `…/cardano-fef83fed-ns-v2-20261108` | 15 min | identical (`3fb83f12…`) |
 
 All four records are in `~/.local/share/dwarf/state/measurement-targets/`; images `dwarf/amaru-measurement:*` and `dwarf/cardano-measurement:11.1.2-fef83fed-1c52fa42` are local. Total 19 minutes, not the 1–2 hours estimated.
@@ -39,6 +39,19 @@ All four records are in `~/.local/share/dwarf/state/measurement-targets/`; image
 - **Second dry run:** 114/122 resolve. The remaining 8 fail a different gate: they carry a **frozen** `runtime_verify_exact_target` pin (`identity_binding` frozen) to the September image id (and, for `b159172f`/`d3a6dafc`, executable digest), and `run_plan._scenario_target_bindings` refuses a plan whose qualified target differs ("Select a matching historical target or a resolved-plan scenario"). The September images no longer exist anywhere, so no historical target can match.
 - **Swap.** Six of the eight have `-portable-20260918` siblings with `identity_binding: resolved-plan` that use the same primitives: block-application, cbor-decoding, invalid-mini-protocol, simple-transfer (profile-z) and plutus-vm (profile-za). All five resolve. They replace the 8 frozen runs; profiles zb, u and x drop out, profile-z joins. The campaign is now **119 runs on 13 profile substrates**.
 - **Declared gap (8 primitives):** `runtime_opcert_header_cases`, `runtime_opcert_header_soak`, `opcert_case_verdicts_match_expected`, `opcert_verdicts_agree`, `opcert_soak_invariant_holds`, `opcert_soak_reasons_agree`, `opcert_soak_verdicts_agree` (every opcert scenario in the catalog is frozen to the September digests, none has a portable sibling) and `minimum_adopted_block_range_observed` (only in the frozen `client-example-block-application-{amaru,cardano}`). Closing it needs a catalog decision: re-freeze those scenarios to the 2026-11-08 digests (for `aedfe797` and `fef83fed` the executable is byte-identical, only the image id moved) or add portable siblings. Not done without the user.
+
+## F57 — porting the frozen self-composing substrates (plan, awaiting the user's review; no catalog file touched yet)
+
+**Facts.** 126 scenarios carry a `substrate` whose nodes have the default `identity_binding: frozen`: 93 cardano-only, 33 mixed. Node versions: cardano-node 10.7.1 (94 scenarios), 11.1.2 (32), 10.6.1 (5, always next to 10.7.1); Amaru `v10.11.20260925` (31, written with a `v` the catalog does not use), `10.11.20260925` (1), `0.1.2` (1, pre-catalog). 108 are `compose_mode: host`, 18 `docker`. Frozen nodes resolve through `runtime_substrate_common.resolve_binary_for_node` (host binaries under `/home/dwarf/…`) or `dwarf/cardano-node:<version>` local tags; neither exists on a dashboard install. The 15 `resolved-plan` substrates instead go through `run_plan._scenario_substrate_version_profile` → the version resolver → `_scenario_substrate_bindings`, which pins each node's catalog image by digest, and the bound substrate reaches `runtime_install_version`/`runtime_compose_substrate` in docker mode (proven by the mixed-amaru run on 2026-11-08, which resolved both images and failed only on F56).
+
+**What the port changes, and what it must not.**
+1. `_scenario_substrate_version_profile` today takes the version from the request or falls back to `latest-confirmed`; it ignores the nodes' declared versions. A ported 10.7.1 scenario would silently run on 11.1.2. The port therefore first extends that function the way `_library_version_profile` already works: when the request pins nothing and every node of an implementation declares the same version, the profile asks for that exact version (`version_policy: exact`, `version_policy_source: scenario`). A request pin still overrides. Test first.
+2. Each ported scenario: `identity_binding: resolved-plan` on every node, `compose_mode: docker`, Amaru versions normalised to the catalog spelling (`10.11.20260925`), every other field untouched (ids, roles, topology, faults, assertions, seeds, evidence intent). A `dwarf/scripts/port_frozen_substrates.py` does this deterministically, lists what it changed, and refuses anything outside the rule set; it lives beside `port_measurement_patches.py`.
+3. Excluded, kept frozen with a declared `surface_capability` gap: the 5 `mixed-minor` scenarios (two cardano versions in one devnet; the resolver binds one release per implementation) and the one node pinned to Amaru `0.1.2` (not in the catalog). Also kept frozen but flagged for the user: the 8 large meshes (20–100 nodes) — resolvable, but a 100-node devnet on the box is a separate decision.
+4. Validation before any run: `validate_scenarios.py` gate, `dwarf-validate` contract, read-only `/api/run/resolve` of every ported scenario against the live dashboard (must resolve to the declared version with digest-pinned images), one Antithesis preview of a ported scenario to show the rig renderer still accepts it, full suite at the known baseline.
+5. Images: 10.7.1, 10.6.1, 11.1.2 and Amaru 10.11.20260925 are all `available` in the catalog; the prepare step pulls what is missing (10.7.1 and 11.1.2 are already local).
+
+Public catalog impact: 120 scenario files change two fields each; the evidence they produce afterwards is about the same declared versions, resolved from the catalog instead of a host binary.
 
 ## Execution
 

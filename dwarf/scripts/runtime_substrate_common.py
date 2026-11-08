@@ -131,6 +131,13 @@ def normalize_substrate(substrate: dict) -> dict:
     amaru_txsubmission_trace = substrate.get("amaru_txsubmission_trace", False)
     if not isinstance(amaru_txsubmission_trace, bool):
         raise ValueError("substrate.amaru_txsubmission_trace must be a boolean")
+    # Explicit ExperimentalProtocolsEnabled override for the generated cardano
+    # config; None lets the Amaru-interop policy decide (see profiles).
+    cardano_experimental_protocols = substrate.get("cardano_experimental_protocols")
+    if cardano_experimental_protocols is not None and not isinstance(
+        cardano_experimental_protocols, bool
+    ):
+        raise ValueError("substrate.cardano_experimental_protocols must be a boolean")
     controller_ownership = substrate.get("controller_ownership")
     if controller_ownership is not None:
         if not isinstance(controller_ownership, dict) or set(controller_ownership) != {
@@ -455,6 +462,7 @@ def normalize_substrate(substrate: dict) -> dict:
     return {
         "profile_id": profile_id,
         "cardano_measurement_traces": cardano_measurement_traces,
+        "cardano_experimental_protocols": cardano_experimental_protocols,
         "amaru_json_traces": amaru_json_traces,
         "amaru_txsubmission_trace": amaru_txsubmission_trace,
         "controller_ownership": controller_ownership,
@@ -871,6 +879,7 @@ def allocate_node_plan(
         "cardano_measurement_traces": bool(
             normalized.get("cardano_measurement_traces")
         ),
+        "cardano_experimental_protocols": normalized.get("cardano_experimental_protocols"),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
         "amaru_txsubmission_trace": bool(
             normalized.get("amaru_txsubmission_trace")

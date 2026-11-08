@@ -52,7 +52,7 @@ def test_shim_peer_primitives_stop_at_a_refused_handshake(tmp_path, monkeypatch,
     node = _Node("82028200820e0f")   # MsgRefuse VersionMismatch [14, 15]
     node.start()
     prim = cls(params={"malformation_id": case, "response_timeout_seconds": 2})
-    monkeypatch.setattr(prim, "_runtime_node", lambda: (Path("/tmp/runtime.json"), "node1", {"port": node.port}))
+    monkeypatch.setattr(prim, "_runtime_node", lambda handle=None: (Path("/tmp/runtime.json"), "node1", {"port": node.port}))
     with pytest.raises(RuntimeError, match="not accepted; got refused"):
         prim.run(_Handle(tmp_path), None)
     node.join(5)
@@ -64,7 +64,7 @@ def test_shim_peer_txsubmission_proceeds_after_an_accepted_handshake(tmp_path, m
     node = _Node("83010e84182af400f4")   # MsgAccept 14
     node.start()
     prim = primitives.ShimPeerMalformedTxsubmission(params={"malformation_id": "bad-requesttxids-shape", "response_timeout_seconds": 2})
-    monkeypatch.setattr(prim, "_runtime_node", lambda: (Path("/tmp/runtime.json"), "node1", {"port": node.port}))
+    monkeypatch.setattr(prim, "_runtime_node", lambda handle=None: (Path("/tmp/runtime.json"), "node1", {"port": node.port}))
     prim.run(_Handle(tmp_path), None)
     node.join(5)
     assert len(node.payloads) == 2 and all(word >> 31 == 0 for word in node.header_words)

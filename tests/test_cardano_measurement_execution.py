@@ -262,6 +262,9 @@ def test_prepare_cardano_measurements_resolves_exact_live_patched_runtime(tmp_pa
     identity = prepared.resolution["target_identity"]
     assert identity["mode"] == "patched"
     assert identity["image_digest"] == PATCHED_DIGEST
+    # Locally built patched target: the digest-pinned reference is also the
+    # manifest digest the run plan froze for the exact-target verifier.
+    assert identity["image_manifest_digest"] == PATCHED_DIGEST
     assert identity["patch_set_sha256"] == PATCH_SET
     assert len(prepared.resolution["resolved"]) == 12
     factories = prepared.build_factories(tmp_path / "run")
