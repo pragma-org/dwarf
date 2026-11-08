@@ -272,22 +272,36 @@ def _restart_node(node: dict, *, metadata: dict) -> None:
     raise ValueError(f"unsupported node impl for restart: {node.get('impl')!r}")
 
 
-def _wait_node_healthy(node: dict, *, timeout_seconds: float) -> bool:
+def _node_health_status(node: dict, *, timeout_seconds: float) -> dict:
+    """Health of one node after a stop/start, with what was probed (F93 evidence)."""
     observed = dict(node)
+    status = {"id": node.get("id") or node.get("name"), "healthy": False, "probed_endpoint": None, "timeout_seconds": timeout_seconds}
     if observed.get("container_name") and observed.get("host_id"):
         host = {
             "id": observed.get("host_id"),
             "ssh_target": observed.get("host_ssh_target") or observed.get("host_id"),
         }
-        return _wait_multihost_docker_node_healthy(observed, host=host, timeout_seconds=timeout_seconds)
+        status["healthy"] = bool(_wait_multihost_docker_node_healthy(observed, host=host, timeout_seconds=timeout_seconds))
+        status["probe"] = "multihost-docker"
+        return status
     if observed.get("container_name"):
         observed["health_probe"] = "port-only"
     health = wait_for_nodes_healthy([observed], timeout_seconds=timeout_seconds)
-    if not (health and health[0].get("healthy")):
-        return False
+    first = health[0] if health else {}
+    status["probed_endpoint"] = first.get("probed_endpoint")
+    status["listen_address"] = first.get("listen_address")
+    if not first.get("healthy"):
+        return status
     if node.get("session"):
-        return _tmux_session_exists(str(node["session"]))
-    return True
+        status["healthy"] = bool(_tmux_session_exists(str(node["session"])))
+        status["probe"] = "port+tmux-session"
+        return status
+    status["healthy"] = True
+    return status
+
+
+def _wait_node_healthy(node: dict, *, timeout_seconds: float) -> bool:
+    return bool(_node_health_status(node, timeout_seconds=timeout_seconds)["healthy"])
 
 
 def run_snapshot_capture(

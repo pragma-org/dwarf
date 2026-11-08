@@ -20,6 +20,7 @@ from runtime_snapshot_substrate import (  # noqa: E402
     _restart_node,
     _stop_node,
     _wait_node_healthy,
+    _node_health_status,
     _write_metadata,
 )
 from runtime_substrate_common import write_json  # noqa: E402
@@ -119,9 +120,13 @@ def _restart_all_nodes(metadata: dict) -> None:
         _restart_node(node, metadata=metadata)
 
 
+def _all_nodes_health(metadata: dict, *, timeout_seconds: float) -> list[dict]:
+    nodes = list(metadata.get("haskell_nodes") or []) + list(metadata.get("amaru_nodes") or [])
+    return [_node_health_status(node, timeout_seconds=timeout_seconds) for node in nodes]
+
+
 def _all_nodes_healthy(metadata: dict, *, timeout_seconds: float) -> bool:
-    nodes = list(metadata.get("nodes") or metadata.get("haskell_nodes") or []) + list(metadata.get("amaru_nodes") or [])
-    return all(_wait_node_healthy(node, timeout_seconds=timeout_seconds) for node in nodes)
+    return all(status["healthy"] for status in _all_nodes_health(metadata, timeout_seconds=timeout_seconds))
 
 
 def _clear_path(path: Path) -> None:
@@ -150,6 +155,7 @@ def run_substrate_checkpoint(
     stopped = False
     resumed = False
     healthy_after_checkpoint = False
+    health_after_checkpoint: list[dict] = []
     try:
         if stop_nodes_during_capture:
             _stop_all_nodes(metadata)
@@ -174,7 +180,8 @@ def run_substrate_checkpoint(
         if stopped:
             _restart_all_nodes(metadata)
             resumed = True
-            healthy_after_checkpoint = _all_nodes_healthy(metadata, timeout_seconds=healthy_timeout_seconds)
+            health_after_checkpoint = _all_nodes_health(metadata, timeout_seconds=healthy_timeout_seconds)
+            healthy_after_checkpoint = all(status["healthy"] for status in health_after_checkpoint)
     manifest = {
         "runtime_metadata_path": str(runtime_metadata_path),
         "runtime_root": str(runtime_root),
@@ -195,6 +202,7 @@ def run_substrate_checkpoint(
             "stop_nodes_during_capture": bool(stop_nodes_during_capture),
             "nodes_restarted_after_checkpoint": resumed,
             "nodes_healthy_after_checkpoint": healthy_after_checkpoint,
+            "health_after_checkpoint": health_after_checkpoint,
         },
     }
     write_json(output_dir / "result.json", report)
@@ -229,7 +237,8 @@ def run_substrate_resume(
         restored_metadata_path = runtime_root / "runtime.json"
         restored_metadata = _read_metadata(restored_metadata_path)
         _restart_all_nodes(restored_metadata)
-        healthy = _all_nodes_healthy(restored_metadata, timeout_seconds=healthy_timeout_seconds)
+        health_after_resume = _all_nodes_health(restored_metadata, timeout_seconds=healthy_timeout_seconds)
+        healthy = all(status["healthy"] for status in health_after_resume)
     finally:
         shutil.rmtree(staging_dir, ignore_errors=True)
     report = {
@@ -241,6 +250,7 @@ def run_substrate_resume(
             "restored_paths": restored_paths,
             "resume_succeeded": healthy,
             "nodes_healthy_after_resume": healthy,
+            "health_after_resume": health_after_resume,
         },
     }
     write_json(output_dir / "result.json", report)

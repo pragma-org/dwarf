@@ -388,3 +388,28 @@ def test_proxy_bind_address_falls_back_to_the_gateway_on_the_host(monkeypatch):
     containers = {"aaaa": {"Name": "dwarf-substrate-x-node1-1", "IPv4Address": "10.192.9.2/24"}}
     monkeypatch.setattr(fault, "run_command", lambda cmd, **kw: SimpleNamespace(returncode=0, stdout=_inspect_json(containers), stderr=""))
     assert fault._proxy_bind_address("dwarf-substrate-x-net") == "10.192.9.1"
+
+
+# --- F93: checkpoint/resume reports record what the health wait probed ------------------------
+
+def test_snapshot_node_health_status_carries_the_probed_endpoint(monkeypatch):
+    from scripts import runtime_snapshot_substrate as snapshot
+    monkeypatch.setattr(snapshot, "wait_for_nodes_healthy", lambda nodes, timeout_seconds: [
+        {"id": nodes[0]["id"], "healthy": True, "listen_address": nodes[0]["listen_address"], "probed_endpoint": "10.9.0.2:3001"}
+    ])
+    node = {"id": "node1", "impl": "cardano-node", "listen_address": "127.0.0.1:37971", "container_name": "dwarf-x-node1-1",
+            "container_ip": "10.9.0.2", "container_listen_address": "node1:3001"}
+    status = snapshot._node_health_status(node, timeout_seconds=1.0)
+    assert status["healthy"] is True and status["probed_endpoint"] == "10.9.0.2:3001" and status["id"] == "node1"
+    assert snapshot._wait_node_healthy(node, timeout_seconds=1.0) is True
+
+
+def test_checkpoint_collects_per_node_health_statuses(monkeypatch):
+    from scripts import runtime_substrate_checkpoint as checkpoint
+    monkeypatch.setattr(checkpoint, "_node_health_status", lambda node, timeout_seconds: {"id": node["id"], "healthy": node["id"] == "node1", "probed_endpoint": "x"})
+    metadata = {"haskell_nodes": [{"id": "node1"}, {"id": "node2"}], "amaru_nodes": []}
+    statuses = checkpoint._all_nodes_health(metadata, timeout_seconds=1.0)
+    assert [s["id"] for s in statuses] == ["node1", "node2"]
+    assert checkpoint._all_nodes_healthy(metadata, timeout_seconds=1.0) is False
+    source = Path(checkpoint.__file__).read_text(encoding="utf-8")
+    assert '"health_after_checkpoint"' in source and '"health_after_resume"' in source
