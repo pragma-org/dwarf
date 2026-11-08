@@ -179,15 +179,6 @@ def test_local_port_faults_resolve_the_prepared_runtime(tmp_path, cls):
     assert prim._target_port(_Handle(tmp_path, prepared=prepared)) == 1
 
 
-@pytest.mark.parametrize("cls", [primitives.FaultLocalPortDrop, primitives.FaultLocalPortDelay])
-def test_local_port_faults_refuse_a_container_node_instead_of_shaping_the_controller_loopback(tmp_path, cls):
-    # F76: a container node's loopback port is unreachable from the controller; shaping it would be
-    # a vacuous success, so the fault declares the gap instead
-    prepared = _write(tmp_path / "runtime.json", _runtime_body(3001, container=True))
-    prim = cls(params={"runtime_metadata_path": LEGACY, "target_node": "node1"})
-    with pytest.raises(ValueError, match="host-model fault"):
-        prim._target_port(_Handle(tmp_path, prepared=prepared))
-
 
 # --- defect D: self-composed mixed devnets and the Amaru handshake -----------
 

@@ -22,6 +22,9 @@ ARG RSYNC_VERSION=3.4.1+ds1-5+deb13u1
 ARG TMUX_VERSION=3.5a-3
 # procps gives the controller `ps` for node pid resolution (F79)
 ARG PROCPS_VERSION=2:4.0.4-9
+# iptables and iproute2 run in a node container's network namespace for port faults (F95)
+ARG IPTABLES_VERSION=1.8.11-2
+ARG IPROUTE2_VERSION=6.15.0-1
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -82,6 +85,8 @@ RUN for attempt in 1 2 3 4 5; do \
                 libsodium23=${LIBSODIUM_VERSION} \
                 libsecp256k1-2=${LIBSECP256K1_VERSION} \
                 openssh-client=${OPENSSH_CLIENT_VERSION} \
+                iproute2=${IPROUTE2_VERSION} \
+                iptables=${IPTABLES_VERSION} \
                 procps=${PROCPS_VERSION} \
                 rsync=${RSYNC_VERSION} \
                 tmux=${TMUX_VERSION}; then \

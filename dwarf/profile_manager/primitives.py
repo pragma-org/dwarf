@@ -23618,6 +23618,58 @@ class FaultPartition(FaultPrimitive):
                    event="removed", payload={"target": target, "network": network})
 
 
+def _mark_hostile_window(handle, state: str) -> None:
+    """Tell the measurement taps when a fault is active, so they can compare before/during/after."""
+    runtime = getattr(handle, "_measurement_runtime", None)
+    if runtime is not None:
+        runtime.mark_phase("hostile", state)
+
+
+def _container_fault_node(handle, params, *, primitive: str):
+    """The runtime node record when the fault target runs in a container, else None (F95)."""
+    if "runtime_metadata_path" not in params or "target_node" not in params:
+        return None
+    metadata_path = _resolve_runtime_metadata_path(handle, params, primitive=primitive)
+    node = _runtime_metadata_node(json.loads(metadata_path.read_text(encoding="utf-8")), str(params["target_node"]))
+    if node and node.get("container_name"):
+        return node
+    return None
+
+
+def _container_port(node: dict) -> int:
+    address = str(node.get("container_listen_address") or "")
+    if ":" not in address:
+        raise ValueError(f"container node {node.get('id')!r} has no container listen address")
+    return int(address.rsplit(":", 1)[1])
+
+
+def _run_in_node_netns(executor, params, *, container: str, script: str, primitive: str):
+    """Run ``script`` in the node container's network namespace with NET_ADMIN only.
+
+    The helper is the controller's own image (already present, carries iptables and iproute2);
+    rules it installs live in the node's namespace after the helper exits.
+    """
+    import shlex as _shlex
+
+    image = str(params.get("netns_helper_image") or "")
+    if not image:
+        own = str(os.environ.get("HOSTNAME") or "")
+        probe = executor(f"docker inspect -f '{{{{.Image}}}}' {_shlex.quote(own)}", timeout=15, dry_run=False)
+        image = (probe.stdout or "").strip().strip("'\"") if probe.returncode == 0 else ""
+        if not image:
+            raise RuntimeError(f"{primitive} could not resolve the controller image for the netns helper")
+    command = (
+        f"docker run --rm --network container:{_shlex.quote(container)} --cap-add NET_ADMIN "
+        f"--entrypoint sh {_shlex.quote(image)} -c {_shlex.quote(script)}"
+    )
+    result = executor(command, timeout=60, dry_run=False)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{primitive} netns helper failed in {container} (exit {result.returncode}): {(result.stderr or '')[-200:]}"
+        )
+    return result
+
+
 class FaultLocalPortDrop(FaultPrimitive):
     """Drop host-local traffic to a specific TCP port with iptables for load duration.
 
@@ -23638,12 +23690,6 @@ class FaultLocalPortDrop(FaultPrimitive):
             target_node = str(self.params["target_node"])
             for node in nodes:
                 if target_node in (str(node.get("name")), str(node.get("id"))):
-                    if node.get("container_name"):
-                        raise ValueError(
-                            f"{_primitive_label(self)} is a host-model fault (iptables/tc on the local loopback) "
-                            f"and node {target_node!r} runs in container {node['container_name']!r}; "
-                            "not supported on a container substrate (declared gap: needs a netns sidecar)"
-                        )
                     try:
                         return int(node["port"])
                     except (KeyError, TypeError, ValueError) as exc:
@@ -23675,8 +23721,26 @@ class FaultLocalPortDrop(FaultPrimitive):
             raise ValueError("fault_local_port_drop requires drop_output or drop_input")
         return port, host, protocol, rules
 
+    _NETNS_DROP_RULES = ("INPUT -p tcp --dport {port} -j DROP", "OUTPUT -p tcp --sport {port} -j DROP")
+
+    def _apply_container(self, handle, executor, node):
+        port = _container_port(node)
+        rules = [rule.format(port=port) for rule in self._NETNS_DROP_RULES]
+        script = "set -e; " + "; ".join(f"iptables -w -I {rule}" for rule in rules)
+        _run_in_node_netns(executor, self.params, container=node["container_name"], script=script, primitive="fault_local_port_drop")
+        self._netns_target = {"container": node["container_name"], "rules": rules}
+        _mark_hostile_window(handle, "start")
+        handle.log(
+            phase="fault", primitive="fault_local_port_drop", level="info", event="applied",
+            payload={"mechanism": "container-netns", "container": node["container_name"], "port": port,
+                     "protocol": "tcp", "chains": ["INPUT", "OUTPUT"], "target_node": self.params.get("target_node")},
+        )
+
     def apply(self, handle):
         executor = _resolve_local_executor(self.params)
+        node = _container_fault_node(handle, self.params, primitive="fault_local_port_drop")
+        if node is not None:
+            return self._apply_container(handle, executor, node)
         port, host, protocol, rules = self._rules(handle)
         applied = []
         for chain, spec in rules:
@@ -23689,6 +23753,7 @@ class FaultLocalPortDrop(FaultPrimitive):
                 )
             applied.append((chain, spec))
         self._rules_applied = applied
+        _mark_hostile_window(handle, "start")
         payload = {"host": host, "port": port, "protocol": protocol, "chains": [chain for chain, _ in applied]}
         if "target_node" in self.params:
             payload["target_node"] = self.params["target_node"]
@@ -23701,11 +23766,22 @@ class FaultLocalPortDrop(FaultPrimitive):
 
     def remove(self, handle):
         executor = _resolve_local_executor(self.params)
+        target = getattr(self, "_netns_target", None)
+        if target:
+            script = "; ".join(f"iptables -w -D {rule} 2>/dev/null || true" for rule in target["rules"])
+            _run_in_node_netns(executor, self.params, container=target["container"], script=script, primitive="fault_local_port_drop")
+            self._netns_target = None
+            _mark_hostile_window(handle, "end")
+            handle.log(phase="fault", primitive="fault_local_port_drop", level="info", event="removed",
+                       payload={"mechanism": "container-netns", "container": target["container"]})
+            return
         applied = getattr(self, "_rules_applied", [])
         if not applied:
             return
         for chain, spec in reversed(applied):
             executor(f"sudo iptables -w -D {chain} {spec}", timeout=30, dry_run=False)
+        if applied:
+            _mark_hostile_window(handle, "end")
         handle.log(
             phase="fault", primitive="fault_local_port_drop", level="info", event="removed",
             payload={"chains": [chain for chain, _ in applied]},
@@ -23731,12 +23807,6 @@ class FaultLocalPortDelay(FaultPrimitive):
             target_node = str(self.params["target_node"])
             for node in nodes:
                 if target_node in (str(node.get("name")), str(node.get("id"))):
-                    if node.get("container_name"):
-                        raise ValueError(
-                            f"{_primitive_label(self)} is a host-model fault (iptables/tc on the local loopback) "
-                            f"and node {target_node!r} runs in container {node['container_name']!r}; "
-                            "not supported on a container substrate (declared gap: needs a netns sidecar)"
-                        )
                     try:
                         return int(node["port"])
                     except (KeyError, TypeError, ValueError) as exc:
@@ -23753,13 +23823,35 @@ class FaultLocalPortDelay(FaultPrimitive):
     def _executor(self):
         return _resolve_local_executor(self.params)
 
+    def _apply_container(self, handle, executor, node, *, delay_ms: int, jitter_ms: int):
+        port = _container_port(node)
+        script = (
+            "set -e; dev=$(ip -o route show default | awk '{print $5}'); "
+            "tc qdisc replace dev \"$dev\" root handle 1: prio bands 3; "
+            f"tc qdisc add dev \"$dev\" parent 1:3 handle 30: netem delay {delay_ms}ms {jitter_ms}ms; "
+            f"tc filter add dev \"$dev\" protocol ip parent 1:0 prio 3 u32 match ip protocol 6 0xff match ip sport {port} 0xffff flowid 1:3; "
+            f"tc filter add dev \"$dev\" protocol ip parent 1:0 prio 3 u32 match ip protocol 6 0xff match ip dport {port} 0xffff flowid 1:3"
+        )
+        _run_in_node_netns(executor, self.params, container=node["container_name"], script=script, primitive="fault_local_port_delay")
+        self._netns_target = {"container": node["container_name"]}
+        self._active = True
+        _mark_hostile_window(handle, "start")
+        handle.log(
+            phase="fault", primitive="fault_local_port_delay", level="info", event="applied",
+            payload={"mechanism": "container-netns", "container": node["container_name"], "port": port, "protocol": "tcp",
+                     "delay_ms": delay_ms, "jitter_ms": jitter_ms, "target_node": self.params.get("target_node")},
+        )
+
     def apply(self, handle):
-        port = self._target_port(handle)
-        host = self.params.get("host", "127.0.0.1")
-        protocol = self.params.get("protocol", "tcp")
         delay_ms = int(self.params["delay_ms"])
         jitter_ms = int(self.params.get("jitter_ms", 0))
         executor = self._executor()
+        node = _container_fault_node(handle, self.params, primitive="fault_local_port_delay")
+        if node is not None:
+            return self._apply_container(handle, executor, node, delay_ms=delay_ms, jitter_ms=jitter_ms)
+        port = self._target_port(handle)
+        host = self.params.get("host", "127.0.0.1")
+        protocol = self.params.get("protocol", "tcp")
 
         check = executor("tc qdisc show dev lo", timeout=10, dry_run=False)
         if check.returncode != 0:
@@ -23788,6 +23880,7 @@ class FaultLocalPortDelay(FaultPrimitive):
                     f"fault_local_port_delay apply failed for port {port} (exit {result.returncode})"
                 )
         self._active = True
+        _mark_hostile_window(handle, "start")
         handle.log(
             phase="fault", primitive="fault_local_port_delay", level="info", event="applied",
             payload={
@@ -23805,7 +23898,18 @@ class FaultLocalPortDelay(FaultPrimitive):
         if not getattr(self, "_active", False):
             return
         executor = self._executor()
+        target = getattr(self, "_netns_target", None)
+        if target:
+            script = "dev=$(ip -o route show default | awk '{print $5}'); tc qdisc del dev \"$dev\" root 2>/dev/null || true"
+            _run_in_node_netns(executor, self.params, container=target["container"], script=script, primitive="fault_local_port_delay")
+            self._netns_target = None; self._active = False
+            _mark_hostile_window(handle, "end")
+            handle.log(phase="fault", primitive="fault_local_port_delay", level="info", event="removed",
+                       payload={"mechanism": "container-netns", "container": target["container"]})
+            return
         executor("sudo tc qdisc del dev lo root 2>/dev/null || true", timeout=10, dry_run=False)
+        self._active = False
+        _mark_hostile_window(handle, "end")
         handle.log(
             phase="fault", primitive="fault_local_port_delay", level="info", event="removed",
             payload={"device": "lo"},
@@ -23959,6 +24063,7 @@ class FaultNodeFreeze(FaultPrimitive):
         self._target_container = container
         self._target_pid = None
         self._target_node = target_node
+        _mark_hostile_window(handle, "start")
         handle.log(
             phase="fault",
             primitive="fault_node_freeze",
@@ -23989,6 +24094,7 @@ class FaultNodeFreeze(FaultPrimitive):
             raise RuntimeError(f"fault_node_freeze apply failed for pid {pid} (exit {result.returncode})")
         state = self._wait_for_stopped_state(pid)
         self._target_pid = pid
+        _mark_hostile_window(handle, "start")
         self._target_node = target_node
         handle.log(
             phase="fault",
@@ -24017,6 +24123,7 @@ class FaultNodeFreeze(FaultPrimitive):
             if state != "running":
                 raise RuntimeError(f"fault_node_freeze container {container!r} did not resume; state={state!r}")
             self._target_container = None
+            _mark_hostile_window(handle, "end")
             handle.log(
                 phase="fault",
                 primitive="fault_node_freeze",
@@ -24039,6 +24146,7 @@ class FaultNodeFreeze(FaultPrimitive):
         if result.returncode != 0:
             raise RuntimeError(f"fault_node_freeze remove failed for pid {pid} (exit {result.returncode})")
         state = self._wait_for_resumed_state(pid)
+        _mark_hostile_window(handle, "end")
         handle.log(
             phase="fault",
             primitive="fault_node_freeze",

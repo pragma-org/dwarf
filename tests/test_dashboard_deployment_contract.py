@@ -1939,3 +1939,10 @@ def test_deploy_pre_pulls_the_localtxsubmission_helper_before_compose_up():
     up = deploy.index("compose up -d --no-build --force-recreate dwarf-controller dwarf-fw")
     assert pull < up
     assert 'docker image inspect "${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE}"' in deploy
+
+
+def test_framework_image_installs_iptables_and_iproute2_for_container_port_faults():
+    """F95: container port faults run iptables/tc from the controller image in the node's namespace."""
+    dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(encoding="utf-8")
+    assert "ARG IPTABLES_VERSION=1.8.11-2" in dockerfile and "iptables=${IPTABLES_VERSION}" in dockerfile
+    assert "ARG IPROUTE2_VERSION=6.15.0-1" in dockerfile and "iproute2=${IPROUTE2_VERSION}" in dockerfile
