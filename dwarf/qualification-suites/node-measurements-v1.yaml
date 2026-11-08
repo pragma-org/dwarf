@@ -386,7 +386,7 @@ exercises:
     are not exercised. Missing rejected/accepted outcomes remain incomplete.
   runtime:
     status: missing
-    reason: The version-neutral on-chain Plutus case differential (2026-11-08) submits real accepted and rejected cases to both nodes; awaiting a retained live run before this row is marked implemented.
+    reason: The on-chain Plutus case differential passed live on 2026-11-08 with accepted and rejected cases on both nodes, but its bundles retain no plutus-execution tap samples; this row stays missing until the tap records evaluation events in that run.
   fallback:
     scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
     activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
@@ -776,7 +776,7 @@ exercises:
     are not exercised. Missing rejected/accepted outcomes remain incomplete.
   runtime:
     status: missing
-    reason: The version-neutral on-chain Plutus case differential (2026-11-08) submits real accepted and rejected cases to both nodes; awaiting a retained live run before this row is marked implemented.
+    reason: The on-chain Plutus case differential passed live on 2026-11-08 with accepted and rejected cases on both nodes, but its bundles retain no plutus-execution tap samples; this row stays missing until the tap records evaluation events in that run.
   fallback:
     scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
     activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
