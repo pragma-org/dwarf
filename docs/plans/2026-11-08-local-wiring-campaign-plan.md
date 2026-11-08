@@ -51,7 +51,9 @@ All four records are in `~/.local/share/dwarf/state/measurement-targets/`; image
 4. Validation before any run: `validate_scenarios.py` gate, `dwarf-validate` contract, read-only `/api/run/resolve` of every ported scenario against the live dashboard (must resolve to the declared version with digest-pinned images), one Antithesis preview of a ported scenario to show the rig renderer still accepts it, full suite at the known baseline.
 5. Images: 10.7.1, 10.6.1, 11.1.2 and Amaru 10.11.20260925 are all `available` in the catalog; the prepare step pulls what is missing (10.7.1 and 11.1.2 are already local).
 
-Public catalog impact: 120 scenario files change two fields each; the evidence they produce afterwards is about the same declared versions, resolved from the catalog instead of a host binary.
+Public catalog impact: 110 scenario files change two or three fields each; the evidence they produce afterwards is about the same declared versions, resolved from the catalog instead of a host binary.
+
+**Done so far (code only, no catalog file changed):** step 1 is in `run_plan._scenario_substrate_version_profile` (declared uniform versions → `version_policy: exact`, `version_policy_source: scenario`; a request pin wins; two versions for one implementation → `RunPlanError`); step 2 is `dwarf/scripts/port_frozen_substrates.py` (dry run by default, `--apply` to write, `--max-nodes`, `--report`); tests in `tests/test_frozen_substrate_port.py`. **Dry run over the catalog (2026-11-08):** 110 portable (31 of them respell `v10.11.20260925`), 16 skipped with a reason: 5 two-version mixed-minor scenarios, 1 Amaru `0.1.2`, 3 explicit multi-host substrates (10-node mesh, multihost baseline, snapshot-restore-on-divergent-host), 7 meshes of 20–100 nodes. Report: `scratchpad/port-dry-run.json`. Applying it is the user's call.
 
 ## Execution
 

@@ -689,6 +689,25 @@ def _scenario_substrate_version_profile(scenario, request) -> dict[str, Any] | N
     explicit_release_selection = any(
         (request.cardano_version, request.amaru_version, request.compatibility_pair)
     )
+    # A ported substrate keeps each node's declared version (F57).  When the
+    # request pins nothing, one concrete version per implementation becomes an
+    # exact selection, the way library scenarios already treat their declared
+    # target version; the ``resolved-plan`` sentinel keeps the catalog default.
+    # Two concrete versions for one implementation cannot be expressed: the
+    # resolver binds one release per implementation.
+    declared_versions: dict[str, set[str]] = {}
+    for node in nodes:
+        version = str(node.get("version") or "")
+        if version and version != "resolved-plan":
+            declared_versions.setdefault(str(node.get("impl")), set()).add(version)
+    for implementation, versions in declared_versions.items():
+        if len(versions) > 1:
+            raise RunPlanError(
+                f"scenario {scenario.id} declares {len(versions)} {implementation} versions "
+                f"({', '.join(sorted(versions))}); the resolver binds one release per implementation",
+                field="scenario_id",
+            )
+    scenario_selection = not explicit_release_selection and bool(declared_versions)
     data = {
         "id": f"scenario-{scenario.id}-version-selection",
         "label": f"{scenario.title} version selection",
@@ -700,11 +719,11 @@ def _scenario_substrate_version_profile(scenario, request) -> dict[str, Any] | N
         "shared_genesis": True,
         "measurement_target_mode": "stock",
         "version_policy": request.version_policy
-        or ("exact" if explicit_release_selection else "latest-confirmed"),
+        or ("exact" if explicit_release_selection or scenario_selection else "latest-confirmed"),
         "version_policy_source": (
             "explicit"
             if request.version_policy or explicit_release_selection
-            else "implicit-default"
+            else ("scenario" if scenario_selection else "implicit-default")
         ),
     }
     if request.cardano_version:
@@ -713,6 +732,11 @@ def _scenario_substrate_version_profile(scenario, request) -> dict[str, Any] | N
         data["amaru_version"] = request.amaru_version
     if request.compatibility_pair:
         data["compatibility_pair"] = request.compatibility_pair
+    if scenario_selection:
+        if "cardano-node" in declared_versions:
+            data["cardano_version"] = next(iter(declared_versions["cardano-node"]))
+        if "amaru" in declared_versions:
+            data["amaru_version"] = next(iter(declared_versions["amaru"]))
     return data
 
 
