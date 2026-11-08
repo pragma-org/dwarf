@@ -29,8 +29,10 @@ from typing import Any
 
 DWARF_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS_DIR = DWARF_ROOT / "scenarios"
-_AMARU_CATALOG_LABEL = re.compile(r"^10\.1[01]\.\d{8}$")
-_AMARU_PREFIXED_LABEL = re.compile(r"^v(10\.1[01]\.\d{8})$")
+# Any Amaru release label of the catalog shape (<major>.<minor>.<YYYYMMDD>), present or future;
+# the resolver decides whether the catalog actually has it.
+_AMARU_CATALOG_LABEL = re.compile(r"^\d+\.\d+\.\d{8}$")
+_AMARU_PREFIXED_LABEL = re.compile(r"^v(\d+\.\d+\.\d{8})$")
 DEFAULT_MAX_NODES = 19
 
 

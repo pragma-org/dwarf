@@ -151,3 +151,12 @@ def test_port_preserves_the_file_style_and_writes_only_with_apply(tmp_path):
     assert json.loads(compact_text)["substrate"]["compose_mode"] == "docker"
     # A second apply is a no-op: the files are already portable.
     assert {row["status"] for row in port.port_files([compact, indented], apply=True)["rows"]} == {"skip"}
+
+
+def test_port_accepts_future_amaru_release_labels():
+    """Version-agnostic: any <major>.<minor>.<YYYYMMDD> label is a catalog shape; only the
+    resolver knows whether the catalog has it.  A non-release pin stays refused."""
+    plan = port.plan_port(_frozen_document(_frozen_nodes(amaru="v11.2.20270115")))
+    assert plan["status"] == "port"
+    assert plan["document"]["substrate"]["nodes"][2]["version"] == "11.2.20270115"
+    assert port.plan_port(_frozen_document(_frozen_nodes(amaru="0.1.2")))["status"] == "skip"

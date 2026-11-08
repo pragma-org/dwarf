@@ -56,6 +56,28 @@ class CommandResult:
         self.stderr = stderr
 
 
+
+# Bounded json-file logging for every locally generated DWARF service (F65).  An
+# Amaru relay with JSON traces writes 3-4 GB of log per day; unbounded, the log
+# fills the disk and slows every log read.  512 MiB x 8 files keeps about a day
+# of Amaru debug trace per relay for trace-based evidence while capping the
+# growth.  Antithesis packages keep the platform's driver and never use this.
+CONTAINER_LOG_ROTATION = {
+    "driver": "json-file",
+    "options": {"max-size": "512m", "max-file": "8"},
+}
+
+
+def apply_log_rotation(services: dict) -> None:
+    """Attach the bounded log policy to every compose service that has none."""
+    for service in services.values():
+        if isinstance(service, dict) and "logging" not in service:
+            service["logging"] = {
+                "driver": CONTAINER_LOG_ROTATION["driver"],
+                "options": dict(CONTAINER_LOG_ROTATION["options"]),
+            }
+
+
 def reconcile_amaru_runtime_metadata(
     runtime: dict, deployment: dict
 ) -> dict:

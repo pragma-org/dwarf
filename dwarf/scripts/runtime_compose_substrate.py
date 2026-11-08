@@ -21,6 +21,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from runtime_amaru_cli import shell_command_selection
 
 from runtime_substrate_common import (
+    apply_log_rotation,
     allocate_node_plan,
     build_version_provenance,
     normalize_substrate,
@@ -1290,6 +1291,7 @@ def _docker_compose_body(
             "io.dwarf.topology": str(controller_ownership["topology_id"]),
             "io.dwarf.component": "network",
         }
+    apply_log_rotation(services)
     return {
         "name": compose_project,
         "services": services,

@@ -1465,3 +1465,23 @@ def test_amaru_progress_parser_reads_json_traces_from_the_control_rig():
         "message": "thread 'main' panicked at src/consensus.rs:12"}}))
     parsed = compose._parse_amaru_runtime_progress("\n".join(lines) + "\n")
     assert parsed["blocking_signals"] == ["panic"] and parsed["ready"] is False
+
+
+def test_versioned_compose_services_rotate_container_logs():
+    """F65: an Amaru relay writes 3-4 GB of JSON trace per day; without rotation the
+    json-file log grows until the disk is full and every log read slows down.  Every
+    locally generated service carries DWARF's bounded json-file policy."""
+    node = {
+        "id": "node1",
+        "impl": "cardano-node",
+        "listen_address": "127.0.0.1:33001",
+        "host_slot_index": 1,
+        "image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:" + "a" * 64,
+    }
+    body = compose._docker_compose_body(
+        compose_project="dwarf-profile-versioned-local", nodes=[node], network_name="testnet_42",
+    )
+    for name, service in body["services"].items():
+        assert service["logging"] == common.CONTAINER_LOG_ROTATION, name
+    assert common.CONTAINER_LOG_ROTATION["driver"] == "json-file"
+    assert set(common.CONTAINER_LOG_ROTATION["options"]) == {"max-size", "max-file"}

@@ -48,6 +48,7 @@ from qualify_node_versions import (  # noqa: E402
     classify_terminal_runtime_failure,
     transform_compose_model,
 )
+from runtime_substrate_common import apply_log_rotation  # noqa: E402
 from redeploy_cardano_amaru_topology import (  # noqa: E402
     fresh_readiness_proven,
     remember_bootstrap_evidence,
@@ -1197,6 +1198,9 @@ def prepare_runtime_model(
             raise RuntimeControlError(f"{service_name} environment must be a mapping")
         environment["AMARU_PEER_MIX"] = "static!1"
         environment["AMARU_UPSTREAM_PEERS"] = "1"
+    # Local profile runtimes rotate their container logs (F65); the shared transform
+    # above is also what Antithesis packages use and must not change the driver.
+    apply_log_rotation(model["services"])
     if config.get("plutus_v2_genesis") is True:
         configurator = model["services"]["configurator"]
         volumes = configurator.setdefault("volumes", [])

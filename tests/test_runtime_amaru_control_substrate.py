@@ -1926,3 +1926,25 @@ def test_compose_logs_are_read_with_a_bounded_tail(monkeypatch, tmp_path):
     assert 1000 <= tail <= 100000
     assert command[-3:] == ["--no-color", "--timestamps", "--tail", str(tail)][-3:] or command[-1] == str(tail)
     assert timeout is not None and timeout <= 300
+
+
+def test_prepare_runtime_model_rotates_container_logs_but_the_shared_transform_does_not():
+    """F65: the local Amaru-control profile runtime gets DWARF's bounded json-file log
+    policy on every service.  The shared transform the Antithesis package path also uses
+    stays untouched: the platform forbids changing the logging driver inside a package."""
+    from runtime_substrate_common import CONTAINER_LOG_ROTATION
+    from qualify_node_versions import transform_compose_model
+
+    config = _config()
+    config["substrate"]["actual_topology"] = amaru_control_topology_shape(config["substrate"])
+    model = prepare_runtime_model(_baseline(), config)
+    for name, service in model["services"].items():
+        assert service["logging"] == CONTAINER_LOG_ROTATION, name
+
+    shared = transform_compose_model(
+        _baseline(), scope="amaru-only", project="dwarf-profile-x",
+        cardano_image="ghcr.io/intersectmbo/cardano-node@sha256:" + "a" * 64,
+        amaru_image="ghcr.io/pragma-org/amaru@sha256:" + "b" * 64,
+        allowed_project_prefix="dwarf-profile-",
+    )
+    assert all("logging" not in service for service in shared["services"].values())
