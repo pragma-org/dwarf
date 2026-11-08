@@ -216,3 +216,74 @@ def test_docker_compose_verification_is_wrapped_in_the_cleanup():
     source = Path(compose.__file__).read_text(encoding="utf-8")
     up = source.index('"up", "-d"')
     assert "_cleanup_failed_substrate(" in source[up:]
+
+
+# --- F74: a declared runtime path relative to the run directory ----------------------------
+
+def test_declared_runtime_path_relative_to_the_run_dir_is_found(tmp_path):
+    out = tmp_path / "outputs" / "compose-substrate"
+    out.mkdir(parents=True)
+    runtime = _runtime(out)
+    resolved = primitives._resolve_runtime_metadata_path(
+        _Handle(tmp_path),
+        {"runtime_metadata_path": "outputs/compose-substrate/runtime.json"},
+        primitive="shim_peer_malformed_blockfetch",
+    )
+    assert Path(resolved) == runtime
+
+
+# --- F75: freeze a containerised node through the container runtime -------------------------
+
+def test_node_freeze_pauses_and_unpauses_the_container_when_the_node_is_containerised(tmp_path):
+    commands = []
+    state = {"paused": False}
+
+    def executor(command, *, timeout=None, dry_run=False):
+        commands.append(command)
+        if command.startswith("docker pause "):
+            state["paused"] = True
+        elif command.startswith("docker unpause "):
+            state["paused"] = False
+        stdout = ("true\n" if state["paused"] else "false\n") if "inspect" in command else ""
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    prim = primitives.FaultNodeFreeze(params={"target_node": "node1", "executor": executor})
+    node = {"id": "node1", "container_name": "dwarf-x-node1-1", "port": 3001}
+    prim._runtime_node = lambda handle=None: (tmp_path / "runtime.json", "node1", node)
+    handle = _Handle(tmp_path)
+    prim.apply(handle)
+    prim.remove(handle)
+    assert any(c.startswith("docker pause dwarf-x-node1-1") for c in commands)
+    assert any(c.startswith("docker unpause dwarf-x-node1-1") for c in commands)
+    assert not any(c.startswith("ps") or "kill -STOP" in c or "kill -CONT" in c for c in commands)
+    applied, removed = [e for e in handle.logs if e["event"] in ("applied", "removed")]
+    assert applied["payload"]["container"] == "dwarf-x-node1-1" and applied["payload"]["state"] == "paused"
+    assert removed["payload"]["state"] == "running"
+
+
+def test_node_freeze_keeps_the_host_pid_path_for_host_nodes(tmp_path, monkeypatch):
+    commands = []
+
+    def executor(command, *, timeout=None, dry_run=False):
+        commands.append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    prim = primitives.FaultNodeFreeze(params={"target_node": "node1", "executor": executor})
+    prim._runtime_node = lambda handle=None: (tmp_path / "runtime.json", "node1", {"id": "node1", "port": 3001})
+    monkeypatch.setattr(prim, "_resolve_target_pid", lambda handle=None: 4242)
+    monkeypatch.setattr(prim, "_wait_for_stopped_state", lambda pid: "T")
+    prim.apply(_Handle(tmp_path))
+    assert commands == ["sudo kill -STOP 4242"]
+
+
+# --- F76: host-model port faults say so on a container substrate ----------------------------
+
+@pytest.mark.parametrize("cls", [primitives.FaultLocalPortDrop, primitives.FaultLocalPortDelay])
+def test_local_port_faults_refuse_container_substrates_with_a_reason(cls, tmp_path):
+    body = json.loads(_runtime(tmp_path).read_text(encoding="utf-8"))
+    body["haskell_nodes"][0]["container_name"] = "dwarf-x-node1-1"
+    runtime = tmp_path / "runtime.json"
+    runtime.write_text(json.dumps(body), encoding="utf-8")
+    prim = cls(params={"target_node": "node1", "runtime_metadata_path": "~/cardano-profiles/profile-x/runtime.json"})
+    with pytest.raises(ValueError, match="host-model fault"):
+        prim._target_port(_Handle(tmp_path, prepared=runtime))

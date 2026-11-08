@@ -7218,7 +7218,12 @@ def _resolve_runtime_metadata_path(handle, params: dict[str, Any], *, primitive:
         candidates.append(Path(str(prepared)))
     declared = params.get("runtime_metadata_path")
     if declared:
-        candidates.append(_resolve_runtime_path(declared))
+        declared_path = Path(os.path.expanduser(str(declared)))
+        if declared_path.is_absolute():
+            candidates.append(_resolve_runtime_path(declared))
+        else:
+            # scenario outputs such as outputs/compose-substrate/runtime.json live in the run directory
+            candidates.append(_resolve_output_path(handle, declared))
     profile_id = getattr(handle, "_profile_id", None)
     if profile_id:
         from profile_manager.profiles import runtime_root
@@ -23743,6 +23748,12 @@ class FaultLocalPortDrop(FaultPrimitive):
             target_node = str(self.params["target_node"])
             for node in nodes:
                 if target_node in (str(node.get("name")), str(node.get("id"))):
+                    if node.get("container_name"):
+                        raise ValueError(
+                            f"{_primitive_label(self)} is a host-model fault (iptables/tc on the local loopback) "
+                            f"and node {target_node!r} runs in container {node['container_name']!r}; "
+                            "not supported on a container substrate (declared gap: needs a netns sidecar)"
+                        )
                     try:
                         return int(node["port"])
                     except (KeyError, TypeError, ValueError) as exc:
@@ -23830,6 +23841,12 @@ class FaultLocalPortDelay(FaultPrimitive):
             target_node = str(self.params["target_node"])
             for node in nodes:
                 if target_node in (str(node.get("name")), str(node.get("id"))):
+                    if node.get("container_name"):
+                        raise ValueError(
+                            f"{_primitive_label(self)} is a host-model fault (iptables/tc on the local loopback) "
+                            f"and node {target_node!r} runs in container {node['container_name']!r}; "
+                            "not supported on a container substrate (declared gap: needs a netns sidecar)"
+                        )
                     try:
                         return int(node["port"])
                     except (KeyError, TypeError, ValueError) as exc:
@@ -24026,9 +24043,56 @@ class FaultNodeFreeze(FaultPrimitive):
             time.sleep(0.1)
         raise RuntimeError(f"fault_node_freeze target pid {pid} did not resume; last_state={last!r}")
 
+    def _container_state(self, executor, container: str) -> str:
+        import shlex as _shlex
+
+        result = executor(f"docker inspect -f '{{{{.State.Paused}}}}' {_shlex.quote(container)}", timeout=10, dry_run=False)
+        if result.returncode != 0:
+            raise RuntimeError(f"fault_node_freeze could not inspect container {container!r} (exit {result.returncode})")
+        return "paused" if (result.stdout or "").strip().strip("'\"").lower() == "true" else "running"
+
+    def _apply_container(self, handle, *, executor, metadata_path, target_node, node, container):
+        """Freeze a containerised node with the container runtime's freezer (``docker pause``).
+
+        On a dashboard install the node runs in another container: there is no local pid to
+        SIGSTOP and no ``ps``. ``docker pause`` stops every process in the container through the
+        cgroup freezer, the same effect as SIGSTOP on the node process.
+        """
+        import shlex as _shlex
+
+        result = executor(f"docker pause {_shlex.quote(container)}", timeout=30, dry_run=False)
+        if result.returncode != 0:
+            raise RuntimeError(f"fault_node_freeze docker pause failed for {container!r} (exit {result.returncode})")
+        state = self._container_state(executor, container)
+        if state != "paused":
+            raise RuntimeError(f"fault_node_freeze container {container!r} did not enter paused state; state={state!r}")
+        self._target_container = container
+        self._target_pid = None
+        self._target_node = target_node
+        handle.log(
+            phase="fault",
+            primitive="fault_node_freeze",
+            level="info",
+            event="applied",
+            payload={
+                "runtime_metadata_path": str(metadata_path),
+                "target_node": target_node,
+                "container": container,
+                "pid": None,
+                "port": node.get("port"),
+                "state": state,
+                "mechanism": "docker-pause",
+            },
+        )
+
     def apply(self, handle):
         executor = _resolve_local_executor(self.params)
         metadata_path, target_node, node = self._runtime_node(handle)
+        container = node.get("container_name")
+        if isinstance(container, str) and container:
+            return self._apply_container(
+                handle, executor=executor, metadata_path=metadata_path, target_node=target_node, node=node, container=container
+            )
         pid = self._resolve_target_pid(handle)
         result = executor(f"sudo kill -STOP {pid}", timeout=10, dry_run=False)
         if result.returncode != 0:
@@ -24051,7 +24115,33 @@ class FaultNodeFreeze(FaultPrimitive):
         )
 
     def remove(self, handle):
+        import shlex as _shlex
+
         executor = _resolve_local_executor(self.params)
+        container = getattr(self, "_target_container", None)
+        if container:
+            result = executor(f"docker unpause {_shlex.quote(container)}", timeout=30, dry_run=False)
+            if result.returncode != 0:
+                raise RuntimeError(f"fault_node_freeze docker unpause failed for {container!r} (exit {result.returncode})")
+            state = self._container_state(executor, container)
+            if state != "running":
+                raise RuntimeError(f"fault_node_freeze container {container!r} did not resume; state={state!r}")
+            self._target_container = None
+            handle.log(
+                phase="fault",
+                primitive="fault_node_freeze",
+                level="info",
+                event="removed",
+                payload={
+                    "target_node": getattr(self, "_target_node", None),
+                    "container": container,
+                    "pid": None,
+                    "resumed": True,
+                    "state": state,
+                    "mechanism": "docker-pause",
+                },
+            )
+            return
         pid = getattr(self, "_target_pid", None)
         if pid is None:
             return
