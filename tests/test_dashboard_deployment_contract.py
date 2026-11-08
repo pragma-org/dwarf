@@ -1915,3 +1915,17 @@ def test_installer_defaults_the_run_artifact_base_url_to_the_dashboard_address()
     assert "printf 'DWARF_RUN_ARTIFACT_BASE_URL=%s\\n' \"${artifact_base_url}\"" in installer
     contract = (ROOT / "delivery/tests/test_installer_contract.sh").read_text(encoding="utf-8")
     assert "DWARF_RUN_ARTIFACT_BASE_URL=http://" in contract
+
+
+def test_installer_defaults_the_localtxsubmission_helper_image_to_the_pinned_digest():
+    """F89: six ledger differential primitives run the local-tx-submission helper and demand an exact
+    immutable reference; the security workflow pins one, the install left the variable empty."""
+    installer = (ROOT / "delivery/install.sh").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/dwarf-security-campaign.yml").read_text(encoding="utf-8")
+    pinned = "ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:ae1938a2ebdefa9cdf340021774e3a2551afd2da48d855fb2ba829cede13fb34"
+    assert pinned in workflow  # the installer default is the same artifact CI validates
+    assert "localtxsubmission_helper_image=$(env_get DWARF_LOCALTXSUBMISSION_HELPER_IMAGE)" in installer
+    assert f'localtxsubmission_helper_image="{pinned}"' in installer
+    assert "printf 'DWARF_LOCALTXSUBMISSION_HELPER_IMAGE=%s\\n' \"${localtxsubmission_helper_image}\"" in installer
+    contract = (ROOT / "delivery/tests/test_installer_contract.sh").read_text(encoding="utf-8")
+    assert "DWARF_LOCALTXSUBMISSION_HELPER_IMAGE=ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:" in contract
