@@ -1436,7 +1436,7 @@ def _inspect_docker_node_remote(*, compose_project: str, node: dict, host: dict)
 
 
 def _attach_controller_to_substrate_network(
-    *, docker_project: str, controller_ownership: dict | None, runner=run_command
+    *, docker_project: str, controller_ownership: dict | None, controller_attach: bool = False, runner=run_command
 ) -> dict | None:
     """Join the controller container to a run-owned substrate network (F66).
 
@@ -1445,7 +1445,9 @@ def _attach_controller_to_substrate_network(
     runs inside the controller) connects the controller after ``up`` and the
     teardown disconnects it before ``down``.  Host runs have no ownership and
     nothing to join."""
-    if not controller_ownership:
+    # F90: only run-owned substrates (flagged by the compose primitive) attach here; a profile
+    # deploy is controller-owned too, but the run's own attach step joins and leaves its network
+    if not controller_ownership or not controller_attach:
         return None
     controller = str(os.environ.get("HOSTNAME") or "").strip()
     if not controller:
@@ -1670,7 +1672,9 @@ def _compose_substrate_docker(
     if up.returncode != 0:
         raise RuntimeError(f"docker compose up failed: {up.stderr or up.stdout}")
     controller_attachment = _attach_controller_to_substrate_network(
-        docker_project=docker_project, controller_ownership=plan.get("controller_ownership")
+        docker_project=docker_project,
+        controller_ownership=plan.get("controller_ownership"),
+        controller_attach=bool(plan.get("controller_attach")),
     )
 
     report_nodes = []

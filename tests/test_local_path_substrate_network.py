@@ -30,6 +30,7 @@ def test_controller_joins_the_substrate_network_when_it_owns_the_topology(monkey
     attachment = compose._attach_controller_to_substrate_network(
         docker_project="dwarf-substrate-run1",
         controller_ownership={"installation_id": "install-x", "topology_id": "dwarf-substrate-run1"},
+        controller_attach=True,
         runner=_runner(calls),
     )
     assert calls == [["docker", "network", "connect", "dwarf-substrate-run1-net", "485be25a27dc"]]
@@ -42,6 +43,7 @@ def test_an_already_connected_controller_is_not_an_error(monkeypatch):
     attachment = compose._attach_controller_to_substrate_network(
         docker_project="dwarf-substrate-run1",
         controller_ownership={"installation_id": "install-x", "topology_id": "dwarf-substrate-run1"},
+        controller_attach=True,
         runner=_runner(calls, returncode=1, stderr="Error response from daemon: endpoint with name 485be25a27dc already exists in network dwarf-substrate-run1-net"),
     )
     assert attachment == {"network": "dwarf-substrate-run1-net", "container": "485be25a27dc"}
@@ -51,7 +53,21 @@ def test_host_runs_without_controller_ownership_attach_nothing(monkeypatch):
     monkeypatch.setenv("HOSTNAME", "laptop")
     calls = []
     assert compose._attach_controller_to_substrate_network(
-        docker_project="dwarf-substrate-run1", controller_ownership=None, runner=_runner(calls)
+        docker_project="dwarf-substrate-run1", controller_ownership=None, controller_attach=True, runner=_runner(calls)
+    ) is None
+    assert calls == []
+
+
+def test_profile_deploys_do_not_attach_the_controller_even_though_the_controller_owns_them(monkeypatch):
+    """F90: profile deploys are controller-owned too, but the run's own attach step joins (and leaves)
+    the profile network; a deploy-time attachment made the first run's join fail."""
+    monkeypatch.setenv("HOSTNAME", "485be25a27dc")
+    calls = []
+    assert compose._attach_controller_to_substrate_network(
+        docker_project="dwarf-profile-install-x-profile-a",
+        controller_ownership={"installation_id": "install-x", "topology_id": "profile-a"},
+        controller_attach=False,
+        runner=_runner(calls),
     ) is None
     assert calls == []
 

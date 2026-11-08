@@ -1878,6 +1878,12 @@ class DockerRuntime:
             timeout=30,
             execution_id=execution_id,
         )
+        if connected.returncode != 0 and "already exists" in str(connected.stderr or ""):
+            # F90: the controller is already a member (a deploy-time join); treat as attached so
+            # the run proceeds and the detach step leaves the network as usual
+            attachment = {**attachment, "state": "attached", "preexisting": True}
+            self._write_run_attachment(attachment)
+            return attachment
         if connected.returncode != 0:
             failed = {
                 **attachment,

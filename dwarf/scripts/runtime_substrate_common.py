@@ -160,6 +160,9 @@ def normalize_substrate(substrate: dict) -> dict:
         cardano_experimental_protocols, bool
     ):
         raise ValueError("substrate.cardano_experimental_protocols must be a boolean")
+    controller_attach = substrate.get("controller_attach", False)
+    if not isinstance(controller_attach, bool):
+        raise ValueError("substrate.controller_attach must be a boolean")
     controller_ownership = substrate.get("controller_ownership")
     if controller_ownership is not None:
         if not isinstance(controller_ownership, dict) or set(controller_ownership) != {
@@ -488,6 +491,7 @@ def normalize_substrate(substrate: dict) -> dict:
         "amaru_json_traces": amaru_json_traces,
         "amaru_txsubmission_trace": amaru_txsubmission_trace,
         "controller_ownership": controller_ownership,
+        "controller_attach": controller_attach,
         "docker_host_runtime_root": docker_host_runtime_root,
         "host_strategy": host_strategy,
         "hosts": normalized_hosts,
@@ -907,6 +911,7 @@ def allocate_node_plan(
             normalized.get("amaru_txsubmission_trace")
         ),
         "controller_ownership": normalized.get("controller_ownership"),
+        "controller_attach": bool(normalized.get("controller_attach", False)),
         "docker_host_runtime_root": normalized.get("docker_host_runtime_root"),
         "host_strategy": host_strategy,
         "hosts": hosts,

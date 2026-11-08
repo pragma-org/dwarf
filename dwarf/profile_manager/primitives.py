@@ -5018,6 +5018,7 @@ class RuntimeComposeSubstrate(LoadPrimitive):
                 )
             substrate["profile_id"] = topology_id
             substrate["controller_ownership"] = expected_ownership
+            substrate["controller_attach"] = True  # run-owned: the compose script joins the controller (F66/F90)
         configured_runtime_root = self.params.get("runtime_root")
         controller_host_state = os.environ.get("DWARF_CONTROLLER_HOST_STATE_DIR")
         if configured_runtime_root:
