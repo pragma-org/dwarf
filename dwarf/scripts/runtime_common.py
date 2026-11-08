@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import hashlib
 import json
 import os
 import re
@@ -71,6 +72,34 @@ def resolve_profile_config(profile_id: str, *, legacy_root: Path | None = None) 
 
 
 PROFILE_A_CONFIG = resolve_profile_config("profile-a-haskell-peersharing-disabled")
+
+# Rust runtime tools are host-built by scripts/build_runtime_tools.py; the installed controller
+# mounts the host measurement-targets state read-only here. The legacy paths are the host-devnet
+# era's in-place cargo builds and are used only when present.
+_RUNTIME_TOOLS_RECORD = Path("/var/dwarf/controller-state/measurement-targets/runtime-tools/record.json")
+_LEGACY_RUNTIME_TOOLS = {
+    "dwarf-amaru-runtime-blockfetch": "/home/dwarf/dwarf-fw/targets/amaru/target/release/dwarf-amaru-runtime-blockfetch",
+    "dwarf-amaru-runtime-blockfetch-stale-server": "/home/dwarf/dwarf-fw/targets/amaru/target/release/dwarf-amaru-runtime-blockfetch-stale-server",
+}
+
+
+def runtime_tool(name: str) -> str:
+    """Absolute path of a host-built runtime tool, verified against its recorded sha256."""
+    record_path = Path(os.environ.get("DWARF_RUNTIME_TOOLS_RECORD") or _RUNTIME_TOOLS_RECORD)
+    if record_path.is_file():
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        entry = (record.get("tools") or {}).get(name)
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"runtime tool {name} is not in {record_path}; rebuild with scripts/build_runtime_tools.py")
+        path = (record_path.parent / str(entry["path"])).resolve()
+        digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        if digest != entry.get("sha256"):
+            raise RuntimeError(f"runtime tool {name} digest does not match {record_path}")
+        return str(path)
+    legacy = _LEGACY_RUNTIME_TOOLS.get(name)
+    if legacy and Path(legacy).exists():
+        return legacy
+    raise RuntimeError(f"runtime tool {name} is not built; run scripts/build_runtime_tools.py on the host")
 
 
 def run(args, *, timeout=60, check=True, text=True, capture_output=True, env=None):
@@ -477,13 +506,40 @@ def point_span(from_point: str, to_point: str) -> int | None:
     return max(0, to_slot - from_slot)
 
 
-def run_blockfetch(config: RuntimeConfig, peer_port: int, from_point: str, to_point: str, *, timeout_seconds=6):
+def peer_endpoint(config: RuntimeConfig, peer_port: int) -> tuple[str, int]:
+    """The address a client in the controller uses for a node published on ``peer_port``.
+
+    Container nodes publish their N2N port on the host loopback only, which the controller's own
+    network namespace cannot reach; the controller joins the run network, so it uses the node's
+    container address and container port. Host-devnet nodes keep loopback.
+    """
+    metadata_path = config.runtime_root / "runtime.json"
+    try:
+        body = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        body = {}
+    for entry in [*(body.get("haskell_nodes") or []), *(body.get("amaru_nodes") or [])]:
+        if not isinstance(entry, dict):
+            continue
+        address = str(entry.get("container_listen_address") or "")
+        try:
+            published = int(entry.get("port"))
+        except (TypeError, ValueError):
+            continue
+        if published == int(peer_port) and entry.get("container_ip") and ":" in address:
+            return str(entry["container_ip"]), int(address.rsplit(":", 1)[1])
+    return "127.0.0.1", int(peer_port)
+
+
+def run_blockfetch(config: RuntimeConfig, peer_port: int, from_point: str, to_point: str, *, timeout_seconds=6,
+                   host: str | None = None):
+    endpoint_host, endpoint_port = (host, peer_port) if host else peer_endpoint(config, peer_port)
     return run(
         [
             "timeout",
             f"{timeout_seconds}s",
-            config.blockfetch_bin,
-            f"127.0.0.1:{peer_port}",
+            runtime_tool("dwarf-amaru-runtime-blockfetch"),
+            f"{endpoint_host}:{endpoint_port}",
             config.network_magic,
             from_point,
             to_point,
@@ -494,21 +550,19 @@ def run_blockfetch(config: RuntimeConfig, peer_port: int, from_point: str, to_po
     )
 
 
-def run_chainsync_fetch(config: RuntimeConfig, peer_port: int, point: str, output_dir: Path, *, timeout_seconds=6):
+def run_chainsync_fetch(config: RuntimeConfig, peer_port: int, point: str, output_dir: Path, *, timeout_seconds=6,
+                        host: str | None = None):
+    """Fetch headers after ``point`` with the pallas chain-sync client; writes ``header.*.cbor``."""
+    endpoint_host, endpoint_port = (host, peer_port) if host else peer_endpoint(config, peer_port)
     return run(
         [
             "timeout",
             f"{timeout_seconds}s",
-            config.chainsync_bin,
-            "fetch-chain-headers",
-            "--network",
-            f"testnet_{config.network_magic}",
-            "--peer-address",
-            f"127.0.0.1:{peer_port}",
-            "--headers-dir",
-            str(output_dir),
-            "--parent",
+            runtime_tool("dwarf-amaru-runtime-chainsync"),
+            f"{endpoint_host}:{endpoint_port}",
+            config.network_magic,
             point,
+            str(output_dir),
         ],
         timeout=timeout_seconds + 5,
     )

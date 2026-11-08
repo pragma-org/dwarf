@@ -11,12 +11,10 @@ SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from runtime_common import PROFILE_A_CONFIG, derive_chainsync_point, point_slot  # noqa: E402
+from runtime_common import PROFILE_A_CONFIG, derive_chainsync_point, point_slot, runtime_tool  # noqa: E402
 from runtime_telemetry import emit_runtime_metric, emit_target_event  # noqa: E402
 
 
-SERVER_BIN = "/home/dwarf/dwarf-fw/targets/amaru/target/release/dwarf-amaru-runtime-blockfetch-stale-server"
-CLIENT_BIN = "/home/dwarf/dwarf-fw/targets/amaru/target/release/dwarf-amaru-runtime-blockfetch"
 
 
 def allocate_port() -> int:
@@ -86,7 +84,7 @@ def main() -> int:
     try:
         with server_log_path.open("wb") as server_log:
             server = subprocess.Popen(
-                [SERVER_BIN, f"127.0.0.1:{server_port}", PROFILE_A_CONFIG.network_magic],
+                [runtime_tool("dwarf-amaru-runtime-blockfetch-stale-server"), f"127.0.0.1:{server_port}", PROFILE_A_CONFIG.network_magic],
                 stdout=server_log,
                 stderr=subprocess.STDOUT,
             )
@@ -94,7 +92,7 @@ def main() -> int:
         started_at = time.monotonic()
         client = subprocess.run(
             [
-                CLIENT_BIN,
+                runtime_tool("dwarf-amaru-runtime-blockfetch"),
                 f"127.0.0.1:{server_port}",
                 PROFILE_A_CONFIG.network_magic,
                 point,

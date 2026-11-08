@@ -1699,13 +1699,14 @@ def build_runtime_cardano_lsq_extract_command(
     debug_raw_response_path: Path | None = None,
     result_json_path: Path | None = None,
 ) -> list[str]:
-    manifest_path = DWARF_ROOT / "extractors" / "cardano-debug-epoch-state-extractor" / "Cargo.toml"
-    command = [
-        "cargo",
-        "run",
-        "--manifest-path",
-        str(manifest_path),
-        "--",
+    try:  # host-built by scripts/build_runtime_tools.py; cargo run stays the source-checkout fallback
+        from scripts.runtime_common import runtime_tool
+
+        command = [runtime_tool("cardano-debug-epoch-state-extractor")]
+    except (ImportError, RuntimeError):
+        manifest_path = DWARF_ROOT / "extractors" / "cardano-debug-epoch-state-extractor" / "Cargo.toml"
+        command = ["cargo", "run", "--manifest-path", str(manifest_path), "--"]
+    command += [
         "--socket",
         str(socket_path),
         "--network-magic",

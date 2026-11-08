@@ -81,5 +81,20 @@ path = "src/bin/decode_submit_api_tx.rs"
 # shims are built elsewhere.
 amaru-kernel = { path = "../../../codebases/amaru/crates/amaru-kernel" }
 pallas-network = { path = "../../../codebases/pallas/pallas-network" }
+pallas-crypto = { path = "../../../codebases/pallas/pallas-crypto" }
 minicbor = "0.25"
 hex = "0.4"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net"] }
+
+# Runtime tools used by the profile scenarios (built on the host by build_runtime_tools.py).
+[[bin]]
+name = "dwarf-amaru-runtime-blockfetch"
+path = "src/bin/runtime_blockfetch.rs"
+
+[[bin]]
+name = "dwarf-amaru-runtime-blockfetch-stale-server"
+path = "src/bin/runtime_blockfetch_stale_server.rs"
+
+[[bin]]
+name = "dwarf-amaru-runtime-chainsync"
+path = "src/bin/runtime_chainsync.rs"
