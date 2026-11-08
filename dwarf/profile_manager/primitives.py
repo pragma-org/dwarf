@@ -5615,6 +5615,7 @@ class _RuntimeTxsubmissionProbePrimitive(LoadPrimitive):
         expect_exit = int(self.params.get("expect_exit", 0))
         output_dir.mkdir(parents=True, exist_ok=True)
         config_path = output_dir / f"{self.primitive_name}-config.json"
+        prepared_target = None
         if runtime_metadata_value:
             runtime_metadata_path = str(_resolve_output_path(handle, runtime_metadata_value))
             config_body = {
@@ -5625,6 +5626,7 @@ class _RuntimeTxsubmissionProbePrimitive(LoadPrimitive):
             config_body.update(self._build_config(output_dir, state))
         else:
             target = _resolve_client_runtime_target(handle, self.params)
+            prepared_target = target
             target_node = str(target.get("id") or "")
             target_host = str(target.get("listen_host") or "")
             target_port = int(target.get("listen_port") or 0)
@@ -5684,6 +5686,11 @@ class _RuntimeTxsubmissionProbePrimitive(LoadPrimitive):
         marks_window = measurement_runtime is not None and callable(
             getattr(measurement_runtime, "mark_phase", None)
         )
+        # F62: with evidence_capture the probe result also carries the target
+        # health and independent-peer sections the window scenario's probes read.
+        evidence = None
+        if bool(self.params.get("evidence_capture")) and prepared_target is not None:
+            evidence = _begin_probe_evidence(prepared_target, str(config_body["runtime_identity_path"]))
         if marks_window:
             measurement_runtime.mark_phase("hostile", "start")
         try:
@@ -5704,6 +5711,11 @@ class _RuntimeTxsubmissionProbePrimitive(LoadPrimitive):
         report_path = output_dir / "result.json"
         if report_path.is_file():
             report = json.loads(report_path.read_text(encoding="utf-8"))
+            if evidence is not None:
+                report = _finish_probe_evidence(evidence, report)
+                report_path.write_text(
+                    json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                )
         outcome = "ok" if proc.returncode == expect_exit else "unexpected_exit"
         handle.log(
             phase="load",
@@ -15089,6 +15101,87 @@ def _observe_protocol_target(observer: dict[str, Any]) -> dict[str, Any]:
         "tip": tip,
         "log_signals": classify_log_signals(log_text),
     }
+
+
+def _probe_evidence_observers(
+    target: dict[str, Any], runtime_identity_path: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The two observers the health and peer probes re-observe with, built from the
+    prepared runtime: the probed target container and the runtime's independent
+    honest peer (the same peer the calibration leg uses)."""
+    runtime = json.loads(Path(runtime_identity_path).read_text(encoding="utf-8"))
+    implementation = str(target.get("implementation") or "")
+    container = str(target.get("container") or "")
+    if implementation not in {"amaru", "cardano-node"} or not container:
+        raise RuntimeError("probe evidence capture needs the prepared target's implementation and container")
+    target_observer = {
+        "implementation": implementation,
+        "container": container,
+        "started_at": _utc_now_iso(),
+    }
+    network_magic = int(runtime.get("network_magic", 42))
+    if implementation == "amaru":
+        from scripts.runtime_amaru_measurement_calibration import _independent_peer
+
+        peer_id, peer_container = _independent_peer(runtime)
+        socket_path = "/state/node.socket"
+    else:
+        from scripts.runtime_cardano_measurement_calibration import _independent_peer
+
+        peer_id, peer_container, socket_path = _independent_peer(runtime, {"id": target.get("id")})
+    peer_observer = {
+        "peer_id": peer_id,
+        "container": peer_container,
+        "network_magic": network_magic,
+        "socket_path": socket_path,
+    }
+    return target_observer, peer_observer
+
+
+def _begin_probe_evidence(target: dict[str, Any], runtime_identity_path: str) -> dict[str, Any]:
+    target_observer, peer_observer = _probe_evidence_observers(target, runtime_identity_path)
+    return {
+        "target_observer": target_observer,
+        "peer_observer": peer_observer,
+        "before": _observe_protocol_target(target_observer),
+        "peer_before": _observe_protocol_peer(peer_observer),
+    }
+
+
+def _finish_probe_evidence(evidence: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    """Add the ``target_health`` and ``peer_session`` sections (the shape
+    ``runtime_protocol_decode_cases`` writes) to a probe result (F62)."""
+    peer_during = _observe_protocol_peer(evidence["peer_observer"])
+    after = _observe_protocol_target(evidence["target_observer"])
+    peer_after = _observe_protocol_peer(evidence["peer_observer"])
+    before = evidence["before"]
+    recovered = None
+    if peer_during.get("usable") is True:
+        recovered = 0.0
+    elif peer_after.get("usable") is True:
+        recovered = max(
+            0.0,
+            float(peer_after.get("observed_at_epoch_seconds") or 0)
+            - float(peer_during.get("observed_at_epoch_seconds") or 0),
+        )
+    report["target_health"] = {
+        "before": before.get("state"),
+        "after": after.get("state"),
+        "tip_before": before.get("tip"),
+        "tip_after": after.get("tip"),
+        "log_signals": after.get("log_signals") or {},
+        "checks": {},
+        "observer": evidence["target_observer"],
+    }
+    report["peer_session"] = {
+        "peer_id": evidence["peer_observer"]["peer_id"],
+        "before": evidence["peer_before"],
+        "during": peer_during,
+        "after": peer_after,
+        "recovered_within_seconds": recovered,
+        "observer": evidence["peer_observer"],
+    }
+    return report
 
 
 class RuntimeTargetHealthAndProgress(ProbePrimitive):

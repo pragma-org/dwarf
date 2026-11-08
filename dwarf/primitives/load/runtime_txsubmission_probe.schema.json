@@ -27,7 +27,8 @@
     "receive_bytes": { "type": "integer", "minimum": 1 },
     "output_dir": { "type": "string", "minLength": 1 },
     "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
-    "expect_exit": { "type": "integer", "minimum": 0 }
+    "expect_exit": { "type": "integer", "minimum": 0 },
+    "evidence_capture": { "type": "boolean" }
   },
   "additionalProperties": false
 }

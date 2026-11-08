@@ -262,11 +262,27 @@ def _parse_request_txs(payload: bytes) -> list[bytes]:
 
 def _load_runtime_node(runtime_metadata_path: Path, target_node: str) -> dict:
     body = json.loads(runtime_metadata_path.read_text(encoding="utf-8"))
-    nodes = list(body.get("haskell_nodes") or []) + list(body.get("nodes") or [])
+    nodes = list(body.get("haskell_nodes") or []) + list(body.get("amaru_nodes") or []) + list(body.get("nodes") or [])
     for node in nodes:
         if node.get("name") == target_node or node.get("id") == target_node:
             return dict(node)
     raise RuntimeError(f"runtime metadata missing target node {target_node!r}: {runtime_metadata_path}")
+
+
+def _node_endpoint(node: dict, target_host: str) -> tuple[str, int]:
+    """Where to connect for a runtime node (F63).  A controller-run node records
+    ``container_ip`` and ``container_listen_address``; the probe runs attached to
+    that topology network, where the host-published loopback port is unreachable.
+    An explicit non-loopback ``target_host`` (multi-host substrates) keeps the
+    published port; ``127.0.0.1`` is the host-era default, not a routing choice."""
+    explicit = str(target_host or "").strip()
+    if explicit and explicit not in {"127.0.0.1", "localhost"}:
+        return explicit, int(node["port"])
+    container_ip = str(node.get("container_ip") or "").strip()
+    listen = str(node.get("container_listen_address") or "")
+    if container_ip and ":" in listen:
+        return container_ip, int(listen.rsplit(":", 1)[1])
+    return (explicit or "127.0.0.1"), int(node["port"])
 
 
 def build_result_body(
@@ -355,7 +371,7 @@ def run_probe(
         runtime_metadata = json.loads(runtime_metadata_path.read_text(encoding="utf-8"))
         network_magic = int(runtime_metadata.get("network_magic", 42))
         node = _load_runtime_node(runtime_metadata_path, target_node)
-        port = int(node["port"])
+        target_host, port = _node_endpoint(node, target_host)
     else:
         port = int(target_port)
         if port <= 0 or port > 65535:
@@ -524,8 +540,10 @@ def run_probe(
     return report
 
 
-def _resolve_endpoint(runtime_metadata_path: Path | None, target_node: str, target_port: int | None) -> tuple[int, int]:
-    """(port, network magic) from the retained runtime metadata or a verified port."""
+def _resolve_endpoint(
+    runtime_metadata_path: Path | None, target_node: str, target_port: int | None, target_host: str = "127.0.0.1"
+) -> tuple[str, int, int]:
+    """(host, port, network magic) from the retained runtime metadata or a verified port."""
     network_magic = 42
     if target_port is None:
         if runtime_metadata_path is None:
@@ -533,11 +551,12 @@ def _resolve_endpoint(runtime_metadata_path: Path | None, target_node: str, targ
         runtime_metadata = json.loads(runtime_metadata_path.read_text(encoding="utf-8"))
         network_magic = int(runtime_metadata.get("network_magic", 42))
         node = _load_runtime_node(runtime_metadata_path, target_node)
-        return int(node["port"]), network_magic
+        host, port = _node_endpoint(node, target_host)
+        return host, port, network_magic
     port = int(target_port)
     if port <= 0 or port > 65535:
         raise RuntimeError("verified target port is invalid")
-    return port, network_magic
+    return target_host, port, network_magic
 
 
 def _classify_handshake_reply(payload: bytes) -> str:
@@ -560,7 +579,7 @@ def _serve_transaction(
     then read the node's next message and close. One transaction per session; the
     node's admission decision (its own trace) is the measurement. ``handshake_payload``
     lets the caller send the proposal the target is known to accept."""
-    port, network_magic = _resolve_endpoint(runtime_metadata_path, target_node, target_port)
+    target_host, port, network_magic = _resolve_endpoint(runtime_metadata_path, target_node, target_port, target_host)
     handshake_payload = handshake_payload or _handshake_propose_payload(network_magic)
     init_payload = bytes.fromhex(TXSUBMISSION_INIT_HEX)
     transcript: list[dict] = []

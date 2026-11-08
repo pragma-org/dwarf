@@ -47,7 +47,8 @@
       "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
       "response_timeout_seconds": 2,
       "timeout_seconds": 240,
-      "output_dir": "outputs/txsubmission-window"
+      "output_dir": "outputs/txsubmission-window",
+      "evidence_capture": true
     },
     {
       "primitive": "runtime_mark_hostile_window"
@@ -60,10 +61,12 @@
   "faults": [],
   "probes": [
     {
-      "primitive": "runtime_target_health_and_progress"
+      "primitive": "runtime_target_health_and_progress",
+      "report_path": "outputs/txsubmission-window/result.json"
     },
     {
-      "primitive": "runtime_peer_session_health"
+      "primitive": "runtime_peer_session_health",
+      "report_path": "outputs/txsubmission-window/result.json"
     }
   ],
   "assertions": [
