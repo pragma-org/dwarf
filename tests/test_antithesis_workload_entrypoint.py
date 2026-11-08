@@ -319,3 +319,49 @@ def test_finish_carries_the_phase_error_into_the_scenario_completed_event(tmp_pa
     assert completed['condition'] is False
     assert completed['details']['error'] == 'ValueError: requires substrate runtime metadata'
     assert completed['details']['failed_primitive'] == 'runtime_txsubmission_window_pressure'
+
+
+AMARU_BOOTSTRAPPED_LOG = 'build_ledger tip.slot=100\nintersect found highest=300.\n'
+AMARU_SYNCED_LOG = AMARU_BOOTSTRAPPED_LOG + 'tip.adopt slot=200\nmanager.peer.handshake_completed\ntip.adopt slot=300\n'
+
+
+def test_wait_ready_needs_amaru_chain_progress_from_its_mounted_log(tmp_path):
+    """Local-run parity (AT-2b): the compose gate waits until an Amaru node has
+    intersected, advanced and converged (runtime_compose_substrate._wait_for_amaru_progress);
+    the package gate must too, or the first load primitive talks to a node that
+    is still catching up."""
+    port, stop, server = _listener()
+    try:
+        sentinel = tmp_path / 'state' / '.bootstrap-complete'
+        sentinel.parent.mkdir(parents=True); sentinel.write_text('')
+        log = tmp_path / 'amaru.log'; log.write_text(AMARU_BOOTSTRAPPED_LOG)
+        nodes = [{'id': 'amaru1', 'impl': 'amaru', 'listen_address': '127.0.0.1:%d' % port, 'socket_path': None,
+                  'bootstrap_sentinel': str(sentinel), 'log_path': str(log)}]
+        clock = {'t': 0.0}
+
+        def sleep(seconds):
+            clock['t'] += seconds
+            if clock['t'] >= 15:
+                log.write_text(AMARU_SYNCED_LOG)
+        assert workload.wait_ready({'nodes': nodes}, timeout=60, now=lambda: clock['t'], sleep=sleep) == ['amaru1']
+        assert clock['t'] >= 15
+        log.write_text(AMARU_BOOTSTRAPPED_LOG)
+        clock['t'] = 0.0
+        with pytest.raises(RuntimeError, match='timed out: amaru1'):
+            workload.wait_ready({'nodes': nodes}, timeout=5, now=lambda: clock['t'], sleep=lambda s: clock.__setitem__('t', clock['t'] + s))
+    finally:
+        stop.set(); server.close()
+
+
+def test_wait_ready_stops_on_an_amaru_blocking_signal(tmp_path):
+    port, stop, server = _listener()
+    try:
+        sentinel = tmp_path / 'state' / '.bootstrap-complete'
+        sentinel.parent.mkdir(parents=True); sentinel.write_text('')
+        log = tmp_path / 'amaru.log'; log.write_text(AMARU_SYNCED_LOG + "thread 'main' panicked at src/consensus.rs:12\n")
+        nodes = [{'id': 'amaru1', 'impl': 'amaru', 'listen_address': '127.0.0.1:%d' % port, 'socket_path': None,
+                  'bootstrap_sentinel': str(sentinel), 'log_path': str(log)}]
+        with pytest.raises(RuntimeError, match='amaru1.*panic'):
+            workload.wait_ready({'nodes': nodes}, timeout=60, now=lambda: 0.0, sleep=lambda s: None)
+    finally:
+        stop.set(); server.close()

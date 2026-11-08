@@ -82,11 +82,24 @@ def _has_real_block(tip):
     return _tip_has_real_chain_progress(tip)
 
 
+def _amaru_progress(log_path):
+    """The same intersect/advance/converge reading of the Amaru log that the
+    local compose gate uses (``runtime_compose_substrate._wait_for_amaru_progress``)."""
+    from scripts.runtime_compose_substrate import _parse_amaru_runtime_progress
+    try:
+        text = Path(log_path).read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        text = ''
+    return _parse_amaru_runtime_progress(text)
+
+
 def wait_ready(runtime, timeout, *, now=time.monotonic, sleep=time.sleep, reachable=_tcp_reachable, poll=5.0, tip=None):
     """Block until every node is ready, with local-run parity: TCP on its listen
     address; a Cardano node also needs its socket and a real block over it; an
-    Amaru node also needs its bootstrap sentinel. Returns the ready ids in
-    order; raises on timeout."""
+    Amaru node also needs its bootstrap sentinel and, through its mounted log,
+    to have intersected, advanced and converged on its upstream (a blocking
+    signal such as a panic ends the probe). Returns the ready ids in order;
+    raises on timeout."""
     nodes = list(runtime.get('nodes') or [])
     deadline = now() + float(timeout)
     query = tip if tip is not None else _socket_tip(runtime)
@@ -100,6 +113,13 @@ def wait_ready(runtime, timeout, *, now=time.monotonic, sleep=time.sleep, reacha
             sentinel = node.get('bootstrap_sentinel')
             if ok and sentinel:
                 ok = Path(sentinel).exists()
+            log_path = node.get('log_path')
+            if ok and sentinel and log_path:
+                progress = _amaru_progress(log_path)
+                if progress.get('blocking_signals'):
+                    raise RuntimeError('antithesis readiness probe: ' + str(node['id']) + ' shows blocking signals: '
+                                       + ', '.join(progress['blocking_signals']))
+                ok = bool(progress.get('ready'))
             if not ok:
                 unready.append(node['id'])
         if not unready:
