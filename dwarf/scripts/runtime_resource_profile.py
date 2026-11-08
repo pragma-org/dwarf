@@ -80,8 +80,8 @@ def _is_expected_process(node: dict, comm: str, args: str) -> bool:
     return any(Path(token).name in expected_names for token in argv)
 
 
-def _scan_for_runtime_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=subprocess.run) -> int:
-    result = runner(
+def _scan_for_runtime_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=None) -> int:
+    result = (runner or subprocess.run)(
         ["ps", "-eo", "pid=,comm=,args="],
         capture_output=True,
         text=True,
@@ -123,11 +123,11 @@ def _process_name(pid: int, proc_root: Path) -> str | None:
         return None
 
 
-def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=subprocess.run) -> int | None:
+def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=None) -> int | None:
     container_name = str(node.get("container_name") or "")
     if not container_name:
         return None
-    result = runner(
+    result = (runner or subprocess.run)(
         ["docker", "inspect", container_name],
         capture_output=True,
         text=True,
@@ -141,7 +141,7 @@ def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=s
         root_pid = int(((body.get("State") or {}).get("Pid")) or 0)
     except (IndexError, ValueError, TypeError, json.JSONDecodeError):
         return None
-    top = runner(
+    top = (runner or subprocess.run)(
         ["docker", "top", container_name, "-eo", "pid,comm,args"],
         capture_output=True,
         text=True,
@@ -169,7 +169,7 @@ def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=s
     return None
 
 
-def resolve_target_pid(runtime_metadata_path: Path, target_node: str, *, proc_root: Path = Path("/proc"), runner=subprocess.run) -> int:
+def resolve_target_pid(runtime_metadata_path: Path, target_node: str, *, proc_root: Path = Path("/proc"), runner=None) -> int:
     node = _load_runtime_node(runtime_metadata_path, target_node)
     docker_pid = _resolve_docker_pid(node, proc_root=proc_root, runner=runner)
     if docker_pid is not None and _proc_exists(docker_pid, proc_root):
@@ -380,7 +380,7 @@ def collect_container_samples(
     expected_name: str,
     sample_count: int,
     sample_interval_seconds: float,
-    runner=subprocess.run,
+    runner=None,
 ) -> list[dict]:
     """Sample a containerised node through the container runtime's cgroup accounting.
 
@@ -393,7 +393,7 @@ def collect_container_samples(
         raise ValueError("sample_count must be positive")
     samples = []
     for idx in range(sample_count):
-        result = runner(
+        result = (runner or subprocess.run)(
             ["docker", "stats", "--no-stream", "--format", "{{json .}}", container_name],
             capture_output=True, text=True, check=False, timeout=30,
         )
@@ -444,7 +444,7 @@ def resolve_sampling_target(
     target_node: str,
     *,
     proc_root: Path = Path("/proc"),
-    runner=subprocess.run,
+    runner=None,
 ) -> dict:
     """Decide how a node can be sampled: ``proc`` (a visible pid) or ``docker-stats``."""
     node = _load_runtime_node(runtime_metadata_path, target_node)
@@ -465,7 +465,7 @@ def collect_samples_for_target(
     sample_count: int,
     sample_interval_seconds: float,
     proc_root: Path = Path("/proc"),
-    runner=subprocess.run,
+    runner=None,
 ) -> list[dict]:
     if target.get("mode") == "docker-stats":
         return collect_container_samples(
