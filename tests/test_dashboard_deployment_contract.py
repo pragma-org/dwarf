@@ -1869,3 +1869,19 @@ def test_dashboard_image_ships_the_pinned_antithesis_workload_package():
     dockerfile = (root / 'infrastructure/docker/dwarf-fw.Dockerfile').read_text()
     relative = binding.SOURCE.relative_to(root).as_posix()
     assert f'COPY {relative}/ /home/dwarf/dwarf-fw/{relative}/' in dockerfile
+
+
+def test_controller_image_retries_transient_support_archive_failures():
+    """The controller image fetches the sha256-pinned cardano support archive from
+    GitHub releases; on 2026-11-08 that endpoint answered 504 for an hour and every
+    deploy (and the release workflow) failed on its single attempt.  The fetch must
+    retry a bounded number of times with a backoff and still fail closed on the
+    pinned checksum."""
+    dockerfile = (ROOT / "infrastructure/docker/dwarf-controller.Dockerfile").read_text(encoding="utf-8")
+
+    assert "for attempt in range(1, 6):" in dockerfile
+    assert "support archive fetch failed (attempt" in dockerfile
+    assert "time.sleep(" in dockerfile
+    # The checksum gate and the three extracted binaries are unchanged by the retry.
+    assert "Cardano support archive checksum mismatch" in dockerfile
+    assert 'for binary in ("cardano-testnet", "cardano-cli", "cardano-node"):' in dockerfile

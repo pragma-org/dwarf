@@ -19,6 +19,8 @@ import io
 import os
 import sys
 import tarfile
+import time
+import urllib.error
 import urllib.request
 
 architecture, version, amd64_sha256, arm64_sha256 = sys.argv[1:]
@@ -27,8 +29,20 @@ if architecture not in expected_by_arch:
     raise SystemExit(f"unsupported controller architecture: {architecture}")
 archive_name = f"cardano-node-{version}-linux-{architecture}.tar.gz"
 url = f"https://github.com/IntersectMBO/cardano-node/releases/download/{version}/{archive_name}"
-with urllib.request.urlopen(url, timeout=120) as response:
-    archive = response.read()
+# GitHub release downloads answer 5xx now and then (a whole hour on 2026-11-08);
+# a bounded retry keeps one transient failure from failing the whole deploy.
+# The sha256 gate below is what proves the archive, whichever attempt fetched it.
+archive = None
+for attempt in range(1, 6):
+    try:
+        with urllib.request.urlopen(url, timeout=120) as response:
+            archive = response.read()
+        break
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        print(f"support archive fetch failed (attempt {attempt}/5): {error}", file=sys.stderr)
+        if attempt == 5:
+            raise SystemExit(f"cannot fetch the Cardano support archive after 5 attempts: {url}")
+        time.sleep(30 * attempt)
 observed_sha256 = hashlib.sha256(archive).hexdigest()
 if observed_sha256 != expected_by_arch[architecture]:
     raise SystemExit(
