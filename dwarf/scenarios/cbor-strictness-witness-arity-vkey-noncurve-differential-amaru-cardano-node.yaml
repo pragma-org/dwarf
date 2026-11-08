@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "cbor-strictness-witness-arity-vkey-noncurve-differential-amaru-cardano-node",
-  "title": "CBOR decode-strictness + witness-element-arity + vkey-non-curve-point differential \u2014 malformed-but-structured inputs across Amaru and cardano-node",
+  "title": "CBOR decode-strictness + witness-element-arity + vkey-non-curve-point differential — malformed-but-structured inputs across Amaru and cardano-node",
   "authors": [
     "dwarf"
   ],
@@ -25,20 +25,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

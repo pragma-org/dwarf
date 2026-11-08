@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "ledger-submit-value-coin-i64-overflow-crash-differential-amaru-cardano-node",
-  "title": "Ledger submit differential \u2014 output coin > i64::MAX (2^63): amaru ledger-thread PANIC (node crash/DoS, value.rs:293 lovelace_to_i64 unreachable); cardano-node cleanly rejects ValueNotConservedUTxO",
+  "title": "Ledger submit differential — output coin > i64::MAX (2^63): amaru ledger-thread PANIC (node crash/DoS, value.rs:293 lovelace_to_i64 unreachable); cardano-node cleanly rejects ValueNotConservedUTxO",
   "authors": [
     "dwarf"
   ],
@@ -27,20 +27,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

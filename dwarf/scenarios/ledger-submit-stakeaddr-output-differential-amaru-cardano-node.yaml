@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "ledger-submit-stakeaddr-output-differential-amaru-cardano-node",
-  "title": "Ledger submit differential \u2014 bare stake-address (0xe0) output in a 4-element tx: amaru accepts (202, lenient address decode); cardano-node decode-rejects the 0xe0 output (Invalid header 0b11100000) \u2014 isolated from the tx-arity finding",
+  "title": "Ledger submit differential — bare stake-address (0xe0) output in a 4-element tx: amaru accepts (202, lenient address decode); cardano-node decode-rejects the 0xe0 output (Invalid header 0b11100000) — isolated from the tx-arity finding",
   "authors": [
     "dwarf"
   ],
@@ -26,20 +26,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

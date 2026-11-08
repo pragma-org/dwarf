@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "ledger-arithmetic-exunits-sum-overflow-consensus-split-amaru-cardano-node",
-  "title": "Ledger arithmetic differential \u2014 ExUnits redeemer-sum u64 overflow (consensus-validity split): amaru is_valid-accepts a tx whose declared ExUnits sum wraps u64 below the per-tx limit while cardano-node rejects (ExUnitsTooBig)",
+  "title": "Ledger arithmetic differential — ExUnits redeemer-sum u64 overflow (consensus-validity split): amaru is_valid-accepts a tx whose declared ExUnits sum wraps u64 below the per-tx limit while cardano-node rejects (ExUnitsTooBig)",
   "authors": [
     "dwarf"
   ],
@@ -29,20 +29,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

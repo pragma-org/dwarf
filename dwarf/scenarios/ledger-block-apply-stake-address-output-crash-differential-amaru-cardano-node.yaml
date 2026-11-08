@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "ledger-block-apply-stake-address-output-crash-differential-amaru-cardano-node",
-  "title": "Ledger block-apply differential \u2014 bare stake-address output: amaru accepts the output (submit 202) and, applying a block that spends it, panics at inputs.rs:122 (HIGH DoS); cardano-node decode-rejects the output and rejects the block",
+  "title": "Ledger block-apply differential — bare stake-address output: amaru accepts the output (submit 202) and, applying a block that spends it, panics at inputs.rs:122 (HIGH DoS); cardano-node decode-rejects the output and rejects the block",
   "authors": [
     "dwarf"
   ],
@@ -28,20 +28,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

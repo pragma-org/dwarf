@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "ledger-block-apply-cert-phantom-deleg-unregistered-differential-amaru-cardano-node",
-  "title": "Ledger block-apply differential \u2014 StakeDelegation for an unregistered credential: amaru accepts (submit 202, bind_left no reg lookup) and APPLIES the block (accept-invalid-block, alive); cardano-node rejects StakeKeyNotRegisteredDELEG",
+  "title": "Ledger block-apply differential — StakeDelegation for an unregistered credential: amaru accepts (submit 202, bind_left no reg lookup) and APPLIES the block (accept-invalid-block, alive); cardano-node rejects StakeKeyNotRegisteredDELEG",
   "authors": [
     "dwarf"
   ],
@@ -27,20 +27,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "ledger-submit-plutus-case-over-builtin-pv10-differential-amaru-cardano-node",
-  "title": "Ledger submit differential \u2014 Plutus CEK case over a built-in value at pv10: amaru accepts (missing PV gate); cardano-node rejects phase-2 (CekError) \u2014 consensus is_valid divergence (refpair :3214/:8114)",
+  "title": "Ledger submit differential — Plutus CEK case over a built-in value at pv10: amaru accepts (missing PV gate); cardano-node rejects phase-2 (CekError) — consensus is_valid divergence (refpair :3214/:8114)",
   "authors": [
     "dwarf"
   ],
@@ -29,20 +29,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

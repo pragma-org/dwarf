@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "ledger-arithmetic-multiasset-quantity-overflow-conformance-amaru-cardano-node",
-  "title": "Ledger arithmetic (clean-negative) \u2014 amaru holds native-asset quantities at/over u64::MAX in a wide integer and rejects a non-conserving overflow tx at phase-one value-conservation while staying alive (no DoS)",
+  "title": "Ledger arithmetic (clean-negative) — amaru holds native-asset quantities at/over u64::MAX in a wide integer and rejects a non-conserving overflow tx at phase-one value-conservation while staying alive (no DoS)",
   "authors": [
     "dwarf"
   ],
@@ -30,20 +30,22 @@
   },
   "runtime": "devnet",
   "substrate": {
-    "compose_mode": "host",
+    "compose_mode": "docker",
     "network": "preview",
     "nodes": [
       {
         "id": "node1",
         "impl": "amaru",
-        "version": "v10.11.20260925",
-        "role": "submitter"
+        "version": "10.11.20260925",
+        "role": "submitter",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "11.1.2",
-        "role": "observer"
+        "role": "observer",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {

@@ -42,7 +42,7 @@
         "impl": "cardano-node",
         "version": "resolved-plan",
         "identity_binding": "resolved-plan",
-        "role": "producer",
+        "role": "honest",
         "supporting": true
       }
     ],

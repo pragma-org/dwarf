@@ -25,13 +25,15 @@
         "id": "node1",
         "impl": "cardano-node",
         "version": "10.7.1",
-        "role": "honest"
+        "role": "honest",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "10.7.1",
-        "role": "honest"
+        "role": "honest",
+        "identity_binding": "resolved-plan"
       }
     ],
     "topology": {
@@ -45,7 +47,8 @@
           "to": "node1"
         }
       ]
-    }
+    },
+    "compose_mode": "docker"
   },
   "setup": [
     {

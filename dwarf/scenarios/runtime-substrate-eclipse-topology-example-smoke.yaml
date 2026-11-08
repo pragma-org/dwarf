@@ -24,33 +24,39 @@
         "id": "node1",
         "impl": "cardano-node",
         "version": "10.7.1",
-        "role": "honest"
+        "role": "honest",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
         "version": "10.7.1",
-        "role": "honest"
+        "role": "honest",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node3",
         "impl": "cardano-node",
         "version": "10.7.1",
-        "role": "honest"
+        "role": "honest",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node4",
         "impl": "cardano-node",
         "version": "10.7.1",
-        "role": "sybil"
+        "role": "sybil",
+        "identity_binding": "resolved-plan"
       },
       {
         "id": "node5",
         "impl": "cardano-node",
         "version": "10.7.1",
-        "role": "sybil"
+        "role": "sybil",
+        "identity_binding": "resolved-plan"
       }
-    ]
+    ],
+    "compose_mode": "docker"
   },
   "setup": [
     {
