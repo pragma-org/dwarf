@@ -36,6 +36,11 @@ docker image inspect "${DWARF_CONTROLLER_IMAGE}" >/dev/null || {
 ensure_golden_images
 
 echo "Starting local controller and dashboard (${DWARF_CONTAINER_NAME})"
+# The ledger differential primitives inspect the local-tx-submission helper image locally before
+# running it (F89c); make the pinned helper present, but never let a registry hiccup block the deploy.
+if [[ -n "${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE:-}" ]] && ! docker image inspect "${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE}" >/dev/null 2>&1; then
+  docker pull "${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE}" || echo "warning: could not pull ${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE}; ledger differential scenarios will report it" >&2
+fi
 compose up -d --no-build --force-recreate dwarf-controller dwarf-fw
 
 echo "Waiting for dashboard readiness"

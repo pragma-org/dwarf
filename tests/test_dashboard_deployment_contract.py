@@ -1929,3 +1929,13 @@ def test_installer_defaults_the_localtxsubmission_helper_image_to_the_pinned_dig
     assert "printf 'DWARF_LOCALTXSUBMISSION_HELPER_IMAGE=%s\\n' \"${localtxsubmission_helper_image}\"" in installer
     contract = (ROOT / "delivery/tests/test_installer_contract.sh").read_text(encoding="utf-8")
     assert "DWARF_LOCALTXSUBMISSION_HELPER_IMAGE=ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:" in contract
+
+
+def test_deploy_pre_pulls_the_localtxsubmission_helper_before_compose_up():
+    """F89c: the ledger differential primitives inspect the helper image locally before running it,
+    so a deploy that defaults the reference must also make the image present."""
+    deploy = (ROOT / "delivery/scripts/deploy.sh").read_text(encoding="utf-8")
+    pull = deploy.index('docker pull "${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE}"')
+    up = deploy.index("compose up -d --no-build --force-recreate dwarf-controller dwarf-fw")
+    assert pull < up
+    assert 'docker image inspect "${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE}"' in deploy
