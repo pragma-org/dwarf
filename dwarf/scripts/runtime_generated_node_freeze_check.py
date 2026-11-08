@@ -92,6 +92,31 @@ def _container_port(node: dict) -> int | None:
         return None
 
 
+def _docker_paused(container: str) -> bool:
+    result = subprocess.run(
+        ["docker", "inspect", "-f", "{{.State.Paused}}", container], text=True, capture_output=True, check=False, timeout=10
+    )
+    return result.returncode == 0 and (result.stdout or "").strip().lower() == "true"
+
+
+def _is_frozen(node: dict, process_state: str) -> bool:
+    """A host node is frozen by SIGSTOP (process state T); a container node by the runtime's
+    freezer (``docker pause``), which leaves the task state as sleeping, so ask the runtime."""
+    container = str(node.get("container_name") or "")
+    if container:
+        return _docker_paused(container)
+    return "T" in process_state
+
+
+def _node_endpoint(node: dict) -> tuple[str, int]:
+    """Probe a container node at its container endpoint; the published loopback port is the
+    controller's own loopback inside the controller."""
+    address = str(node.get("container_listen_address") or "")
+    if node.get("container_ip") and ":" in address:
+        return str(node["container_ip"]), int(address.rsplit(":", 1)[1])
+    return "127.0.0.1", int(node["port"])
+
+
 def _resolve_node_pid(node: dict) -> int:
     docker_pid = _resolve_docker_pid(node)
     if docker_pid is not None:
@@ -204,7 +229,7 @@ def run_node_freeze_check(*, runtime_root: Path, blocked_node: str, healthy_node
     for name, node in selected.items():
         pid = _resolve_node_pid(node)
         process_state = _process_state(pid)
-        listener_ok = _listener_ok("127.0.0.1", int(node["port"]))
+        listener_ok = _listener_ok(*_node_endpoint(node))
         log_delta_bytes = _log_size_bytes(Path(node["log_path"])) - starts[name]
         role = "blocked" if name == blocked_node else "healthy"
         _emit_probe(
@@ -216,11 +241,11 @@ def run_node_freeze_check(*, runtime_root: Path, blocked_node: str, healthy_node
             role=role,
         )
         if name == blocked_node:
-            if "T" not in process_state:
-                raise RuntimeError(f"expected blocked node {name} pid {pid} to be stopped, saw {process_state!r}")
+            if not _is_frozen(node, process_state):
+                raise RuntimeError(f"expected blocked node {name} pid {pid} to be frozen, saw {process_state!r}")
             blocked_stopped = True
         else:
-            if "T" in process_state:
+            if _is_frozen(node, process_state):
                 raise RuntimeError(f"expected healthy node {name} pid {pid} to remain runnable, saw {process_state!r}")
             if not listener_ok:
                 raise RuntimeError(f"expected healthy node {name} listener to remain reachable on port {node['port']}")
@@ -268,7 +293,7 @@ def run_node_recovery_check(*, runtime_root: Path, recovered_node: str, healthy_
     for name, node in selected.items():
         pid = _resolve_node_pid(node)
         process_state = _process_state(pid)
-        listener_ok = _listener_ok("127.0.0.1", int(node["port"]))
+        listener_ok = _listener_ok(*_node_endpoint(node))
         log_delta_bytes = _log_size_bytes(Path(node["log_path"])) - starts[name]
         role = "recovered" if name == recovered_node else "healthy"
         _emit_probe(
@@ -280,13 +305,13 @@ def run_node_recovery_check(*, runtime_root: Path, recovered_node: str, healthy_
             role=role,
         )
         if name == recovered_node:
-            if "T" in process_state:
+            if _is_frozen(node, process_state):
                 raise RuntimeError(f"expected recovered node {name} pid {pid} to be runnable, saw {process_state!r}")
             if not listener_ok:
-                raise RuntimeError(f"expected recovered node {name} listener to be reachable on port {node['port']}")
+                raise RuntimeError(f"expected recovered node {name} listener to be reachable at {_node_endpoint(node)}")
             recovered_ok = True
         else:
-            if "T" in process_state:
+            if _is_frozen(node, process_state):
                 raise RuntimeError(f"expected healthy node {name} pid {pid} to remain runnable, saw {process_state!r}")
             if not listener_ok:
                 raise RuntimeError(f"expected healthy node {name} listener to remain reachable on port {node['port']}")

@@ -71,3 +71,24 @@ def test_freeze_check_falls_back_to_the_container_port_in_the_process_table(monk
     monkeypatch.setattr(freeze_check, "_ps", lambda *a: _R())
     node = {"id": "node1", "container_name": "dwarf-x-node1-1", "port": 37971, "container_listen_address": "node1:3001"}
     assert freeze_check._resolve_node_pid(node) == 5151
+
+
+# --- F92: the generated-node checks judge a paused container and probe its container endpoint ---
+
+def test_freeze_check_treats_a_paused_container_as_frozen(monkeypatch):
+    monkeypatch.setattr(freeze_check, "_docker_paused", lambda container: True)
+    node = {"id": "node2", "container_name": "dwarf-x-node2-1"}
+    assert freeze_check._is_frozen(node, "SLl") is True
+    monkeypatch.setattr(freeze_check, "_docker_paused", lambda container: False)
+    assert freeze_check._is_frozen(node, "SLl") is False
+
+
+def test_freeze_check_keeps_the_stopped_state_rule_for_host_nodes():
+    assert freeze_check._is_frozen({"id": "node2"}, "T (stopped)") is True
+    assert freeze_check._is_frozen({"id": "node2"}, "SLl") is False
+
+
+def test_freeze_check_probes_the_container_endpoint_when_present():
+    node = {"id": "node2", "port": 34302, "container_ip": "10.192.8.3", "container_listen_address": "node2:3001"}
+    assert freeze_check._node_endpoint(node) == ("10.192.8.3", 3001)
+    assert freeze_check._node_endpoint({"id": "node2", "port": 34302}) == ("127.0.0.1", 34302)

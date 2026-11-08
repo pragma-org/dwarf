@@ -619,3 +619,22 @@ def test_measurement_target_transfer_allows_explicit_legacy_conformance_export_w
         f"--registry-root {registry} --package-root {ROOT / 'dwarf'}"
     )
     assert not (runtime / "state" / "installation-id").exists()
+
+
+def test_common_script_defaults_the_run_artifact_url_and_helper_image(tmp_path):
+    """F88/F89 on the source-install path: the compose variables the controller needs for governance
+    anchors and the local-tx-submission helper default from the dashboard address and the pinned
+    helper digest, and an exported override wins."""
+    import os, subprocess
+    env = {k: v for k, v in os.environ.items() if not k.startswith("DWARF_")}
+    env["PATH"] = os.environ.get("PATH", "")
+    script = f'set -euo pipefail; source "{ROOT / "delivery/scripts/common.sh"}"; echo "$DWARF_RUN_ARTIFACT_BASE_URL"; echo "$DWARF_LOCALTXSUBMISSION_HELPER_IMAGE"'
+    out = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    url, helper = out.stdout.strip().splitlines()[-2:]
+    assert url == "http://127.0.0.1:8787"
+    assert helper.startswith("ghcr.io/j-gainsec/dwarf-localtx-submit-raw@sha256:")
+    env2 = dict(env, DWARF_DASHBOARD_BIND="192.168.30.16", DWARF_LOCALTXSUBMISSION_HELPER_IMAGE="ghcr.io/x/y@sha256:" + "0" * 64)
+    out2 = subprocess.run(["bash", "-c", script], env=env2, capture_output=True, text=True)
+    url2, helper2 = out2.stdout.strip().splitlines()[-2:]
+    assert url2 == "http://192.168.30.16:8787" and helper2.endswith("0" * 64)
