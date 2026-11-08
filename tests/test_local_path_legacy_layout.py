@@ -365,3 +365,26 @@ def test_health_waiter_keeps_the_loopback_probe_for_host_nodes(monkeypatch):
     node = {"id": "node1", "impl": "cardano-node", "listen_address": "127.0.0.1:3101", "health_probe": "port-only"}
     statuses = common.wait_for_nodes_healthy([node], timeout_seconds=1.0)
     assert statuses[0]["healthy"] is True and statuses[0]["probed_endpoint"] == "127.0.0.1:3101"
+
+
+# --- F87: a byzantine proxy launched inside the controller binds the controller's own address --
+
+def _inspect_json(containers):
+    return json.dumps([{"IPAM": {"Config": [{"Subnet": "10.192.9.0/24", "Gateway": "10.192.9.1"}]}, "Containers": containers}])
+
+
+def test_proxy_bind_address_is_the_controllers_own_address_when_attached(monkeypatch):
+    from scripts import runtime_chainsync_blockfetch_fault as fault
+    monkeypatch.setenv("HOSTNAME", "0d0d33e56efe")
+    containers = {"0d0d33e56efe7a1b2c3d": {"Name": "dwarf-controller", "IPv4Address": "10.192.9.11/24"},
+                  "aaaa": {"Name": "dwarf-substrate-x-node1-1", "IPv4Address": "10.192.9.2/24"}}
+    monkeypatch.setattr(fault, "run_command", lambda cmd, **kw: SimpleNamespace(returncode=0, stdout=_inspect_json(containers), stderr=""))
+    assert fault._proxy_bind_address("dwarf-substrate-x-net") == "10.192.9.11"
+
+
+def test_proxy_bind_address_falls_back_to_the_gateway_on_the_host(monkeypatch):
+    from scripts import runtime_chainsync_blockfetch_fault as fault
+    monkeypatch.setenv("HOSTNAME", "some-host")
+    containers = {"aaaa": {"Name": "dwarf-substrate-x-node1-1", "IPv4Address": "10.192.9.2/24"}}
+    monkeypatch.setattr(fault, "run_command", lambda cmd, **kw: SimpleNamespace(returncode=0, stdout=_inspect_json(containers), stderr=""))
+    assert fault._proxy_bind_address("dwarf-substrate-x-net") == "10.192.9.1"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -130,6 +131,32 @@ def _docker_network_gateway(network_name: str) -> str:
     raise RuntimeError(f"docker network {network_name} did not report a gateway address")
 
 
+def _proxy_bind_address(network_name: str) -> str:
+    """Address the byzantine proxy binds and advertises on the substrate network.
+
+    On the host the proxy listens on the Docker bridge gateway, which the containers reach.
+    Inside the controller (attached to the network, F66) the gateway is not ours to bind: the
+    controller's own address on that network is, and the nodes reach it directly.
+    """
+    inspect = run_command(["docker", "network", "inspect", network_name])
+    if inspect.returncode != 0:
+        raise RuntimeError(f"docker network inspect failed for {network_name}: {inspect.stderr or inspect.stdout}")
+    body = json.loads(inspect.stdout)
+    network = (body[0] if body else {}) or {}
+    own_id = str(os.environ.get("HOSTNAME") or "").strip()
+    if own_id:
+        for container_id, record in (network.get("Containers") or {}).items():
+            if str(container_id).startswith(own_id) or own_id.startswith(str(container_id)[:12]):
+                address = str((record or {}).get("IPv4Address") or "").split("/", 1)[0].strip()
+                if address:
+                    return address
+    for config in (network.get("IPAM") or {}).get("Config") or []:
+        gateway = str((config or {}).get("Gateway") or "").strip()
+        if gateway:
+            return gateway
+    raise RuntimeError(f"docker network {network_name} did not report a gateway address")
+
+
 def resolve_fault_routing(
     *,
     metadata: dict,
@@ -142,7 +169,7 @@ def resolve_fault_routing(
     original_peer_addresses = list(target_node.get("peer_addresses") or [])
     if compose_mode == "docker":
         network_name = str(target_node.get("container_network") or f"{metadata['compose_project']}-net")
-        gateway = _docker_network_gateway(network_name)
+        gateway = _proxy_bind_address(network_name)
         container_peer_addresses = list(target_node.get("container_peer_addresses") or [])
         if upstream_node_id:
             upstream_node = _find_node(metadata, upstream_node_id)
