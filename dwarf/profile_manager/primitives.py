@@ -211,12 +211,49 @@ class TargetManifest:
     invariants: List[str]
 
 
+_LEGACY_REPO_DIRNAME = "dwarf-fw"
+_LEGACY_PROFILES_DIRNAME = "cardano-profiles"
+
+
+def _resolve_legacy_host_layout_path(candidate: Path):
+    """Map a path authored for the legacy host layout onto the installed layout.
+
+    Scenarios written for the host devnet era name ``~/dwarf-fw/scripts/<helper>`` (the
+    repository checkout), ``~/dwarf-fw/runs`` (the runs root) and
+    ``~/cardano-profiles/<profile>/...`` (a profile runtime root). Inside the controller the
+    scripts live under ``DWARF_ROOT/scripts``, runs under the storage runs root and profile
+    runtimes under ``profiles.runtime_root``. Returns None when the path is not a legacy one.
+    """
+    parts = candidate.parts
+    if _LEGACY_REPO_DIRNAME in parts:
+        suffix = parts[parts.index(_LEGACY_REPO_DIRNAME) + 1:]
+        if not suffix:
+            return DWARF_ROOT.parent
+        if suffix[0] == "scripts":
+            return DWARF_ROOT.joinpath("scripts", *suffix[1:])
+        if suffix[0] == "runs":
+            return storage_roots().runs.joinpath(*suffix[1:])
+        if suffix[0] == "dwarf":
+            return DWARF_ROOT.joinpath(*suffix[1:])
+        return DWARF_ROOT.parent.joinpath(*suffix)
+    if _LEGACY_PROFILES_DIRNAME in parts:
+        index = parts.index(_LEGACY_PROFILES_DIRNAME)
+        if index + 1 < len(parts):
+            from profile_manager.profiles import runtime_root as _profile_runtime_root
+
+            return _profile_runtime_root(parts[index + 1]).joinpath(*parts[index + 2:])
+    return None
+
+
 def _resolve_runtime_path(path):
     """Resolve paths authored from either the ada2 root or the Dwarf root."""
     candidate = Path(os.path.expanduser(os.path.expandvars(str(path))))
     if candidate.is_absolute():
         if candidate.exists():
             return candidate
+        legacy = _resolve_legacy_host_layout_path(candidate)
+        if legacy is not None:
+            return legacy
         dwarf_marker = ("dwarf",)
         if dwarf_marker[0] in candidate.parts:
             marker_index = candidate.parts.index(dwarf_marker[0])
@@ -225,6 +262,9 @@ def _resolve_runtime_path(path):
         return candidate
     if candidate.exists():
         return candidate
+    legacy = _resolve_legacy_host_layout_path(candidate)
+    if legacy is not None:
+        return legacy
     if candidate.parts and candidate.parts[0] == "dwarf":
         return DWARF_ROOT.joinpath(*candidate.parts[1:])
     return candidate
@@ -264,9 +304,15 @@ def _build_dwarf_telemetry_env(handle):
     metrics_dir = run_dir / "metrics"
     runtime_metrics_dir = metrics_dir / "runtime"
     target_event_log = events_dir / "target-hooks.ndjson"
+    scripts_dir = DWARF_ROOT / "scripts"
     env["PYTHONPATH"] = os.pathsep.join(
-        value for value in (str(DWARF_ROOT), env.get("PYTHONPATH")) if value
+        value for value in (str(DWARF_ROOT), str(scripts_dir), env.get("PYTHONPATH")) if value
     )
+    env["DWARF_SCRIPTS_DIR"] = str(scripts_dir)
+    prepared = getattr(handle, "_prepared_runtime_metadata_path", None)
+    if prepared:
+        env["DWARF_RUNTIME_METADATA_PATH"] = str(prepared)
+        env["DWARF_PROFILE_RUNTIME_ROOT"] = str(Path(str(prepared)).parent)
     env.update({
         "ADA2_DWARF_RUN_DIR": str(run_dir),
         "ADA2_DWARF_EVENTS_DIR": str(events_dir),
@@ -7172,7 +7218,7 @@ def _resolve_runtime_metadata_path(handle, params: dict[str, Any], *, primitive:
         candidates.append(Path(str(prepared)))
     declared = params.get("runtime_metadata_path")
     if declared:
-        candidates.append(Path(str(declared)).expanduser())
+        candidates.append(_resolve_runtime_path(declared))
     profile_id = getattr(handle, "_profile_id", None)
     if profile_id:
         from profile_manager.profiles import runtime_root
@@ -8149,7 +8195,7 @@ class ShimResponderStaleBlockfetch(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 30))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8252,7 +8298,7 @@ class RuntimeClientBlockfetchBurst(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8357,7 +8403,7 @@ class RuntimeClientChainsyncBurst(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8462,7 +8508,7 @@ class RuntimeClientChainsyncMultiPeer(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8567,7 +8613,7 @@ class RuntimeClientBlockfetchMultiPeer(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8672,7 +8718,7 @@ class RuntimeProfileCopiedStateDivergence(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 420))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8777,7 +8823,7 @@ class RuntimeProfileCopiedStateChainsyncDivergence(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 420))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8882,7 +8928,7 @@ class RuntimeBlockfetchDropTimeout(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -8987,7 +9033,7 @@ class RuntimeBlockfetchDropIsolatedPeer(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -9092,7 +9138,7 @@ class RuntimeBlockfetchDelaySuccess(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -9197,7 +9243,7 @@ class RuntimeBlockfetchDelayTimeout(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -9302,7 +9348,7 @@ class RuntimeObservabilityLogBaseline(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -9407,7 +9453,7 @@ class RuntimeObservabilityTraceSettingsBaseline(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -9512,11 +9558,11 @@ class RuntimeAmaruPreviewProof(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runtime_root = str(self.params.get("runtime_root", "/opt/dwarf/cardano-profiles/profile-d-amaru-preview-proof"))
+        runtime_root = str(_resolve_runtime_path(self.params.get("runtime_root", "/opt/dwarf/cardano-profiles/profile-d-amaru-preview-proof")))
         sample_seconds = int(self.params.get("sample_seconds", 20))
         mode = "proof"
 
@@ -9623,9 +9669,9 @@ class RuntimeGeneratedNodeFreezeCheck(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
-        runtime_root = str(self.params["runtime_root"])
+        runtime_root = str(_resolve_runtime_path(self.params["runtime_root"]))
         blocked_node = str(self.params["blocked_node"])
         healthy_nodes = [str(node) for node in self.params["healthy_nodes"]]
         sample_seconds = float(self.params.get("sample_seconds", 2.0))
@@ -9752,9 +9798,9 @@ class RuntimeGeneratedNodeRecoveryCheck(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
-        runtime_root = str(self.params["runtime_root"])
+        runtime_root = str(_resolve_runtime_path(self.params["runtime_root"]))
         recovered_node = str(self.params["recovered_node"])
         healthy_nodes = [str(node) for node in self.params["healthy_nodes"]]
         required_phase_id = str(self.params["required_phase_id"])
@@ -9886,9 +9932,9 @@ class RuntimeGeneratedNodePortDropCheck(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
-        runtime_root = str(self.params["runtime_root"])
+        runtime_root = str(_resolve_runtime_path(self.params["runtime_root"]))
         blocked_node = str(self.params["blocked_node"])
         healthy_nodes = [str(node) for node in self.params["healthy_nodes"]]
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
@@ -10033,7 +10079,7 @@ class RuntimePcapCapture(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -10201,7 +10247,7 @@ class RuntimeResourceProfile(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -10355,7 +10401,7 @@ class RuntimeSyscallTrace(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -10526,7 +10572,7 @@ class RuntimeConnectionState(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -10700,7 +10746,7 @@ class RuntimeHaskellGcCapture(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -10863,7 +10909,7 @@ class RuntimeBundlePromote(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -11025,7 +11071,7 @@ class RuntimeBundleDedupe(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -11172,7 +11218,7 @@ class RuntimeBundleTriage(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -11344,7 +11390,7 @@ class RuntimeBundleSign(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -11491,7 +11537,7 @@ class RuntimeBundleChain(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -11663,7 +11709,7 @@ class RuntimeBundleReplay(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -11827,7 +11873,7 @@ class RuntimeBundleDiff(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -11990,7 +12036,7 @@ class RuntimeBundleChainVerify(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -12146,7 +12192,7 @@ class RuntimeBundleTag(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -12288,7 +12334,7 @@ class RuntimeForensicSnapshot(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -12431,7 +12477,7 @@ class RuntimeBundleSummaryCompose(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 180))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -12707,7 +12753,7 @@ class _RuntimeStaticAnalysisBase(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -12857,7 +12903,7 @@ class RuntimeBundleExportSarif(LoadPrimitive):
     def run(self, handle, rng):
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -13015,7 +13061,7 @@ class RuntimeBundleExport(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -13139,7 +13185,7 @@ class RuntimePreviewParityBaseline(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         sample_seconds = int(self.params.get("sample_seconds", 20))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
@@ -13265,7 +13311,7 @@ class RuntimePreviewUpstreamDrop(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         fault_seconds = int(self.params.get("fault_seconds", 15))
         recovery_seconds = int(self.params.get("recovery_seconds", 20))
@@ -13400,7 +13446,7 @@ class RuntimePreviewUpstreamReset(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         fault_seconds = int(self.params.get("fault_seconds", 15))
         recovery_seconds = int(self.params.get("recovery_seconds", 20))
@@ -13535,7 +13581,7 @@ class RuntimePreviewUpstreamDelay(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         fault_seconds = int(self.params.get("fault_seconds", 15))
         recovery_seconds = int(self.params.get("recovery_seconds", 20))
@@ -13682,7 +13728,7 @@ class RuntimePreviewUpstreamLoss(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         fault_seconds = int(self.params.get("fault_seconds", 15))
         recovery_seconds = int(self.params.get("recovery_seconds", 20))
@@ -13828,9 +13874,9 @@ class RuntimeLiveImplementationBaseline(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
-        runtime_root = str(self.params["runtime_root"])
+        runtime_root = str(_resolve_runtime_path(self.params["runtime_root"]))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
         mode = "baseline"
@@ -14038,7 +14084,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
             if validated_seed is not None:
                 seed_argument = str(int(str(validated_seed), 0))
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         profile_id = self.params.get("profile_id")
         runtime_root_value = self.params.get("runtime_root")
@@ -14052,7 +14098,7 @@ class RuntimeAmaruMeasurementCalibration(LoadPrimitive):
 
             runtime_root = str(profile_runtime_root(str(profile_id)))
         else:
-            runtime_root = str(runtime_root_value)
+            runtime_root = str(_resolve_runtime_path(runtime_root_value))
         attempts = int(self.params.get("attempts", 40))
         case_set = str(
             self.params.get("case_set", "unsupported-version-only-v1")
@@ -15453,7 +15499,7 @@ class RuntimeProtocolDecodeCases(LoadPrimitive):
 
             runtime_root = profile_runtime_root(str(profile_id))
         else:
-            runtime_root = Path(str(runtime_root_value))
+            runtime_root = _resolve_runtime_path(runtime_root_value)
         attempts_per_case = int(self.params.get("attempts_per_case", 100))
         if attempts_per_case <= 0:
             raise ValueError("attempts_per_case must be positive")
@@ -15473,7 +15519,7 @@ class RuntimeProtocolDecodeCases(LoadPrimitive):
         helper = DWARF_ROOT / "scripts" / self._HELPERS[implementation]
         command = [
             str(self.params.get("python_bin", "python3")),
-            str(self.params.get("helper_script", helper)),
+            str(_resolve_runtime_path(self.params.get("helper_script", helper))),
             "leg",
             "--runtime-root",
             str(runtime_root),
@@ -17304,7 +17350,7 @@ class RuntimePartitionRejoin(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 240))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -17406,7 +17452,7 @@ class RuntimeProfileRestartRecovery(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -17511,7 +17557,7 @@ class RuntimeProfileRestartPostrecoveryBlockfetch(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 420))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -17616,7 +17662,7 @@ class RuntimeProfileCopiedStateRecovery(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 420))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -17721,7 +17767,7 @@ class RuntimeProfileCopiedStatePostremediationBlockfetch(LoadPrimitive):
         import os
         import subprocess
 
-        helper_script = str(self.params.get("helper_script", self._DEFAULT_HELPER))
+        helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 540))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
@@ -23710,7 +23756,7 @@ class FaultLocalPortDrop(FaultPrimitive):
             "fault_local_port_drop requires target_port, target_port_file, or runtime_metadata_path + target_node"
         )
 
-    def _rules(self):
+    def _rules(self, handle=None):
         import shlex as _shlex
         host = self.params.get("host", "127.0.0.1")
         protocol = self.params.get("protocol", "tcp")
@@ -23730,7 +23776,7 @@ class FaultLocalPortDrop(FaultPrimitive):
 
     def apply(self, handle):
         executor = _resolve_local_executor(self.params)
-        port, host, protocol, rules = self._rules()
+        port, host, protocol, rules = self._rules(handle)
         applied = []
         for chain, spec in rules:
             cmd = f"sudo iptables -w -I {chain} {spec}"
@@ -23933,7 +23979,7 @@ class FaultNodeFreeze(FaultPrimitive):
                 return int(pid_text)
         raise RuntimeError(f"fault_node_freeze could not resolve runtime pid for node {node.get('name')!r}")
 
-    def _resolve_target_pid(self):
+    def _resolve_target_pid(self, handle=None):
         _metadata_path, _target_node, node = self._runtime_node(handle)
         pid_file = node.get("pid_file")
         if isinstance(pid_file, str) and pid_file:
@@ -23983,7 +24029,7 @@ class FaultNodeFreeze(FaultPrimitive):
     def apply(self, handle):
         executor = _resolve_local_executor(self.params)
         metadata_path, target_node, node = self._runtime_node(handle)
-        pid = self._resolve_target_pid()
+        pid = self._resolve_target_pid(handle)
         result = executor(f"sudo kill -STOP {pid}", timeout=10, dry_run=False)
         if result.returncode != 0:
             raise RuntimeError(f"fault_node_freeze apply failed for pid {pid} (exit {result.returncode})")

@@ -61,6 +61,11 @@ Public catalog impact: 110 scenario files change two or three fields each; the e
 - Order: `0-f53-affected` → profile-bound batches (substrates persist; each profile deployed once) → library → single-node → self-composing cardano → self-composing Amaru.
 - Ledger: `campaign-ledger.jsonl` (batch, scenario, profile, gates, prepare stages, launch id, exit code, run id, verdict, seconds); `campaign-status.json` summary; `campaign.log`.
 
+## Declared gaps (not run)
+
+- 8 opcert/block-range primitives: every covering scenario is frozen to September images (see Frozen swap).
+- `runtime-substrate-cardano-node-mixed-minor-txsubmission-window-pressure-example-smoke`, `runtime-substrate-cardano-node-mixed-minor-byzantine-flagship-example-smoke`: two cardano releases in one substrate; the resolver binds one release per implementation (F57/F72). Campaign is 117 runs.
+
 ## Evidence retention and cleanup (user, 2026-11-08: "make sure the evidence/output is saved including the taps … and remove the docker containers or volumes when the scenario is validated end to end")
 
 - Every run keeps its full directory under the runs root (log, assertions, probes, `measurements/` with every tap's collector result, `report.json`, `compact-table.json`, outputs) and its run-ledger entry. The campaign additionally pulls the **signed portable bundle** of every finished run (`GET /runs/<run_id>/bundle`, produced by `runtime_bundle_export` with signature verification) and keeps a copy under `/Volumes/DevStorage/dwarf-work/bundles/campaign/`; the ledger row records the bundle path and size. Done by hand for today's five finished runs (shim pass, e2e-stock pass, profile-o workload pass 5/5, the two failing proofs) → `/Volumes/DevStorage/dwarf-work/bundles/runs/`.

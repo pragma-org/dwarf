@@ -238,6 +238,64 @@ def _pin_cardano_experimental_protocols(
     }
 
 
+def _apply_cardano_config_policies(*, config_path: Path, nodes: list[dict], explicit=None) -> dict:
+    """Apply every version-derived cardano-node configuration policy to a generated config.
+
+    Runs on every compose branch that writes a cardano ``configuration.yaml`` (custom testnet,
+    public network, multihost), so a copied public-network config gets the same treatment as a
+    generated one: ``TurnOnLogMetrics`` for releases that still require it and the
+    ``ExperimentalProtocolsEnabled`` pin from the shared interop policy.
+    """
+    compatibility = _ensure_cardano_testnet_config_compatibility(config_path=config_path, nodes=nodes)
+    experimental = _pin_cardano_experimental_protocols(config_path=config_path, nodes=nodes, explicit=explicit)
+    return {"compatibility": compatibility, "experimental_protocols": experimental}
+
+
+def _verify_running_docker_nodes(*, plan: dict, docker_project: str) -> list[tuple]:
+    """Inspect every node after ``up`` and check image identity and running version."""
+    verified = []
+    for node in plan["nodes"]:
+        container = _inspect_docker_node(compose_project=docker_project, node=node)
+        artifact_identity = verify_running_container_artifact(container["container_image_id"], node)
+        version_identity = verify_running_node_version(container["container_name"], node)
+        if not artifact_identity["satisfied"]:
+            raise RuntimeError(
+                f"running image identity mismatch for {node['id']}: "
+                f"expected {artifact_identity['expected_image_id']}, got {artifact_identity['container_image_id']}"
+            )
+        if not version_identity["satisfied"]:
+            raise RuntimeError(
+                f"running version mismatch for {node['id']}: "
+                f"requested {version_identity['requested_version']}, reported {version_identity['reported_version']}"
+            )
+        verified.append((node, container, artifact_identity, version_identity))
+    return verified
+
+
+def _cleanup_failed_substrate(*, docker_project: str, runtime_root: Path, controller_attachment, runner=None) -> dict:
+    """Tear a substrate down after its post-``up`` verification failed.
+
+    Without this the containers (often crash-looping) and the controller's network attachment
+    outlive the run, the network cannot be removed, and the host fills up. The controller is
+    detached first because a network with an attached container cannot be removed.
+    """
+    runner = runner or run_command
+    report = {"controller_detached": None, "down_ok": None}
+    if isinstance(controller_attachment, dict) and controller_attachment.get("network"):
+        detach = runner(
+            ["docker", "network", "disconnect", str(controller_attachment["network"]), str(controller_attachment.get("container"))],
+        )
+        report["controller_detached"] = detach.returncode == 0
+    down = runner(
+        ["docker", "compose", "--project-name", docker_project, "down", "--volumes", "--remove-orphans"],
+        cwd=runtime_root,
+    )
+    report["down_ok"] = down.returncode == 0
+    if not report["down_ok"]:
+        report["down_error"] = (down.stderr or down.stdout or "")[-500:]
+    return report
+
+
 def _tip_has_real_chain_progress(tip: dict) -> bool:
     hash_value = str((tip or {}).get("hash") or "").strip()
     slot_value = (tip or {}).get("slot")
@@ -1404,6 +1462,13 @@ def _compose_substrate_docker(
             destination_name = "configuration.yaml" if asset_name == "config.json" else asset_name
             shutil.copy2(asset_path, env_root / destination_name)
         config_path = env_root / "configuration.yaml"
+        _policies = _apply_cardano_config_policies(
+            config_path=config_path,
+            nodes=plan["nodes"],
+            explicit=plan.get("cardano_experimental_protocols"),
+        )
+        cardano_testnet_config_compatibility = _policies["compatibility"]
+        cardano_experimental_protocols = _policies["experimental_protocols"]
         topology_template = json.loads(Path(public_assets["topology.json"]).read_text(encoding="utf-8"))
         topology_template, upstream_access_points = _public_topology_with_upstream(
             topology_template,
@@ -1453,15 +1518,13 @@ def _compose_substrate_docker(
         )
         if create_env.returncode != 0:
             raise RuntimeError(f"cardano-testnet create-env failed: {create_env.stderr or create_env.stdout}")
-        cardano_testnet_config_compatibility = _ensure_cardano_testnet_config_compatibility(
-            config_path=env_root / "configuration.yaml",
-            nodes=haskell_nodes,
-        )
-        cardano_experimental_protocols = _pin_cardano_experimental_protocols(
+        _policies = _apply_cardano_config_policies(
             config_path=env_root / "configuration.yaml",
             nodes=plan["nodes"],
             explicit=plan.get("cardano_experimental_protocols"),
         )
+        cardano_testnet_config_compatibility = _policies["compatibility"]
+        cardano_experimental_protocols = _policies["experimental_protocols"]
         _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(
             genesis_path=env_root / "shelley-genesis.json",
             nodes=haskell_nodes,
@@ -1585,20 +1648,14 @@ def _compose_substrate_docker(
 
     report_nodes = []
     metadata_nodes = []
-    for node in plan["nodes"]:
-        container = _inspect_docker_node(compose_project=docker_project, node=node)
-        artifact_identity = verify_running_container_artifact(container["container_image_id"], node)
-        version_identity = verify_running_node_version(container["container_name"], node)
-        if not artifact_identity["satisfied"]:
-            raise RuntimeError(
-                f"running image identity mismatch for {node['id']}: "
-                f"expected {artifact_identity['expected_image_id']}, got {artifact_identity['container_image_id']}"
-            )
-        if not version_identity["satisfied"]:
-            raise RuntimeError(
-                f"running version mismatch for {node['id']}: "
-                f"requested {version_identity['requested_version']}, reported {version_identity['reported_version']}"
-            )
+    try:
+        _verified_nodes = _verify_running_docker_nodes(plan=plan, docker_project=docker_project)
+    except Exception as exc:
+        cleanup = _cleanup_failed_substrate(
+            docker_project=docker_project, runtime_root=runtime_root, controller_attachment=controller_attachment
+        )
+        raise RuntimeError(f"{exc} (substrate torn down after the failed verification: {cleanup})") from exc
+    for node, container, artifact_identity, version_identity in _verified_nodes:
         container_peer_addresses = [
             f"{edge['to']}:{_docker_container_port(next(peer for peer in plan['nodes'] if peer['id'] == edge['to']))}"
             for edge in plan["topology"]["edges"]
@@ -1763,6 +1820,8 @@ def _compose_substrate_docker_multihost(
     topology_template = None
     peer_snapshot_path = None
     config_source_path = None
+    cardano_testnet_config_compatibility = None
+    cardano_experimental_protocols = None
     if public_network:
         public_assets = _download_public_network_assets(
             network_name=plan["network"],
@@ -1797,6 +1856,14 @@ def _compose_substrate_docker_multihost(
                 source = Path(asset_path)
                 destination_name = "configuration.yaml" if asset_name == "config.json" else asset_name
                 shutil.copy2(source, env_root / destination_name)
+            if public_assets and "config.json" in public_assets:
+                _policies = _apply_cardano_config_policies(
+                    config_path=env_root / "configuration.yaml",
+                    nodes=plan["nodes"],
+                    explicit=plan.get("cardano_experimental_protocols"),
+                )
+                cardano_testnet_config_compatibility = _policies["compatibility"]
+                cardano_experimental_protocols = _policies["experimental_protocols"]
             for node in haskell_nodes:
                 node["public_network"] = True
                 node["socket_path"] = f"{remote_runtime_root}/env/socket/{node['id']}/sock"
@@ -2027,6 +2094,8 @@ def _compose_substrate_docker_multihost(
             "multi_host": True,
             "host_id": host["id"],
             "compose_project": docker_project,
+        "cardano_testnet_config_compatibility": cardano_testnet_config_compatibility,
+        "cardano_experimental_protocols": cardano_experimental_protocols,
             "runtime_root": remote_runtime_root,
             "network": plan["network"],
             "network_magic": resolved_public_network_magic if public_network else plan["network_magic"],

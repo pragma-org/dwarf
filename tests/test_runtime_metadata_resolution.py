@@ -118,7 +118,8 @@ def test_missing_runtime_names_every_candidate(tmp_path, monkeypatch):
             _Handle(tmp_path, profile_id="profile-x"), {"runtime_metadata_path": LEGACY}, primitive="shim_peer_raw_bytes"
         )
     message = str(excinfo.value)
-    assert "cardano-profiles/profile-x/runtime.json" in message
+    # the declared legacy path is named as resolved onto the installed layout (F71)
+    assert str(tmp_path / "nowhere" / "profile-x" / "runtime.json") in message
     assert str(tmp_path / "nowhere" / "profile-x") in message
 
 

@@ -2,20 +2,89 @@
   "spec_version": "v1",
   "id": "runtime-substrate-byzantine-blockfetch-example-smoke",
   "title": "Compose a three-node substrate with one malformed BlockFetch peer and assert honest-node isolation",
-  "authors": ["dwarf"],
-  "tags": ["substrate", "byzantine", "blockfetch", "rr-007"],
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "substrate",
+    "byzantine",
+    "blockfetch",
+    "rr-007"
+  ],
   "target": {
     "implementation": "cardano-node",
-    "version": "10.7.1",
-    "profile": "byzantine-blockfetch-baseline"
+    "version": "10.7.1"
   },
-  "runtime": "library",
+  "runtime": "devnet",
   "seed": "0xB10C0F3D",
-  "load": [
+  "substrate": {
+    "compose_mode": "docker",
+    "network": "testnet_42",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "cardano-node",
+        "version": "10.7.1",
+        "identity_binding": "resolved-plan",
+        "role": "honest"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "10.7.1",
+        "identity_binding": "resolved-plan",
+        "role": "honest"
+      },
+      {
+        "id": "node3",
+        "impl": "cardano-node",
+        "version": "10.7.1",
+        "identity_binding": "resolved-plan",
+        "role": "honest"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node1",
+          "to": "node3"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        },
+        {
+          "from": "node2",
+          "to": "node3"
+        },
+        {
+          "from": "node3",
+          "to": "node1"
+        },
+        {
+          "from": "node3",
+          "to": "node2"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
     {
       "primitive": "runtime_compose_substrate",
-      "output_dir": "outputs/compose-substrate"
-    },
+      "output_dir": "outputs/compose-substrate",
+      "healthy_timeout_seconds": 180,
+      "timeout_seconds": 420
+    }
+  ],
+  "load": [
     {
       "primitive": "shim_peer_malformed_blockfetch",
       "runtime_metadata_path": "outputs/compose-substrate/runtime.json",
@@ -27,33 +96,61 @@
     {
       "primitive": "runtime_multi_node_observation",
       "runtime_metadata_path": "outputs/compose-substrate/runtime.json",
-      "node_ids": ["node1", "node2", "node3"],
+      "node_ids": [
+        "node1",
+        "node2",
+        "node3"
+      ],
       "observation_window_seconds": 10,
       "sample_interval_seconds": 1,
       "network_magic": 42,
-      "observation_primitives": ["tip_state", "connection_state"],
+      "observation_primitives": [
+        "tip_state",
+        "connection_state"
+      ],
       "output_dir": "outputs/multi-node-observation"
     }
   ],
   "probes": [],
   "assertions": [
-    {"primitive": "load_events_are_ok", "min_completed": 1},
+    {
+      "primitive": "load_events_are_ok",
+      "min_completed": 1
+    },
     {
       "primitive": "peer_eviction_within_seconds",
-      "honest_node_ids": ["node1", "node2"],
-      "byzantine_node_ids": ["node3"],
+      "honest_node_ids": [
+        "node1",
+        "node2"
+      ],
+      "byzantine_node_ids": [
+        "node3"
+      ],
       "timeout_seconds": 10
     },
     {
       "primitive": "byzantine_isolation_observed",
-      "honest_node_ids": ["node1", "node2"],
-      "byzantine_node_ids": ["node3"]
+      "honest_node_ids": [
+        "node1",
+        "node2"
+      ],
+      "byzantine_node_ids": [
+        "node3"
+      ]
     },
     {
       "primitive": "honest_quorum_preserved",
-      "honest_node_ids": ["node1", "node2"],
+      "honest_node_ids": [
+        "node1",
+        "node2"
+      ],
       "minimum_fraction": 1.0
     }
   ],
-  "teardown": []
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
 }
