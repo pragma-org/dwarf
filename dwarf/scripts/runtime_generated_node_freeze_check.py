@@ -70,10 +70,36 @@ def _process_comm_and_args(pid: int):
     return parts[0], parts[1]
 
 
+def _resolve_docker_pid(node: dict) -> int | None:
+    """Container nodes: the shared resource-profile resolver (docker inspect → child process)."""
+    if not node.get("container_name"):
+        return None
+    try:
+        from runtime_resource_profile import _resolve_docker_pid as _shared
+    except ImportError:  # pragma: no cover - helper layout without the shared resolver
+        return None
+    try:
+        return _shared(node)
+    except Exception:  # noqa: BLE001 - fall through to the process-table scan
+        return None
+
+
+def _container_port(node: dict) -> int | None:
+    address = str(node.get("container_listen_address") or "")
+    try:
+        return int(address.rsplit(":", 1)[1]) if ":" in address else None
+    except ValueError:
+        return None
+
+
 def _resolve_node_pid(node: dict) -> int:
+    docker_pid = _resolve_docker_pid(node)
+    if docker_pid is not None:
+        return docker_pid
     pid_file = node.get("pid_file")
     socket_path = str(node.get("socket_path") or "")
     port = node.get("port")
+    container_port = _container_port(node)
     if isinstance(pid_file, str) and pid_file:
         try:
             pid = int(Path(pid_file).read_text(encoding="utf-8").strip())
@@ -100,7 +126,9 @@ def _resolve_node_pid(node: dict) -> int:
             return int(pid_text)
         if port is not None and f"--port {int(port)}" in args:
             return int(pid_text)
-    raise RuntimeError(f"could not resolve cardano-node pid for node {node.get('name')!r}")
+        if container_port is not None and f"--port {container_port}" in args:
+            return int(pid_text)
+    raise RuntimeError(f"could not resolve cardano-node pid for node {node.get('name') or node.get('id')!r}")
 
 
 def _listener_ok(host: str, port: int) -> bool:
