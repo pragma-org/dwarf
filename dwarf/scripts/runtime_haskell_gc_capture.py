@@ -35,7 +35,7 @@ def _load_runtime_node(runtime_metadata_path: Path, target_node: str) -> dict:
     if not isinstance(nodes, list):
         raise RuntimeError(f"runtime metadata does not contain haskell_nodes: {runtime_metadata_path}")
     for node in nodes:
-        if node.get("name") == target_node:
+        if target_node in (node.get("name"), node.get("id")):
             return dict(node)
     raise RuntimeError(f"runtime metadata missing target node {target_node!r}: {runtime_metadata_path}")
 

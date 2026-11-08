@@ -80,7 +80,7 @@ def _resolve_socket_path(runtime_metadata_path: Path, node: dict) -> Path:
         path = Path(str(socket_path))
         if path.exists():
             return path
-    name = str(node.get("name") or "")
+    name = str(node.get("name") or node.get("id") or "")
     candidates = [
         runtime_metadata_path.parent / "socket" / f"{name}.sock",
         runtime_metadata_path.parent / "socket" / name / "sock",
@@ -225,7 +225,7 @@ def _observe_cardano_node_tip_state(
         time.sleep(min(sample_interval_seconds, max(0.0, observation_window_seconds - elapsed)))
     latest_ok = next((sample for sample in reversed(samples) if sample.get("ok")), None)
     return {
-        "target_node": str(node.get("name") or ""),
+        "target_node": str(node.get("name") or node.get("id") or ""),
         "socket_path": str(socket_path),
         "sample_count": len(samples),
         "successful_sample_count": sum(1 for sample in samples if sample.get("ok")),
@@ -310,7 +310,7 @@ def _observe_amaru_tip_state(
         time.sleep(min(sample_interval_seconds, max(0.0, observation_window_seconds - elapsed)))
     latest_ok = next((sample for sample in reversed(samples) if sample.get("ok")), None)
     return {
-        "target_node": str(node.get("name") or ""),
+        "target_node": str(node.get("name") or node.get("id") or ""),
         "log_path": str(log_path) if log_path is not None else "",
         "sample_count": len(samples),
         "successful_sample_count": sum(1 for sample in samples if sample.get("ok")),
@@ -402,12 +402,12 @@ def _observe_connection_state(
         connect_failures = 0
         for _ in range(connect_attempts):
             try:
-                with socket.create_connection((host or str(node.get("name") or ""), port), timeout=1.0):
+                with socket.create_connection((host or str(node.get("name") or node.get("id") or ""), port), timeout=1.0):
                     connect_successes += 1
             except OSError:
                 connect_failures += 1
         return {
-            "target_node": str(node.get("name") or ""),
+            "target_node": str(node.get("name") or node.get("id") or ""),
             "pid": None,
             "pid_scope": "none",
             "port": port,
@@ -475,7 +475,7 @@ def _observe_connection_state(
         ss_proc = _run(["docker", "exec", container_name, "ss", "-tan"], timeout=10)
         if ss_proc.returncode != 0:
             return {
-                "target_node": str(node.get("name") or ""),
+                "target_node": str(node.get("name") or node.get("id") or ""),
                 "pid": host_pid,
                 "pid_scope": "docker-host",
                 "port": port,
@@ -508,13 +508,13 @@ def _observe_connection_state(
         peer_nodes = _parse_peer_nodes_from_docker_ss(
             filtered_ss,
             known_container_ips=known_container_ips,
-            target_node=str(node.get("name") or ""),
+            target_node=str(node.get("name") or node.get("id") or ""),
         )
         ss_lines = [line.strip() for line in filtered_ss.splitlines() if line.strip()]
         listen_count = sum(1 for line in ss_lines if line.startswith("LISTEN"))
         established_count = sum(1 for line in ss_lines if line.startswith("ESTAB"))
         return {
-            "target_node": str(node.get("name") or ""),
+            "target_node": str(node.get("name") or node.get("id") or ""),
             "pid": host_pid,
             "pid_scope": "docker-host",
             "port": port,
@@ -533,7 +533,7 @@ def _observe_connection_state(
             "ss_lines": ss_lines,
         }
 
-    target = resolve_target_process(runtime_metadata_path, str(node.get("name") or ""))
+    target = resolve_target_process(runtime_metadata_path, str(node.get("name") or node.get("id") or ""))
     port = int(target["port"])
     connect_successes = 0
     connect_failures = 0
@@ -547,7 +547,7 @@ def _observe_connection_state(
     ss_proc = _run(["ss", "-tanp"], timeout=10)
     if ss_proc.returncode != 0:
         return {
-            "target_node": str(node.get("name") or ""),
+            "target_node": str(node.get("name") or node.get("id") or ""),
             "pid": int(target["pid"]),
             "port": port,
             "connect_successes": connect_successes,
@@ -576,13 +576,13 @@ def _observe_connection_state(
     filtered_ss = "\n".join(filtered_lines) + ("\n" if filtered_lines else "")
     lsof_proc = _run(["lsof", "-w", "-nP", "-p", str(target["pid"]), "-a", "-iTCP", "-iUDP"], timeout=10)
     lsof_text = lsof_proc.stdout or "" if lsof_proc.returncode in (0, 1) else ""
-    peer_nodes = _parse_peer_nodes_from_ss(filtered_ss, known_ports=known_ports, target_node=str(node.get("name") or ""))
+    peer_nodes = _parse_peer_nodes_from_ss(filtered_ss, known_ports=known_ports, target_node=str(node.get("name") or node.get("id") or ""))
     ss_lines = [line.strip() for line in filtered_ss.splitlines() if line.strip()]
     lsof_lines = [line.strip() for line in lsof_text.splitlines() if line.strip()]
     listen_count = sum(1 for line in ss_lines if line.startswith("LISTEN"))
     established_count = sum(1 for line in ss_lines if line.startswith("ESTAB"))
     return {
-        "target_node": str(node.get("name") or ""),
+        "target_node": str(node.get("name") or node.get("id") or ""),
         "pid": int(target["pid"]),
         "port": port,
         "connect_successes": connect_successes,

@@ -69,7 +69,7 @@ def _scan_for_runtime_process(node: dict) -> dict:
     )
     if result.returncode != 0:
         raise RuntimeError("runtime_connection_state could not inspect process table")
-    name = str(node.get("name") or "")
+    name = str(node.get("name") or node.get("id") or "")
     socket_hint = str(node.get("socket_path") or "")
     db_hint = str(node.get("db_dir") or "")
     runtime_port = int(node.get("port") or 0)

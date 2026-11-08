@@ -30,7 +30,7 @@ def _load_runtime_node(runtime_metadata_path: Path, target_node: str) -> dict:
     if not isinstance(nodes, list):
         raise RuntimeError(f"runtime metadata does not contain haskell_nodes: {runtime_metadata_path}")
     for node in nodes:
-        if node.get("name") == target_node:
+        if target_node in (node.get("name"), node.get("id")):
             return node
     raise RuntimeError(f"runtime metadata missing target node {target_node!r}: {runtime_metadata_path}")
 
@@ -59,7 +59,7 @@ def _scan_for_runtime_process(node: dict) -> dict:
     )
     if result.returncode != 0:
         raise RuntimeError("runtime_syscall_trace could not inspect process table")
-    name = str(node.get("name") or "")
+    name = str(node.get("name") or node.get("id") or "")
     socket_hint = str(node.get("socket_path") or "")
     db_hint = str(node.get("db_dir") or "")
     legacy_socket_hint = f"socket/{name}/sock" if name else ""

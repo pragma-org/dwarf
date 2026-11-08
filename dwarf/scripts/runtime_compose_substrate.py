@@ -32,6 +32,7 @@ from runtime_substrate_common import (
     verify_running_container_artifact,
     verify_running_node_version,
     wait_for_nodes_healthy,
+    with_legacy_node_name,
     write_json,
 )
 from runtime_amaru_bootstrap_synth import DEFAULT_LOADER_BASE_IMAGE, synthesize_amaru_bootstrap
@@ -1670,7 +1671,7 @@ def _compose_substrate_docker(
             "artifact_identity": artifact_identity,
             "version_identity": version_identity,
         }
-        metadata_nodes.append(metadata_node)
+        metadata_nodes.append(with_legacy_node_name(metadata_node))
         report_nodes.append(
             {
                 "id": node["id"],
@@ -2063,7 +2064,7 @@ def _compose_substrate_docker_multihost(
                 "artifact_identity": artifact_identity,
                 "version_identity": version_identity,
             }
-            metadata_nodes.append(metadata_node)
+            metadata_nodes.append(with_legacy_node_name(metadata_node))
             node_report = {
                 "id": node["id"],
                 "impl": node["impl"],

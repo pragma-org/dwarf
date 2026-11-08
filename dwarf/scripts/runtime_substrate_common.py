@@ -970,3 +970,14 @@ def write_json(path: Path, body: dict) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return path
+
+
+def with_legacy_node_name(record: dict) -> dict:
+    """Stamp ``name`` (= ``id``) on a runtime node record for helpers that still read ``name``.
+
+    Controller runtime records identify nodes by ``id``; the host-devnet era used ``name``.
+    An explicit ``name`` is kept.
+    """
+    if record.get("id") is not None and not record.get("name"):
+        record["name"] = record["id"]
+    return record

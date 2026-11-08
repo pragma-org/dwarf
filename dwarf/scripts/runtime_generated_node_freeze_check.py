@@ -25,7 +25,7 @@ def _runtime_json_nodes(runtime_root: Path) -> dict[str, dict]:
         raise RuntimeError(f"runtime metadata does not contain haskell_nodes: {runtime_json}")
     by_name = {}
     for node in nodes:
-        name = node.get("name")
+        name = node.get("name") or node.get("id")
         port = node.get("port")
         if not isinstance(name, str) or not name:
             continue
