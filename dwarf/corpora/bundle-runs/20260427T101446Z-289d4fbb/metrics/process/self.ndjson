@@ -1,0 +1,5 @@
+{"ts": "2026-04-27T10:14:46.670Z", "value": {"cpu_percent": 80.0, "fd_count": 4, "pid": 2164173, "rss_bytes": 50860032, "socket_count": 0}}
+{"ts": "2026-04-27T10:14:47.184Z", "value": {"cpu_percent": 23.9, "fd_count": 6, "pid": 2164173, "rss_bytes": 50892800, "socket_count": 0}}
+{"ts": "2026-04-27T10:14:47.700Z", "value": {"cpu_percent": 13.8, "fd_count": 6, "pid": 2164173, "rss_bytes": 50905088, "socket_count": 0}}
+{"ts": "2026-04-27T10:14:48.215Z", "value": {"cpu_percent": 9.7, "fd_count": 6, "pid": 2164173, "rss_bytes": 50913280, "socket_count": 0}}
+{"ts": "2026-04-27T10:14:48.706Z", "value": {"cpu_percent": 7.6, "fd_count": 4, "pid": 2164173, "rss_bytes": 51040256, "socket_count": 0}}

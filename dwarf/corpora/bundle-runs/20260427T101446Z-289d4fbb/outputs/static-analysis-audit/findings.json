@@ -1,0 +1,46 @@
+{
+  "schema_version": "v1",
+  "executed_at_utc": "2026-04-27T10:14:48Z",
+  "tool": "audit",
+  "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+  "command": [
+    "cargo",
+    "audit",
+    "--json"
+  ],
+  "tool_exit_code": 0,
+  "tool_status": "clean",
+  "parse_error": null,
+  "stdout_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/stdout.log",
+  "stderr_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/stderr.log",
+  "findings_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/findings.json",
+  "raw": {
+    "database": {
+      "advisory-count": 1058,
+      "last-commit": "930c3aa2323b1f94427f9abca7e939ec50e998b5",
+      "last-updated": "2026-04-25T11:01:07-04:00"
+    },
+    "lockfile": {
+      "dependency-count": 115
+    },
+    "settings": {
+      "target_arch": [],
+      "target_os": [],
+      "severity": null,
+      "ignore": [],
+      "informational_warnings": [
+        "unmaintained",
+        "unsound",
+        "notice"
+      ]
+    },
+    "vulnerabilities": {
+      "found": false,
+      "count": 0,
+      "list": []
+    },
+    "warnings": {}
+  },
+  "findings": [],
+  "findings_count": 0
+}

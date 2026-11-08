@@ -1,0 +1,71 @@
+[
+  {
+    "data_points_used": [
+      {
+        "outcome": "ok",
+        "seed": "seed-001-query-reply.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-002-propose.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-003-propose.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-004-refuse.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-005-query-reply.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-006-propose.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-007-propose.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-008-query-reply.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-009-propose.cbor",
+        "stdout_head": "OK\n"
+      },
+      {
+        "outcome": "ok",
+        "seed": "seed-010-refuse.cbor",
+        "stdout_head": "OK\n"
+      }
+    ],
+    "evaluated_value": {
+      "clean_error": 0,
+      "crash": 0,
+      "min_seed_count": 10,
+      "ok": 10,
+      "seed_count": 10
+    },
+    "params": {
+      "corpus_dir": "outputs/runtime-corpus-synthesize/amaru-cargo-fuzz-handshake",
+      "min_seed_count": 10,
+      "target_id": "amaru-mini-protocol-decode-handshake",
+      "timeout_seconds": 5
+    },
+    "primitive": "corpus_synthesize_seeds_decode_clean",
+    "result": "pass"
+  }
+]

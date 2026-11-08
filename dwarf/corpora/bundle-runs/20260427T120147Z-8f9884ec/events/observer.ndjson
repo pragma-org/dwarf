@@ -1,0 +1,2 @@
+{"event": "phase_started", "level": "info", "payload": {"phase_id": "default", "phase_index": 1, "phase_title": "Capture a frozen audit handoff snapshot for selected Dwarf bundles"}, "phase": "framework", "primitive": "framework", "ts": "2026-04-27T12:01:47.929Z"}
+{"event": "phase_completed", "level": "info", "payload": {"phase_id": "default", "phase_index": 1, "phase_title": "Capture a frozen audit handoff snapshot for selected Dwarf bundles"}, "phase": "framework", "primitive": "framework", "ts": "2026-04-27T12:01:48.000Z"}

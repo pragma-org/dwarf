@@ -1,0 +1,48 @@
+{
+  "schema_version": "v1",
+  "merge_mode": "file-level",
+  "generated_at_utc": "2026-04-27T10:53:41Z",
+  "runs_dir": "/home/nigel/dwarf-fw/runs",
+  "requested_bundle_count": 3,
+  "processed_bundle_count": 3,
+  "inputs_processed": 75,
+  "total_unique_edges": 84,
+  "tool_availability": {
+    "afl_showmap": true
+  },
+  "bundles": [
+    {
+      "bundle_id": "20260427T062629Z-28996282",
+      "status": "ok",
+      "queue_count": 176,
+      "input_count": 25,
+      "unique_edges_observed": 29,
+      "novel_edge_count": 26,
+      "bitmap_fingerprint": "36323c137ccdaf3b49b5869740d16f3bbc6dad2b7db58fc79d34c2528056aede",
+      "target_slug": "handshake",
+      "target_binary": "/home/nigel/dwarf-fw/targets/amaru/target/release/amaru-afl-handshake"
+    },
+    {
+      "bundle_id": "20260427T084220Z-97b63fa5",
+      "status": "ok",
+      "queue_count": 103,
+      "input_count": 25,
+      "unique_edges_observed": 29,
+      "novel_edge_count": 26,
+      "bitmap_fingerprint": "e5f92ba8c47c558c006798aeea347cc1a1e1aa188253ee5c4b08f99b5415dfde",
+      "target_slug": "blockfetch",
+      "target_binary": "/home/nigel/dwarf-fw/targets/amaru/target/release/amaru-afl-blockfetch"
+    },
+    {
+      "bundle_id": "20260427T084613Z-2f152f42",
+      "status": "ok",
+      "queue_count": 647,
+      "input_count": 25,
+      "unique_edges_observed": 29,
+      "novel_edge_count": 29,
+      "bitmap_fingerprint": "402ef1b11acea82004590ba99ea2864786e29079bf4c9e9c59c9b937418ce324",
+      "target_slug": "txsubmission",
+      "target_binary": "/home/nigel/dwarf-fw/targets/amaru/target/release/amaru-afl-txsubmission"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+{"event": "phase_started", "level": "info", "payload": {"phase_id": "default", "phase_index": 1, "phase_title": "Diff two live LSQ extraction bundles and preserve the structured divergence"}, "phase": "framework", "primitive": "framework", "ts": "2026-04-27T08:26:05.949Z"}
+{"event": "phase_completed", "level": "info", "payload": {"phase_id": "default", "phase_index": 1, "phase_title": "Diff two live LSQ extraction bundles and preserve the structured divergence"}, "phase": "framework", "primitive": "framework", "ts": "2026-04-27T08:26:05.981Z"}

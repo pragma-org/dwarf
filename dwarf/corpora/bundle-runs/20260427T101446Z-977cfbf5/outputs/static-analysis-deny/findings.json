@@ -1,0 +1,22 @@
+{
+  "schema_version": "v1",
+  "executed_at_utc": "2026-04-27T10:14:46Z",
+  "tool": "deny",
+  "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+  "command": [
+    "cargo",
+    "deny",
+    "check",
+    "--format",
+    "json"
+  ],
+  "tool_exit_code": 2,
+  "tool_status": "findings",
+  "parse_error": null,
+  "stdout_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/stdout.log",
+  "stderr_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/stderr.log",
+  "findings_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/findings.json",
+  "raw": null,
+  "findings": [],
+  "findings_count": 0
+}

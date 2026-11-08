@@ -1,0 +1,24 @@
+{
+  "spec_version": "v1",
+  "id": "runtime-static-analysis-clippy-example-smoke",
+  "title": "Run cargo clippy against the LSQ extractor crate",
+  "authors": ["dwarf"],
+  "tags": ["static-analysis", "clippy", "rust", "amaru"],
+  "target": {"implementation": "amaru", "version": "any"},
+  "runtime": "library",
+  "seed": "0x5A7A7101",
+  "load": [
+    {
+      "primitive": "runtime_static_analysis_clippy",
+      "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+      "output_dir": "outputs/static-analysis-clippy",
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {"primitive": "clippy_static_analysis_completed_clean"}
+  ],
+  "teardown": []
+}

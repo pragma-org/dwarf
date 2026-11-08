@@ -1,0 +1,13 @@
+[
+  {
+    "data_points_used": [],
+    "evaluated_value": {
+      "completed": 1,
+      "min_completed": 1,
+      "non_ok": 0
+    },
+    "params": {},
+    "primitive": "coverage_report_emitted_clean",
+    "result": "pass"
+  }
+]

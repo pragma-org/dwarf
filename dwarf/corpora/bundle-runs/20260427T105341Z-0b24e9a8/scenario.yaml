@@ -1,0 +1,35 @@
+{
+  "spec_version": "v1",
+  "id": "runtime-coverage-report-file-level-aflpp-example-smoke",
+  "title": "Render AFL++ file-level bitmap merge coverage report",
+  "authors": ["dwarf"],
+  "tags": ["coverage", "report", "aflpp", "amaru"],
+  "target": {
+    "implementation": "amaru",
+    "version": "any"
+  },
+  "runtime": "library",
+  "seed": "0xCAFE0A03",
+  "load": [
+    {
+      "primitive": "runtime_coverage_report",
+      "runs_dir": "/home/nigel/dwarf-fw/runs",
+      "merge_mode": "file-level",
+      "aflpp_bundle_ids": [
+        "20260427T062629Z-28996282",
+        "20260427T084220Z-97b63fa5",
+        "20260427T084613Z-2f152f42"
+      ],
+      "max_inputs_per_bundle": 25,
+      "output_dir": "outputs/coverage-report",
+      "timeout_seconds": 120
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "coverage_report_file_level_aflpp_completed_clean"
+    }
+  ],
+  "teardown": []
+}

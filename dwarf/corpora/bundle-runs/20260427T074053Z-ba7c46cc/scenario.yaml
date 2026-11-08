@@ -1,0 +1,35 @@
+{
+  "spec_version": "v1",
+  "id": "runtime-corpus-synthesize-handshake-smoke",
+  "title": "Synthesize structurally valid handshake corpus seeds",
+  "authors": ["dwarf"],
+  "tags": ["corpus", "synthesis", "handshake", "candidate"],
+  "target": {"implementation": "amaru", "version": "any"},
+  "runtime": "library",
+  "seed": "0xC012F00D",
+  "load": [
+    {
+      "primitive": "runtime_corpus_synthesize",
+      "grammar_dict": "dwarf/grammars/amaru-cargo-fuzz-handshake/dict.txt",
+      "structure_spec": "dwarf/grammars/amaru-cargo-fuzz-handshake/structure.json",
+      "target_id": "amaru-cargo-fuzz-handshake",
+      "count": 10,
+      "strategy": "structure",
+      "output_dir": "outputs/runtime-corpus-synthesize/amaru-cargo-fuzz-handshake",
+      "seed": 1234,
+      "timeout_seconds": 60,
+      "expect_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "corpus_synthesize_seeds_decode_clean",
+      "target_id": "amaru-mini-protocol-decode-handshake",
+      "corpus_dir": "outputs/runtime-corpus-synthesize/amaru-cargo-fuzz-handshake",
+      "min_seed_count": 10,
+      "timeout_seconds": 5
+    }
+  ],
+  "teardown": []
+}

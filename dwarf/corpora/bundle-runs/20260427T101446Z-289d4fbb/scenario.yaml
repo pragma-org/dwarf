@@ -1,0 +1,24 @@
+{
+  "spec_version": "v1",
+  "id": "runtime-static-analysis-audit-example-smoke",
+  "title": "Run cargo audit against the LSQ extractor crate",
+  "authors": ["dwarf"],
+  "tags": ["static-analysis", "audit", "rust", "amaru"],
+  "target": {"implementation": "amaru", "version": "any"},
+  "runtime": "library",
+  "seed": "0x5A7A7102",
+  "load": [
+    {
+      "primitive": "runtime_static_analysis_audit",
+      "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+      "output_dir": "outputs/static-analysis-audit",
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {"primitive": "audit_static_analysis_completed_clean"}
+  ],
+  "teardown": []
+}

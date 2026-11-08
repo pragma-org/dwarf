@@ -1,0 +1,222 @@
+{
+  "schema_version": "v1",
+  "generated_at_utc": "2026-04-27T11:05:47Z",
+  "summary": {
+    "input_bundle_count": 7,
+    "event_count": 7,
+    "signature_count": 7,
+    "unique_signatures": 7,
+    "time_window": {
+      "first_seen_at": "2026-04-27T07:40:53.859Z",
+      "last_seen_at": "2026-04-27T10:53:41.187Z"
+    },
+    "applied_filters": {
+      "scenario_ids": [],
+      "signature_tokens": []
+    }
+  },
+  "events": [
+    {
+      "bundle_id": "20260427T074053Z-ba7c46cc",
+      "timestamp": "2026-04-27T07:40:53.859Z",
+      "scenario_id": "runtime-corpus-synthesize-handshake-smoke",
+      "exit_status": "pass",
+      "signature_id": "27a8bc69c8c97c7227e69fa276d919eae0470e3da4c801c66e7e63cebd1f32ae",
+      "signature_label": "runtime-corpus-synthesize-handshake-smoke|pass|corpus_synthesize:amaru-cargo-fuzz-handshake:structure",
+      "evidence_tokens": [
+        "corpus_synthesize:amaru-cargo-fuzz-handshake:structure"
+      ]
+    },
+    {
+      "bundle_id": "20260427T075930Z-8a754454",
+      "timestamp": "2026-04-27T07:59:30.064Z",
+      "scenario_id": "runtime-bundle-replay-example-smoke",
+      "exit_status": "pass",
+      "signature_id": "594a6c4efcfb20635b0bdf0fcef0f86e2e0c888ccc1d05a25e0b97baedc9b563",
+      "signature_label": "runtime-bundle-replay-example-smoke|pass|bundle_replay:has-parent|bundle_replay:match",
+      "evidence_tokens": [
+        "bundle_replay:has-parent",
+        "bundle_replay:match"
+      ]
+    },
+    {
+      "bundle_id": "20260427T082605Z-98e8aae2",
+      "timestamp": "2026-04-27T08:26:05.921Z",
+      "scenario_id": "runtime-bundle-diff-example-divergence",
+      "exit_status": "pass",
+      "signature_id": "a5ac66655dd6b2a299a25ffee622434c925e11703779385baab7ac4fdc4a9d63",
+      "signature_label": "runtime-bundle-diff-example-divergence|pass|bundle_diff:diff",
+      "evidence_tokens": [
+        "bundle_diff:diff"
+      ]
+    },
+    {
+      "bundle_id": "20260427T083724Z-176c5cf7",
+      "timestamp": "2026-04-27T08:37:24.620Z",
+      "scenario_id": "runtime-bundle-export-sarif-example-smoke",
+      "exit_status": "pass",
+      "signature_id": "c823beb1ea6e88966ac60c378405b317beca21235ec0d8f107cda84d6b7e5575",
+      "signature_label": "runtime-bundle-export-sarif-example-smoke|pass|sarif_export:results:1|sarif_export:type:bundle-diff",
+      "evidence_tokens": [
+        "sarif_export:results:1",
+        "sarif_export:type:bundle-diff"
+      ]
+    },
+    {
+      "bundle_id": "20260427T091106Z-3bce7cb4",
+      "timestamp": "2026-04-27T09:11:06.613Z",
+      "scenario_id": "runtime-bundle-attestation-example-smoke",
+      "exit_status": "pass",
+      "signature_id": "3ee4faf54f16459252570831c26936db3958af7ed2e1f0b789c465b66ad6741e",
+      "signature_label": "runtime-bundle-attestation-example-smoke|pass|attestation:verified",
+      "evidence_tokens": [
+        "attestation:verified"
+      ]
+    },
+    {
+      "bundle_id": "20260427T094439Z-5b4d3858",
+      "timestamp": "2026-04-27T09:44:39.545Z",
+      "scenario_id": "runtime-bundle-chain-verify-example-smoke",
+      "exit_status": "pass",
+      "signature_id": "39bcb69db7c19070dfe3b286f322cad3b0fa8d58750ff78f9a1efe9ba907fbf1",
+      "signature_label": "runtime-bundle-chain-verify-example-smoke|pass|chain_verify:all-verified",
+      "evidence_tokens": [
+        "chain_verify:all-verified"
+      ]
+    },
+    {
+      "bundle_id": "20260427T105341Z-0b24e9a8",
+      "timestamp": "2026-04-27T10:53:41.187Z",
+      "scenario_id": "runtime-coverage-report-file-level-aflpp-example-smoke",
+      "exit_status": "pass",
+      "signature_id": "fd061a923a2c49a9f64db5b655c14e811f9acf7bbcce8319063c255d887c5f29",
+      "signature_label": "runtime-coverage-report-file-level-aflpp-example-smoke|pass|coverage_report:file-level",
+      "evidence_tokens": [
+        "coverage_report:file-level"
+      ]
+    }
+  ],
+  "signatures": [
+    {
+      "signature_id": "27a8bc69c8c97c7227e69fa276d919eae0470e3da4c801c66e7e63cebd1f32ae",
+      "signature_label": "runtime-corpus-synthesize-handshake-smoke|pass|corpus_synthesize:amaru-cargo-fuzz-handshake:structure",
+      "scenario_id": "runtime-corpus-synthesize-handshake-smoke",
+      "exit_status": "pass",
+      "evidence_tokens": [
+        "corpus_synthesize:amaru-cargo-fuzz-handshake:structure"
+      ],
+      "first_seen_bundle": "20260427T074053Z-ba7c46cc",
+      "last_seen_bundle": "20260427T074053Z-ba7c46cc",
+      "first_seen_at": "2026-04-27T07:40:53.859Z",
+      "last_seen_at": "2026-04-27T07:40:53.859Z",
+      "sightings_count": 1,
+      "sighting_bundles": [
+        "20260427T074053Z-ba7c46cc"
+      ]
+    },
+    {
+      "signature_id": "594a6c4efcfb20635b0bdf0fcef0f86e2e0c888ccc1d05a25e0b97baedc9b563",
+      "signature_label": "runtime-bundle-replay-example-smoke|pass|bundle_replay:has-parent|bundle_replay:match",
+      "scenario_id": "runtime-bundle-replay-example-smoke",
+      "exit_status": "pass",
+      "evidence_tokens": [
+        "bundle_replay:has-parent",
+        "bundle_replay:match"
+      ],
+      "first_seen_bundle": "20260427T075930Z-8a754454",
+      "last_seen_bundle": "20260427T075930Z-8a754454",
+      "first_seen_at": "2026-04-27T07:59:30.064Z",
+      "last_seen_at": "2026-04-27T07:59:30.064Z",
+      "sightings_count": 1,
+      "sighting_bundles": [
+        "20260427T075930Z-8a754454"
+      ]
+    },
+    {
+      "signature_id": "a5ac66655dd6b2a299a25ffee622434c925e11703779385baab7ac4fdc4a9d63",
+      "signature_label": "runtime-bundle-diff-example-divergence|pass|bundle_diff:diff",
+      "scenario_id": "runtime-bundle-diff-example-divergence",
+      "exit_status": "pass",
+      "evidence_tokens": [
+        "bundle_diff:diff"
+      ],
+      "first_seen_bundle": "20260427T082605Z-98e8aae2",
+      "last_seen_bundle": "20260427T082605Z-98e8aae2",
+      "first_seen_at": "2026-04-27T08:26:05.921Z",
+      "last_seen_at": "2026-04-27T08:26:05.921Z",
+      "sightings_count": 1,
+      "sighting_bundles": [
+        "20260427T082605Z-98e8aae2"
+      ]
+    },
+    {
+      "signature_id": "c823beb1ea6e88966ac60c378405b317beca21235ec0d8f107cda84d6b7e5575",
+      "signature_label": "runtime-bundle-export-sarif-example-smoke|pass|sarif_export:results:1|sarif_export:type:bundle-diff",
+      "scenario_id": "runtime-bundle-export-sarif-example-smoke",
+      "exit_status": "pass",
+      "evidence_tokens": [
+        "sarif_export:results:1",
+        "sarif_export:type:bundle-diff"
+      ],
+      "first_seen_bundle": "20260427T083724Z-176c5cf7",
+      "last_seen_bundle": "20260427T083724Z-176c5cf7",
+      "first_seen_at": "2026-04-27T08:37:24.620Z",
+      "last_seen_at": "2026-04-27T08:37:24.620Z",
+      "sightings_count": 1,
+      "sighting_bundles": [
+        "20260427T083724Z-176c5cf7"
+      ]
+    },
+    {
+      "signature_id": "3ee4faf54f16459252570831c26936db3958af7ed2e1f0b789c465b66ad6741e",
+      "signature_label": "runtime-bundle-attestation-example-smoke|pass|attestation:verified",
+      "scenario_id": "runtime-bundle-attestation-example-smoke",
+      "exit_status": "pass",
+      "evidence_tokens": [
+        "attestation:verified"
+      ],
+      "first_seen_bundle": "20260427T091106Z-3bce7cb4",
+      "last_seen_bundle": "20260427T091106Z-3bce7cb4",
+      "first_seen_at": "2026-04-27T09:11:06.613Z",
+      "last_seen_at": "2026-04-27T09:11:06.613Z",
+      "sightings_count": 1,
+      "sighting_bundles": [
+        "20260427T091106Z-3bce7cb4"
+      ]
+    },
+    {
+      "signature_id": "39bcb69db7c19070dfe3b286f322cad3b0fa8d58750ff78f9a1efe9ba907fbf1",
+      "signature_label": "runtime-bundle-chain-verify-example-smoke|pass|chain_verify:all-verified",
+      "scenario_id": "runtime-bundle-chain-verify-example-smoke",
+      "exit_status": "pass",
+      "evidence_tokens": [
+        "chain_verify:all-verified"
+      ],
+      "first_seen_bundle": "20260427T094439Z-5b4d3858",
+      "last_seen_bundle": "20260427T094439Z-5b4d3858",
+      "first_seen_at": "2026-04-27T09:44:39.545Z",
+      "last_seen_at": "2026-04-27T09:44:39.545Z",
+      "sightings_count": 1,
+      "sighting_bundles": [
+        "20260427T094439Z-5b4d3858"
+      ]
+    },
+    {
+      "signature_id": "fd061a923a2c49a9f64db5b655c14e811f9acf7bbcce8319063c255d887c5f29",
+      "signature_label": "runtime-coverage-report-file-level-aflpp-example-smoke|pass|coverage_report:file-level",
+      "scenario_id": "runtime-coverage-report-file-level-aflpp-example-smoke",
+      "exit_status": "pass",
+      "evidence_tokens": [
+        "coverage_report:file-level"
+      ],
+      "first_seen_bundle": "20260427T105341Z-0b24e9a8",
+      "last_seen_bundle": "20260427T105341Z-0b24e9a8",
+      "first_seen_at": "2026-04-27T10:53:41.187Z",
+      "last_seen_at": "2026-04-27T10:53:41.187Z",
+      "sightings_count": 1,
+      "sighting_bundles": [
+        "20260427T105341Z-0b24e9a8"
+      ]
+    }
+  ]
+}

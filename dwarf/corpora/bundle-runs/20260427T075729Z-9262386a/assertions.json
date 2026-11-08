@@ -1,0 +1,15 @@
+[
+  {
+    "data_points_used": [],
+    "evaluated_value": {
+      "completed": 1,
+      "min_completed": 1,
+      "non_ok": 0
+    },
+    "params": {
+      "min_completed": 1
+    },
+    "primitive": "load_events_are_ok",
+    "result": "pass"
+  }
+]

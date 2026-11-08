@@ -1,0 +1,24 @@
+{
+  "spec_version": "v1",
+  "id": "runtime-static-analysis-deny-example-smoke",
+  "title": "Run cargo deny against the LSQ extractor crate",
+  "authors": ["dwarf"],
+  "tags": ["static-analysis", "deny", "rust", "amaru"],
+  "target": {"implementation": "amaru", "version": "any"},
+  "runtime": "library",
+  "seed": "0x5A7A7103",
+  "load": [
+    {
+      "primitive": "runtime_static_analysis_deny",
+      "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+      "output_dir": "outputs/static-analysis-deny",
+      "timeout_seconds": 300,
+      "expected_helper_exit": 0
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {"primitive": "deny_static_analysis_completed_clean"}
+  ],
+  "teardown": []
+}

@@ -1,0 +1,138 @@
+[
+  {
+    "data_points_used": [
+      {
+        "artifact_summary": {
+          "has_snapshot_manifest": true,
+          "has_snapshot_readme": true,
+          "has_snapshot_tarball": true,
+          "output_dir": "/home/nigel/dwarf-fw/runs/20260427T120147Z-8f9884ec/outputs/forensic-snapshot"
+        },
+        "expected_helper_exit": 0,
+        "helper_exit_code": 0,
+        "helper_script": "/home/nigel/dwarf-fw/scripts/runtime_forensic_snapshot.py",
+        "included_bundle_count": 3,
+        "manifest_relpath": "outputs/forensic-snapshot/snapshot-manifest.json",
+        "outcome": "ok",
+        "output_dir": "/home/nigel/dwarf-fw/runs/20260427T120147Z-8f9884ec/outputs/forensic-snapshot",
+        "output_format": "tar.gz",
+        "python_bin": "python3",
+        "result": {
+          "bundles": [
+            {
+              "attestation_present": true,
+              "attestation_verdict": "verified",
+              "dwarf_source_sha256": "87237de3056483fc35cd1aac3c1e43b56cb10c24d107a58628e05205c3b449b7",
+              "exit_status": "pass",
+              "hash_anchor": "4f6c942ce33ae5a9c0cbeac0425e4d191b71c63fc5b4ac9b28db34d3e4c7fdc1",
+              "parent_run_id": null,
+              "run_id": "20260427T091106Z-3bce7cb4",
+              "scenario_id": "runtime-bundle-attestation-example-smoke",
+              "scenario_yaml_sha256": "4f6c942ce33ae5a9c0cbeac0425e4d191b71c63fc5b4ac9b28db34d3e4c7fdc1",
+              "signing_key_fingerprint": "d51fd2f0fb771ad3c10cc06ade6f7349d63f6b3dabad2b564c73478896a9bb0a",
+              "started_at": "2026-04-27T09:11:06.613Z",
+              "tag_records": [],
+              "tags": [],
+              "tooling_versions": {
+                "amaru": "Amaru 0.1.2 (060001d)",
+                "cardano-cli": "cardano-cli 10.15.1.0 - linux-x86_64 - ghc-9.6",
+                "cardano-node": "cardano-node 10.7.1 - linux-x86_64 - ghc-9.6",
+                "dwarf": "source-sha256:87237de3056483fc35cd1aac3c1e43b56cb10c24d107a58628e05205c3b449b7"
+              }
+            },
+            {
+              "attestation_present": true,
+              "attestation_verdict": "verified",
+              "dwarf_source_sha256": "4532fa7a7ba87d9df9d98734ab14297cc6e72b9379a7cdbbd759875c20332afc",
+              "exit_status": null,
+              "hash_anchor": "96c57fbc0020126bf5f09228d928d64dcc8a75910b2e45820d38aa14d143a05e",
+              "parent_run_id": "20260427T091106Z-3bce7cb4",
+              "run_id": "20260427T092200Z-audittraildemo",
+              "scenario_id": "runtime-bundle-replay-example-smoke",
+              "scenario_yaml_sha256": "96c57fbc0020126bf5f09228d928d64dcc8a75910b2e45820d38aa14d143a05e",
+              "signing_key_fingerprint": "d51fd2f0fb771ad3c10cc06ade6f7349d63f6b3dabad2b564c73478896a9bb0a",
+              "started_at": null,
+              "tag_records": [],
+              "tags": [],
+              "tooling_versions": {
+                "amaru": "Amaru 0.1.2 (060001d)",
+                "cardano-cli": "cardano-cli 10.15.1.0 - linux-x86_64 - ghc-9.6",
+                "cardano-node": "cardano-node 10.7.1 - linux-x86_64 - ghc-9.6",
+                "dwarf": "source-sha256:audittraildemo"
+              }
+            },
+            {
+              "attestation_present": false,
+              "attestation_verdict": "unsigned",
+              "dwarf_source_sha256": null,
+              "exit_status": "pass",
+              "hash_anchor": "712136b63a8d8086ba4a374e3c44deadafe3dca01e3773e644213c6c79b2fded",
+              "parent_run_id": null,
+              "run_id": "20260427T074053Z-ba7c46cc",
+              "scenario_id": "runtime-corpus-synthesize-handshake-smoke",
+              "scenario_yaml_sha256": "712136b63a8d8086ba4a374e3c44deadafe3dca01e3773e644213c6c79b2fded",
+              "signing_key_fingerprint": null,
+              "started_at": "2026-04-27T07:40:53.859Z",
+              "tag_records": [
+                {
+                  "hash_anchor": "712136b63a8d8086ba4a374e3c44deadafe3dca01e3773e644213c6c79b2fded",
+                  "signing_actor": "dwarf",
+                  "tagged_at_utc": "2026-04-27T11:49:25Z",
+                  "tagging_run_id": "20260427T114925Z-91203595",
+                  "tags_added": [
+                    "release-candidate",
+                    "milestone-1-evidence"
+                  ]
+                }
+              ],
+              "tags": [
+                "milestone-1-evidence",
+                "release-candidate"
+              ],
+              "tooling_versions": null
+            }
+          ],
+          "generated_at_utc": "2026-04-27T12:01:47Z",
+          "included_bundle_count": 3,
+          "included_run_ids": [
+            "20260427T091106Z-3bce7cb4",
+            "20260427T092200Z-audittraildemo",
+            "20260427T074053Z-ba7c46cc"
+          ],
+          "output_format": "tar.gz",
+          "readme_relpath": "outputs/forensic-snapshot/README.md",
+          "requested_run_ids": [
+            "20260427T092200Z-audittraildemo",
+            "20260427T074053Z-ba7c46cc"
+          ],
+          "schema_version": "v1",
+          "seed_run_ids": [
+            "20260427T092200Z-audittraildemo",
+            "20260427T074053Z-ba7c46cc"
+          ],
+          "snapshot_relpath": "outputs/forensic-snapshot/snapshot.tar.gz",
+          "tag_filters": []
+        },
+        "run_ids": [
+          "20260427T092200Z-audittraildemo",
+          "20260427T074053Z-ba7c46cc"
+        ],
+        "runs_dir": "/home/nigel/dwarf-fw/runs",
+        "snapshot_relpath": "outputs/forensic-snapshot/snapshot.tar.gz",
+        "stderr": "",
+        "stdout": "included_bundle_count=3 snapshot_relpath=outputs/forensic-snapshot/snapshot.tar.gz manifest_relpath=outputs/forensic-snapshot/snapshot-manifest.json\n",
+        "tag_filters": [],
+        "timed_out": false,
+        "timeout_seconds": 180.0
+      }
+    ],
+    "evaluated_value": {
+      "completed": 1,
+      "included_bundle_count": 3,
+      "outcome": "ok"
+    },
+    "params": {},
+    "primitive": "forensic_snapshot_emitted_clean",
+    "result": "pass"
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "spec_version": "v1",
+  "id": "runtime-coverage-report-example-smoke",
+  "title": "Render operator-readable coverage report from aggregate coverage bundle",
+  "authors": ["dwarf"],
+  "tags": ["coverage", "report", "fuzz", "amaru"],
+  "target": {
+    "implementation": "amaru",
+    "version": "any"
+  },
+  "runtime": "library",
+  "seed": "0xCAFE0A02",
+  "load": [
+    {
+      "primitive": "runtime_coverage_report",
+      "runs_dir": "/home/nigel/dwarf-fw/runs",
+      "aggregate_bundle_id": "20260427T082846Z-b99d9f9e",
+      "output_dir": "outputs/coverage-report",
+      "timeout_seconds": 120
+    }
+  ],
+  "probes": [],
+  "assertions": [
+    {
+      "primitive": "coverage_report_emitted_clean"
+    }
+  ],
+  "teardown": []
+}

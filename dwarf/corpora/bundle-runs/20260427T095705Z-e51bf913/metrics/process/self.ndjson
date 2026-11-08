@@ -1,0 +1,2 @@
+{"ts": "2026-04-27T09:57:05.974Z", "value": {"cpu_percent": 83.3, "fd_count": 4, "pid": 2135370, "rss_bytes": 50851840, "socket_count": 0}}
+{"ts": "2026-04-27T09:57:06.109Z", "value": {"cpu_percent": 46.8, "fd_count": 4, "pid": 2135370, "rss_bytes": 50995200, "socket_count": 0}}

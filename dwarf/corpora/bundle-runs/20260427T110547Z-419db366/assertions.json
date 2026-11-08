@@ -1,0 +1,40 @@
+[
+  {
+    "data_points_used": [
+      {
+        "artifact_summary": {
+          "has_timeline_json": true,
+          "has_timeline_markdown": true,
+          "output_dir": "/home/nigel/dwarf-fw/runs/20260427T110547Z-419db366/outputs/bundle-timeline"
+        },
+        "exit_code": 0,
+        "outcome": "ok",
+        "result": {
+          "applied_filters": {
+            "scenario_ids": [],
+            "signature_tokens": []
+          },
+          "event_count": 7,
+          "input_bundle_count": 7,
+          "signature_count": 7,
+          "time_window": {
+            "first_seen_at": "2026-04-27T07:40:53.859Z",
+            "last_seen_at": "2026-04-27T10:53:41.187Z"
+          },
+          "timeline_relpath": "outputs/bundle-timeline/timeline.json",
+          "unique_signatures": 7
+        },
+        "stderr": "",
+        "stdout": "signature_count=7 event_count=7 timeline_relpath=outputs/bundle-timeline/timeline.json\n"
+      }
+    ],
+    "evaluated_value": {
+      "completed": 1,
+      "outcome": "ok",
+      "signature_count": 7
+    },
+    "params": {},
+    "primitive": "bundle_timeline_emitted_clean",
+    "result": "pass"
+  }
+]

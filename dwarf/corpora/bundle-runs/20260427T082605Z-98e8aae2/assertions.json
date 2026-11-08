@@ -1,0 +1,77 @@
+[
+  {
+    "data_points_used": [
+      {
+        "compare_relpaths": [
+          "outputs/runtime-cardano-lsq-extract/result.json"
+        ],
+        "comparison_verdict": "diff",
+        "diff_relpath": "outputs/bundle-diff/diff.json",
+        "expected_helper_exit": 0,
+        "helper_exit_code": 0,
+        "helper_script": "/home/nigel/dwarf-fw/scripts/runtime_bundle_diff.py",
+        "left_run_id": "20260427T064030Z-33297ed4",
+        "outcome": "ok",
+        "python_bin": "python3",
+        "result": {
+          "compared_relpaths": [
+            "outputs/runtime-cardano-lsq-extract/result.json"
+          ],
+          "comparison_verdict": "diff",
+          "comparisons": [
+            {
+              "left_exists": true,
+              "left_normalized": {
+                "era": 6,
+                "exit_status": "ok",
+                "network_magic": 42,
+                "raw_response_path": "<run_dir>/outputs/runtime-cardano-lsq-extract/raw-response.bin",
+                "snapshot_path": "<run_dir>/outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor",
+                "snapshot_sha256": "c97f967ede999e32836e18d8b1b718b6849e815377ad36ba84f66cdc074100c5",
+                "snapshot_size": 10509,
+                "socket_path": "/tmp/ada2-testnet42-socket/node1.sock"
+              },
+              "left_sha256": "c61ed4efdfc1384baf4d48ef5e9d5b56bb7d0c6c7e1ade9c5661bc92d80fdbd0",
+              "normalized_equal": false,
+              "relpath": "outputs/runtime-cardano-lsq-extract/result.json",
+              "right_exists": true,
+              "right_normalized": {
+                "era": 6,
+                "exit_status": "ok",
+                "network_magic": 42,
+                "raw_response_path": "<run_dir>/outputs/runtime-cardano-lsq-extract/raw-response.bin",
+                "snapshot_path": "<run_dir>/outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor",
+                "snapshot_sha256": "5960ac67740410403e5eee7ea439989308991272aa3c2fbc74b6ac610a3b8e33",
+                "snapshot_size": 10509,
+                "socket_path": "/tmp/ada2-testnet42-socket/node1.sock"
+              },
+              "right_sha256": "bdacc51e3dcea56a445db97b36969e681392065035f97cad0d6c0d6c8b2f7f53",
+              "verdict": "diff"
+            }
+          ],
+          "diffed_at_utc": "2026-04-27T08:26:05Z",
+          "left_run_dir": "/home/nigel/dwarf-fw/runs/20260427T064030Z-33297ed4",
+          "left_run_id": "20260427T064030Z-33297ed4",
+          "right_run_dir": "/home/nigel/dwarf-fw/runs/20260427T075729Z-9262386a",
+          "right_run_id": "20260427T075729Z-9262386a",
+          "schema_version": "v1"
+        },
+        "right_run_id": "20260427T075729Z-9262386a",
+        "runs_dir": "/home/nigel/dwarf-fw/runs",
+        "stderr": "",
+        "stdout": "left_run_id=20260427T064030Z-33297ed4 right_run_id=20260427T075729Z-9262386a comparison_verdict=diff diff_relpath=outputs/bundle-diff/diff.json\n",
+        "timed_out": false,
+        "timeout_seconds": 120.0
+      }
+    ],
+    "evaluated_value": {
+      "comparison_count": 1,
+      "comparison_verdict": "diff",
+      "completed": 1,
+      "outcome": "ok"
+    },
+    "params": {},
+    "primitive": "bundle_diff_completed_clean",
+    "result": "pass"
+  }
+]
