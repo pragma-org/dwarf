@@ -52,3 +52,23 @@ def test_bls_family_uses_plutus_v3_and_the_rest_v2():
     families = pc.families()
     assert families["bls12-381-builtins"].language == "PlutusV3"
     assert {f.language for n, f in families.items() if n != "bls12-381-builtins"} == {"PlutusV2"}
+
+
+def test_families_can_be_built_for_every_allowed_language():
+    for name, languages in pc.FAMILY_LANGUAGES.items():
+        for language in languages:
+            family = pc.family(name, language)
+            assert family.language == language and family.control.language == language
+            assert all(case.language == language for case in family.cases)
+    assert pc.FAMILY_LANGUAGES["bls12-381-builtins"] == ("PlutusV3",)
+    with pytest.raises(ValueError):
+        pc.family("bls12-381-builtins", "PlutusV2")
+
+
+def test_language_selection_follows_the_live_cost_models():
+    # this chain (testnet_42, protocol 10.0) carries PlutusV1 and PlutusV3 cost models only
+    live = {"PlutusV1": [1], "PlutusV3": [1]}
+    assert pc.select_language("crypto-builtins", live) == "PlutusV3"
+    assert pc.select_language("crypto-builtins", {"PlutusV1": [1], "PlutusV2": [1]}) == "PlutusV2"
+    assert pc.select_language("crypto-builtins", {"PlutusV1": [1]}) == "PlutusV1"
+    assert pc.select_language("bls12-381-builtins", {"PlutusV1": [1], "PlutusV2": [1]}) is None

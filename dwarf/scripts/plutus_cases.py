@@ -88,8 +88,7 @@ def _control(language: str) -> Case:
                 "policy that always succeeds; proves the transaction path")
 
 
-def _integer_division() -> Family:
-    lang = "PlutusV2"
+def _integer_division(lang: str = "PlutusV2") -> Family:
     division = u.all_true(
         _eq_int(u.call("divideInteger", _i(-7), _i(2)), -4),
         _eq_int(u.call("modInteger", _i(-7), _i(2)), 1),
@@ -111,8 +110,7 @@ def _integer_division() -> Family:
     ))
 
 
-def _value_structure() -> Family:
-    lang = "PlutusV2"
+def _value_structure(lang: str = "PlutusV2") -> Family:
     big = 2 ** 100
     nested = ("constr", 0, [1, b"\xff", [2, 3]])
     built = u.call("constrData", _i(0), u.call("mkCons", u.call("iData", _i(1)), u.call("mkCons", u.call("bData", _b(b"\xff")),
@@ -137,8 +135,7 @@ def _value_structure() -> Family:
     ))
 
 
-def _crypto() -> Family:
-    lang = "PlutusV2"
+def _crypto(lang: str = "PlutusV2") -> Family:
     verify = lambda sig: u.call("verifyEd25519Signature", _b(ED25519_RFC8032_PUBLIC_KEY), _b(b""), _b(sig))  # noqa: E731
     tampered = bytes([ED25519_RFC8032_SIGNATURE[0] ^ 1]) + ED25519_RFC8032_SIGNATURE[1:]
     return Family("crypto-builtins", lang, _control(lang), (
@@ -152,8 +149,7 @@ def _crypto() -> Family:
     ))
 
 
-def _bls12_381() -> Family:
-    lang = "PlutusV3"
+def _bls12_381(lang: str = "PlutusV3") -> Family:
     point = u.call("bls12_381_G1_uncompress", _b(BLS12_381_G1_GENERATOR))
     return Family("bls12-381-builtins", lang, _control(lang), (
         Case("g1-compress-roundtrip", lang, "accept",
@@ -167,5 +163,36 @@ def _bls12_381() -> Family:
     ))
 
 
+_BUILDERS = {
+    "cek-integer-division": _integer_division,
+    "cek-value-structure": _value_structure,
+    "crypto-builtins": _crypto,
+    "bls12-381-builtins": _bls12_381,
+}
+
+# Languages each family may run in, most current first. The checks use only builtins every listed
+# language has, so the expected outcomes are the same in each; BLS12-381 builtins exist in V3 only.
+FAMILY_LANGUAGES: dict[str, tuple[str, ...]] = {
+    "cek-integer-division": ("PlutusV3", "PlutusV2", "PlutusV1"),
+    "cek-value-structure": ("PlutusV3", "PlutusV2", "PlutusV1"),
+    "crypto-builtins": ("PlutusV3", "PlutusV2", "PlutusV1"),
+    "bls12-381-builtins": ("PlutusV3",),
+}
+
+
 def families() -> dict[str, Family]:
-    return {family.name: family for family in (_integer_division(), _value_structure(), _crypto(), _bls12_381())}
+    return {name: builder() for name, builder in _BUILDERS.items()}
+
+
+def family(name: str, language: str) -> Family:
+    if language not in FAMILY_LANGUAGES[name]:
+        raise ValueError(f"family {name} cannot run as {language}")
+    return _BUILDERS[name](language)
+
+
+def select_language(name: str, cost_models: dict) -> str | None:
+    """The first allowed language the live chain has a cost model for, or None."""
+    for language in FAMILY_LANGUAGES[name]:
+        if isinstance((cost_models or {}).get(language), list):
+            return language
+    return None

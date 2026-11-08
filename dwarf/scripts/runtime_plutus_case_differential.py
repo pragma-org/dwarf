@@ -227,11 +227,9 @@ def run_plutus_case_differential(
         split_transaction, validate_runtime_identity,
     )
 
-    catalog = plutus_cases.families()
-    unknown = [name for name in family_names if name not in catalog]
+    unknown = [name for name in family_names if name not in plutus_cases.FAMILY_LANGUAGES]
     if unknown or not family_names:
         raise ValueError(f"unknown or empty Plutus case families: {unknown or family_names}")
-    selected = [catalog[name] for name in family_names]
     identities = validate_runtime_identity(
         runtime, target_node=target_node, reference_node=reference_node,
         expected_target_version=expected_target_version, expected_target_source=expected_target_source,
@@ -249,8 +247,6 @@ def run_plutus_case_differential(
     socket_path = str(reference.get("container_socket_path") or "")
     helper_image = str(os.environ.get("DWARF_LOCALTXSUBMISSION_HELPER_IMAGE") or "")
     propagation_gate = _reference_tx_submission_propagation_gate(reference, inspect_container=_inspect_container)
-    # two controls plus one transaction per case and node
-    spend_count = sum(2 + 2 * len(family.cases) for family in selected)
 
     with _containerized_cardano_workload(
         runtime_root=runtime_root, runtime=runtime, node=reference, output_dir=output_dir, controller=controller,
@@ -268,10 +264,16 @@ def run_plutus_case_differential(
         from decimal import Decimal
         pparams = json.loads(pparams_path.read_text(encoding="utf-8"), parse_float=Decimal)
         budget = case_budget(pparams)
-        languages = sorted({family.language for family in selected})
-        missing = [lang for lang in languages if not isinstance((pparams.get("costModels") or {}).get(lang), list)]
-        if missing:
-            raise RuntimeError(f"live protocol parameters omit cost models for {missing}")
+        cost_models = pparams.get("costModels") or {}
+        chosen = {name: plutus_cases.select_language(name, cost_models) for name in family_names}
+        unsupported = [name for name, language in chosen.items() if language is None]
+        if unsupported:
+            raise RuntimeError(f"live protocol parameters have no cost model for any language of {unsupported} "
+                               f"(chain offers {sorted(cost_models)})")
+        selected = [plutus_cases.family(name, chosen[name]) for name in family_names]
+        languages = sorted(set(chosen.values()))
+        # two controls plus one transaction per case and node
+        spend_count = sum(2 + 2 * len(family.cases) for family in selected)
 
         funding_before = _query_utxo(cli=cli, socket_path=socket_path, network_magic=network_magic,
                                      address=address, destination=output_dir / "funding-before.json")
@@ -404,7 +406,8 @@ def run_plutus_case_differential(
             "case_family": "plutus_case_differential",
             "families": family_names,
             "runtime_identity": identities,
-            "protocol": {"case_budget": {"steps": budget[0], "memory": budget[1]}, "languages": languages},
+            "protocol": {"case_budget": {"steps": budget[0], "memory": budget[1]}, "languages": languages,
+                         "family_languages": chosen, "live_cost_model_languages": sorted(cost_models)},
             "records": family_records,
             "differential_status": status,
             "claim_limits": [
