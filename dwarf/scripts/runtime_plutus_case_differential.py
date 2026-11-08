@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import os
+import time
 from collections.abc import Callable, Mapping
 from decimal import ROUND_CEILING
 from pathlib import Path
@@ -46,6 +47,19 @@ SCRIPT_FILE_TYPES = {"PlutusV1": "PlutusScriptV1", "PlutusV2": "PlutusScriptV2",
 CASE_INPUT_LOVELACE = 20_000_000
 COLLATERAL_LOVELACE = 5_000_000
 REJECT_CLASSES = {"phase2_reject", "ledger_reject", "inconclusive_reject", "decode_reject"}
+PROPAGATION_MARGIN_SECONDS = 5.0
+
+
+def seconds_until_target_eligible(gate: Mapping[str, Any] | None, *, now: float) -> float:
+    """Time left before the reference accepts transactions relayed from the target.
+
+    A transaction Amaru admits before cardano-node's tx-submission responder is active is never
+    re-offered, so it cannot be included and the control would be falsely incomplete.
+    """
+    eligible = (gate or {}).get("eligible_at_epoch_seconds")
+    if not isinstance(eligible, (int, float)):
+        return 0.0
+    return max(0.0, float(eligible) + PROPAGATION_MARGIN_SECONDS - now)
 
 
 def case_budget(protocol_parameters: Mapping[str, Any]) -> tuple[int, int]:
@@ -348,6 +362,10 @@ def run_plutus_case_differential(
             return built
 
         def submit(role: str, built: dict[str, Any], case_dir: Path, *, wait_inclusion: bool) -> dict[str, Any]:
+            if role == "target":
+                wait = seconds_until_target_eligible(propagation_gate, now=time.time())
+                if wait:
+                    time.sleep(wait)
             pre_tip = _query_reference_tip(cli=cli, socket_path=socket_path, network_magic=network_magic)
             response = (_submit_amaru_container(str(target["container_id"]), built["payload"]) if role == "target"
                         else _submit_reference_raw(runtime=runtime, reference=reference, payload=built["payload"],

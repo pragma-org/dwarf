@@ -124,3 +124,10 @@ def test_assertion_requires_complete_agreeing_specification_matching_evidence(tm
 
     verdict = sp.PlutusCaseOutcomesAgree(params={}).evaluate(H())
     assert verdict["result"] == result and verdict["primitive"] == "plutus_case_outcomes_agree"
+
+
+def test_target_submissions_wait_until_the_reference_accepts_relayed_transactions():
+    gate = {"eligible_at_epoch_seconds": 1000.0}
+    assert d.seconds_until_target_eligible(gate, now=970.0) == pytest.approx(30.0 + d.PROPAGATION_MARGIN_SECONDS)
+    assert d.seconds_until_target_eligible(gate, now=1000.0 + d.PROPAGATION_MARGIN_SECONDS + 1) == 0.0
+    assert d.seconds_until_target_eligible(None, now=5.0) == 0.0
