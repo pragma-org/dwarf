@@ -7284,7 +7284,8 @@ class ShimPeerMalformedHandshake(LoadPrimitive):
             raise ValueError(f"mini_protocol_num out of range for mux header: {mini_protocol_num}")
         if len(payload) > 0xFFFF:
             raise ValueError(f"payload too large for one mux SDU: {len(payload)} bytes")
-        header_word = ((1 if initiator else 0) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
+        # Mux mode bit: 0 marks a frame sent by the initiator, 1 one sent by the responder (F53).
+        header_word = ((0 if initiator else 1) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
         return struct.pack(">II", timestamp & 0xFFFFFFFF, header_word) + payload
 
     def run(self, handle, rng):
@@ -7423,7 +7424,8 @@ class ShimPeerMalformedBlockfetch(LoadPrimitive):
       receive_bytes            — optional recv size cap (default 64)
     """
 
-    _HANDSHAKE_PROPOSE_HEX = "8200a10a82182af4"
+    # MsgProposeVersions {13, 14, 15: [magic 42, false, 0, false]} — the table current nodes accept (F53).
+    _HANDSHAKE_PROPOSE_HEX = "8200a30d84182af400f40e84182af400f40f84182af400f4"
     _BLOCKFETCH_CASES = {
         "invalid-point-hash-short": "83008201581f33333333333333333333333333333333333333333333333333333333333333820158201111111111111111111111111111111111111111111111111111111111111111",
         "invalid-point-array-len-one": "83008101820158201111111111111111111111111111111111111111111111111111111111111111",
@@ -7452,7 +7454,8 @@ class ShimPeerMalformedBlockfetch(LoadPrimitive):
             raise ValueError(f"mini_protocol_num out of range for mux header: {mini_protocol_num}")
         if len(payload) > 0xFFFF:
             raise ValueError(f"payload too large for one mux SDU: {len(payload)} bytes")
-        header_word = ((1 if initiator else 0) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
+        # Mux mode bit: 0 marks a frame sent by the initiator, 1 one sent by the responder (F53).
+        header_word = ((0 if initiator else 1) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
         return struct.pack(">II", timestamp & 0xFFFFFFFF, header_word) + payload
 
     def run(self, handle, rng):
@@ -7508,16 +7511,24 @@ class ShimPeerMalformedBlockfetch(LoadPrimitive):
             sock.sendall(handshake_frame)
             try:
                 handshake_response = sock.recv(receive_bytes)
-                handshake_response_kind = "data" if handshake_response else "eof"
+                body = handshake_response[8:]  # after the 8-byte mux header
+                if not handshake_response:
+                    handshake_response_kind = "eof"
+                elif len(body) >= 2 and body[0] in (0x82, 0x83) and body[1] in (1, 2):
+                    handshake_response_kind = "accepted" if body[1] == 1 else "refused"
+                else:
+                    handshake_response_kind = "data"
             except socket.timeout:
                 handshake_response_kind = "timeout"
                 handshake_response = b""
             except ConnectionResetError:
                 handshake_response_kind = "reset"
                 handshake_response = b""
-            if handshake_response_kind != "data":
+            if handshake_response_kind != "accepted":
+                # A refused handshake is not a session: the node closes before the
+                # malformed frame is read, and that close must not count as rejection (F53).
                 raise RuntimeError(
-                    f"valid handshake proposal did not produce a data response; got {handshake_response_kind}"
+                    f"valid handshake proposal was not accepted; got {handshake_response_kind}"
                 )
             sock.sendall(blockfetch_frame)
             try:
@@ -7635,7 +7646,8 @@ class ShimPeerMalformedTxsubmission(LoadPrimitive):
       receive_bytes            — optional recv size cap (default 64)
     """
 
-    _HANDSHAKE_PROPOSE_HEX = "8200a10a82182af4"
+    # MsgProposeVersions {13, 14, 15: [magic 42, false, 0, false]} — the table current nodes accept (F53).
+    _HANDSHAKE_PROPOSE_HEX = "8200a30d84182af400f40e84182af400f40f84182af400f4"
     _TXSUBMISSION_CASES = {
         "bad-requesttxids-shape": "8300f501",
         "bad-txid-size-pair-len-1": "8201818158201111111111111111111111111111111111111111111111111111111111111111",
@@ -7666,7 +7678,8 @@ class ShimPeerMalformedTxsubmission(LoadPrimitive):
             raise ValueError(f"mini_protocol_num out of range for mux header: {mini_protocol_num}")
         if len(payload) > 0xFFFF:
             raise ValueError(f"payload too large for one mux SDU: {len(payload)} bytes")
-        header_word = ((1 if initiator else 0) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
+        # Mux mode bit: 0 marks a frame sent by the initiator, 1 one sent by the responder (F53).
+        header_word = ((0 if initiator else 1) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
         return struct.pack(">II", timestamp & 0xFFFFFFFF, header_word) + payload
 
     def run(self, handle, rng):
@@ -7722,16 +7735,24 @@ class ShimPeerMalformedTxsubmission(LoadPrimitive):
             sock.sendall(handshake_frame)
             try:
                 handshake_response = sock.recv(receive_bytes)
-                handshake_response_kind = "data" if handshake_response else "eof"
+                body = handshake_response[8:]  # after the 8-byte mux header
+                if not handshake_response:
+                    handshake_response_kind = "eof"
+                elif len(body) >= 2 and body[0] in (0x82, 0x83) and body[1] in (1, 2):
+                    handshake_response_kind = "accepted" if body[1] == 1 else "refused"
+                else:
+                    handshake_response_kind = "data"
             except socket.timeout:
                 handshake_response_kind = "timeout"
                 handshake_response = b""
             except ConnectionResetError:
                 handshake_response_kind = "reset"
                 handshake_response = b""
-            if handshake_response_kind != "data":
+            if handshake_response_kind != "accepted":
+                # A refused handshake is not a session: the node closes before the
+                # malformed frame is read, and that close must not count as rejection (F53).
                 raise RuntimeError(
-                    f"valid handshake proposal did not produce a data response; got {handshake_response_kind}"
+                    f"valid handshake proposal was not accepted; got {handshake_response_kind}"
                 )
             sock.sendall(txsubmission_frame)
             try:
@@ -7891,7 +7912,8 @@ class ShimPeerInvalidCbor(LoadPrimitive):
             raise ValueError(f"mini_protocol_num out of range for mux header: {mini_protocol_num}")
         if len(payload) > 0xFFFF:
             raise ValueError(f"payload too large for one mux SDU: {len(payload)} bytes")
-        header_word = ((1 if initiator else 0) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
+        # Mux mode bit: 0 marks a frame sent by the initiator, 1 one sent by the responder (F53).
+        header_word = ((0 if initiator else 1) << 31) | ((mini_protocol_num & 0x7FFF) << 16) | (len(payload) & 0xFFFF)
         return struct.pack(">II", timestamp & 0xFFFFFFFF, header_word) + payload
 
     def run(self, handle, rng):

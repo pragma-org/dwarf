@@ -295,12 +295,9 @@ def summarize_attempts(attempts: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_handshake_frame(payload_hex: str = HANDSHAKE_UNSUPPORTED_VERSION_HEX) -> bytes:
-    """Build an inbound handshake SDU for the node's responder-side bearer."""
-    return _encode_mux_sdu(
-        bytes.fromhex(payload_hex),
-        mini_protocol_num=0,
-        initiator=False,
-    )
+    """Build an inbound handshake SDU for the node's responder-side bearer: we
+    are the initiator, so the mux mode bit is clear (the helper's default)."""
+    return _encode_mux_sdu(bytes.fromhex(payload_hex), mini_protocol_num=0)
 
 
 def classify_unsupported_handshake_response(response: bytes) -> tuple[str, str]:
