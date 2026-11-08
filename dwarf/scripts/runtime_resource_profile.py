@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -79,8 +80,8 @@ def _is_expected_process(node: dict, comm: str, args: str) -> bool:
     return any(Path(token).name in expected_names for token in argv)
 
 
-def _scan_for_runtime_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int:
-    result = subprocess.run(
+def _scan_for_runtime_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=subprocess.run) -> int:
+    result = runner(
         ["ps", "-eo", "pid=,comm=,args="],
         capture_output=True,
         text=True,
@@ -122,11 +123,11 @@ def _process_name(pid: int, proc_root: Path) -> str | None:
         return None
 
 
-def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int | None:
+def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc"), runner=subprocess.run) -> int | None:
     container_name = str(node.get("container_name") or "")
     if not container_name:
         return None
-    result = subprocess.run(
+    result = runner(
         ["docker", "inspect", container_name],
         capture_output=True,
         text=True,
@@ -140,7 +141,7 @@ def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int |
         root_pid = int(((body.get("State") or {}).get("Pid")) or 0)
     except (IndexError, ValueError, TypeError, json.JSONDecodeError):
         return None
-    top = subprocess.run(
+    top = runner(
         ["docker", "top", container_name, "-eo", "pid,comm,args"],
         capture_output=True,
         text=True,
@@ -168,9 +169,9 @@ def _resolve_docker_pid(node: dict, *, proc_root: Path = Path("/proc")) -> int |
     return None
 
 
-def resolve_target_pid(runtime_metadata_path: Path, target_node: str, *, proc_root: Path = Path("/proc")) -> int:
+def resolve_target_pid(runtime_metadata_path: Path, target_node: str, *, proc_root: Path = Path("/proc"), runner=subprocess.run) -> int:
     node = _load_runtime_node(runtime_metadata_path, target_node)
-    docker_pid = _resolve_docker_pid(node, proc_root=proc_root)
+    docker_pid = _resolve_docker_pid(node, proc_root=proc_root, runner=runner)
     if docker_pid is not None and _proc_exists(docker_pid, proc_root):
         return docker_pid
     pid_file = node.get("pid_file")
@@ -181,7 +182,7 @@ def resolve_target_pid(runtime_metadata_path: Path, target_node: str, *, proc_ro
             pid = None
         if pid is not None and _proc_exists(pid, proc_root):
             return pid
-    return _scan_for_runtime_pid(node, proc_root=proc_root)
+    return _scan_for_runtime_pid(node, proc_root=proc_root, runner=runner)
 
 
 def _parse_status(status_text: str) -> dict:
@@ -345,6 +346,137 @@ def collect_samples(
     return samples
 
 
+_DOCKER_SIZE_UNITS = {
+    "B": 1, "kB": 1000, "KB": 1000, "KiB": 1024, "MB": 10**6, "MiB": 1024**2,
+    "GB": 10**9, "GiB": 1024**3, "TB": 10**12, "TiB": 1024**4,
+}
+
+
+def _parse_docker_size(text: str) -> int | None:
+    """Parse a ``docker stats`` size such as ``116.7MiB`` or ``90MB`` into bytes."""
+    match = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([A-Za-z]+)\s*", str(text or ""))
+    if not match or match.group(2) not in _DOCKER_SIZE_UNITS:
+        return None
+    return int(float(match.group(1)) * _DOCKER_SIZE_UNITS[match.group(2)])
+
+
+def _parse_docker_pair(text: str) -> tuple[int | None, int | None]:
+    parts = str(text or "").split("/")
+    if len(parts) != 2:
+        return None, None
+    return _parse_docker_size(parts[0]), _parse_docker_size(parts[1])
+
+
+def _parse_docker_percent(text: str) -> float | None:
+    try:
+        return float(str(text).strip().rstrip("%"))
+    except (TypeError, ValueError):
+        return None
+
+
+def collect_container_samples(
+    *,
+    container_name: str,
+    expected_name: str,
+    sample_count: int,
+    sample_interval_seconds: float,
+    runner=subprocess.run,
+) -> list[dict]:
+    """Sample a containerised node through the container runtime's cgroup accounting.
+
+    Used when the node's pid is not visible in this process's ``/proc`` (the controller is not
+    in the host pid namespace and node images carry no ``ps``). ``docker stats`` reports the
+    container's memory usage (cgroup), CPU share, task count, network and block I/O; fields
+    that only ``/proc/<pid>`` provides (fd count, cpu time, context switches) are ``None``.
+    """
+    if sample_count <= 0:
+        raise ValueError("sample_count must be positive")
+    samples = []
+    for idx in range(sample_count):
+        result = runner(
+            ["docker", "stats", "--no-stream", "--format", "{{json .}}", container_name],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+        if result.returncode != 0 or not (result.stdout or "").strip():
+            raise RuntimeError(
+                f"docker stats failed for container {container_name!r} (rc={result.returncode}): {(result.stderr or '')[-200:]}"
+            )
+        body = json.loads((result.stdout or "").strip().splitlines()[0])
+        mem_used, _mem_limit = _parse_docker_pair(body.get("MemUsage"))
+        net_rx, net_tx = _parse_docker_pair(body.get("NetIO"))
+        blk_read, blk_write = _parse_docker_pair(body.get("BlockIO"))
+        try:
+            tasks = int(str(body.get("PIDs", "")).strip())
+        except ValueError:
+            tasks = None
+        samples.append(
+            {
+                "sample_index": idx,
+                "pid": None,
+                "container_name": container_name,
+                "monotonic_seconds": time.monotonic(),
+                "ts_epoch_s": time.time(),
+                "fd_count": None,
+                "cpu_time_seconds": None,
+                "cpu_percent": _parse_docker_percent(body.get("CPUPerc")),
+                "disk_read_bytes": blk_read,
+                "disk_write_bytes": blk_write,
+                "network_rx_bytes": net_rx,
+                "network_tx_bytes": net_tx,
+                "network_scope": "container-network-namespace",
+                "rss_bytes": mem_used,
+                "memory_scope": "cgroup",
+                "threads": tasks,
+                "voluntary_ctxt_switches": None,
+                "nonvoluntary_ctxt_switches": None,
+                "state": "running",
+                "name": expected_name,
+                "source": "docker-stats",
+            }
+        )
+        if idx + 1 < sample_count:
+            time.sleep(sample_interval_seconds)
+    return samples
+
+
+def resolve_sampling_target(
+    runtime_metadata_path: Path,
+    target_node: str,
+    *,
+    proc_root: Path = Path("/proc"),
+    runner=subprocess.run,
+) -> dict:
+    """Decide how a node can be sampled: ``proc`` (a visible pid) or ``docker-stats``."""
+    node = _load_runtime_node(runtime_metadata_path, target_node)
+    container_name = str(node.get("container_name") or "") or None
+    expected_name = sorted(_expected_process_names(node))[0]
+    try:
+        pid = resolve_target_pid(runtime_metadata_path, target_node, proc_root=proc_root, runner=runner)
+    except (RuntimeError, FileNotFoundError, ProcessLookupError):
+        if container_name:
+            return {"mode": "docker-stats", "pid": None, "container_name": container_name, "expected_name": expected_name}
+        raise
+    return {"mode": "proc", "pid": pid, "container_name": container_name, "expected_name": expected_name}
+
+
+def collect_samples_for_target(
+    target: dict,
+    *,
+    sample_count: int,
+    sample_interval_seconds: float,
+    proc_root: Path = Path("/proc"),
+    runner=subprocess.run,
+) -> list[dict]:
+    if target.get("mode") == "docker-stats":
+        return collect_container_samples(
+            container_name=str(target["container_name"]), expected_name=str(target.get("expected_name") or ""),
+            sample_count=sample_count, sample_interval_seconds=sample_interval_seconds, runner=runner,
+        )
+    return collect_samples(
+        pid=int(target["pid"]), sample_count=sample_count, sample_interval_seconds=sample_interval_seconds, proc_root=proc_root
+    )
+
+
 def _write_samples(output_dir: Path, samples: list[dict]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "samples.json").write_text(json.dumps(samples, indent=2) + "\n", encoding="utf-8")
@@ -361,7 +493,8 @@ def main(argv: list[str]) -> int:
 
     output_dir = Path(args.output_dir) if args.output_dir else Path(os.environ.get("ADA2_DWARF_RUN_DIR", ".")) / "outputs" / "runtime-resource-profile"
     runtime_metadata_path = Path(args.runtime_metadata_path)
-    pid = resolve_target_pid(runtime_metadata_path, args.target_node)
+    target = resolve_sampling_target(runtime_metadata_path, args.target_node)
+    pid = target["pid"]
     emit_target_event(
         primitive="runtime_resource_profile",
         event="resource_profile_started",
@@ -369,12 +502,14 @@ def main(argv: list[str]) -> int:
             "runtime_metadata_path": str(runtime_metadata_path),
             "target_node": args.target_node,
             "pid": pid,
+            "sampling_mode": target["mode"],
+            "container_name": target.get("container_name"),
             "sample_count": args.sample_count,
             "sample_interval_seconds": args.sample_interval_seconds,
         },
     )
-    samples = collect_samples(
-        pid=pid,
+    samples = collect_samples_for_target(
+        target,
         sample_count=args.sample_count,
         sample_interval_seconds=args.sample_interval_seconds,
     )
@@ -385,10 +520,11 @@ def main(argv: list[str]) -> int:
 
     max_rss_bytes = maximum("rss_bytes")
     max_fd_count = maximum("fd_count")
-    final_threads = samples[-1]["threads"]
+    final_threads = samples[-1].get("threads")
     payload = {
         "target_node": args.target_node,
         "pid": pid,
+        "sampling_mode": target["mode"],
         "sample_count": len(samples),
         "max_rss_bytes": max_rss_bytes,
         "max_fd_count": max_fd_count,

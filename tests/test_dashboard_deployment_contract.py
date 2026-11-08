@@ -1885,3 +1885,21 @@ def test_controller_image_retries_transient_support_archive_failures():
     # The checksum gate and the three extracted binaries are unchanged by the retry.
     assert "Cardano support archive checksum mismatch" in dockerfile
     assert 'for binary in ("cardano-testnet", "cardano-cli", "cardano-node"):' in dockerfile
+
+
+def test_controller_shares_the_host_pid_namespace_for_node_process_observation():
+    """F79: node processes run in sibling containers; the controller's observation and fault
+    primitives resolve a node's pid from ``docker inspect`` and read ``/proc/<pid>``. That
+    needs the host pid namespace (no extra capability); the dashboard keeps its own."""
+    compose = (ROOT / "delivery/docker-compose.dwarf.yml").read_text(encoding="utf-8")
+    dashboard, controller = compose.split("\n  dwarf-controller:\n", 1)
+    controller = controller.split("\nvolumes:\n", 1)[0]
+    assert "\n    pid: host\n" in controller
+    assert "pid: host" not in dashboard
+    assert "cap_drop:\n      - ALL" in controller  # still no added capability
+
+
+def test_framework_image_installs_procps_pinned_to_the_snapshot():
+    dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(encoding="utf-8")
+    assert "ARG PROCPS_VERSION=2:4.0.4-9" in dockerfile
+    assert "procps=${PROCPS_VERSION}" in dockerfile

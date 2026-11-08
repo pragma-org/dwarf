@@ -20,6 +20,8 @@ ARG LIBSECP256K1_VERSION=0.5.0-2+b1
 ARG OPENSSH_CLIENT_VERSION=1:10.0p1-7+deb13u2
 ARG RSYNC_VERSION=3.4.1+ds1-5+deb13u1
 ARG TMUX_VERSION=3.5a-3
+# procps gives the controller `ps` for node pid resolution (F79)
+ARG PROCPS_VERSION=2:4.0.4-9
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
@@ -80,6 +82,7 @@ RUN for attempt in 1 2 3 4 5; do \
                 libsodium23=${LIBSODIUM_VERSION} \
                 libsecp256k1-2=${LIBSECP256K1_VERSION} \
                 openssh-client=${OPENSSH_CLIENT_VERSION} \
+                procps=${PROCPS_VERSION} \
                 rsync=${RSYNC_VERSION} \
                 tmux=${TMUX_VERSION}; then \
             break; \

@@ -21,7 +21,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from runtime_connection_state import resolve_target_process  # noqa: E402
 from runtime_amaru_preview_proof import extract_latest_adopted_tip  # noqa: E402
-from runtime_resource_profile import collect_samples, resolve_target_pid  # noqa: E402
+from runtime_resource_profile import collect_samples_for_target, resolve_sampling_target  # noqa: E402
 from runtime_syscall_trace import run_trace  # noqa: E402
 from runtime_telemetry import emit_target_event  # noqa: E402
 
@@ -607,19 +607,26 @@ def _observe_resource_profile(
     sample_interval_seconds: float,
 ) -> dict:
     sample_count = max(1, int(round(observation_window_seconds / max(sample_interval_seconds, 0.1))))
-    pid = resolve_target_pid(runtime_metadata_path, target_node)
-    samples = collect_samples(
-        pid=pid,
+    target = resolve_sampling_target(runtime_metadata_path, target_node)
+    samples = collect_samples_for_target(
+        target,
         sample_count=sample_count,
         sample_interval_seconds=sample_interval_seconds,
     )
+
+    def maximum(name):
+        values = [sample.get(name) for sample in samples if sample.get(name) is not None]
+        return max(values) if values else None
+
     return {
         "target_node": target_node,
-        "pid": pid,
+        "pid": target["pid"],
+        "sampling_mode": target["mode"],
+        "container_name": target.get("container_name"),
         "sample_count": len(samples),
-        "max_rss_bytes": max(sample["rss_bytes"] for sample in samples) if samples else 0,
-        "max_fd_count": max(sample["fd_count"] for sample in samples) if samples else 0,
-        "final_threads": samples[-1]["threads"] if samples else 0,
+        "max_rss_bytes": maximum("rss_bytes") if samples else 0,
+        "max_fd_count": maximum("fd_count") if samples else 0,
+        "final_threads": samples[-1].get("threads") if samples else 0,
         "samples": samples,
     }
 

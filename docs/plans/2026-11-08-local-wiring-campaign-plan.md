@@ -70,6 +70,9 @@ Public catalog impact: 110 scenario files change two or three fields each; the e
 - 1 CBOR dataset differential (`cardano-amaru-cbor-dataset-auxiliary-data-differential`): dataset at `/home/nigel/cardano-cbor-dataset` on the box host is not mounted into the controller (known since 2026-11-01); mounting a host path into the controller is a deploy decision.
 - 5 host-model port faults (`fault_local_port_drop`/`_delay`) on container substrates → F76 refusal; needs a netns sidecar.
 
+- 3 byzantine-proxy scenarios (`runtime_byzantine_peer`, host-model tmux relaunch) → F80; needs a proxy sidecar.
+- 1 `cardano-lsq-extract-debug-epoch-state`: needs `cargo` in the controller image (toolchain decision).
+
 ## Evidence retention and cleanup (user, 2026-11-08: "make sure the evidence/output is saved including the taps … and remove the docker containers or volumes when the scenario is validated end to end")
 
 - Every run keeps its full directory under the runs root (log, assertions, probes, `measurements/` with every tap's collector result, `report.json`, `compact-table.json`, outputs) and its run-ledger entry. The campaign additionally pulls the **signed portable bundle** of every finished run (`GET /runs/<run_id>/bundle`, produced by `runtime_bundle_export` with signature verification) and keeps a copy under `/Volumes/DevStorage/dwarf-work/bundles/campaign/`; the ledger row records the bundle path and size. Done by hand for today's five finished runs (shim pass, e2e-stock pass, profile-o workload pass 5/5, the two failing proofs) → `/Volumes/DevStorage/dwarf-work/bundles/runs/`.

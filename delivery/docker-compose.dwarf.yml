@@ -200,6 +200,12 @@ services:
     group_add:
       - ${DWARF_DOCKER_GID:-0}
       - ${DWARF_RUNTIME_GID:-1000}
+    # Node processes run in sibling containers. Sharing the host pid namespace lets
+    # the controller's observation and fault primitives resolve a node's pid
+    # (docker inspect .State.Pid) and read /proc/<pid>/{status,stat} without a
+    # shell or ps in the node image (F79). No capability is added: fd, io and
+    # ptrace-level reads stay unavailable and the primitives report them as such.
+    pid: host
     read_only: true
     cap_drop:
       - ALL
