@@ -1903,3 +1903,15 @@ def test_framework_image_installs_procps_pinned_to_the_snapshot():
     dockerfile = (ROOT / "infrastructure/docker/dwarf-fw.Dockerfile").read_text(encoding="utf-8")
     assert "ARG PROCPS_VERSION=2:4.0.4-9" in dockerfile
     assert "procps=${PROCPS_VERSION}" in dockerfile
+
+
+def test_installer_defaults_the_run_artifact_base_url_to_the_dashboard_address():
+    """F88: the governance anchor primitive addresses proposal metadata through the dashboard's
+    run-artifact route (`/runs/<id>/output?path=…`); an install must give the controller that base
+    URL instead of leaving it empty, while an operator-provided value is kept."""
+    installer = (ROOT / "delivery/install.sh").read_text(encoding="utf-8")
+    assert "artifact_base_url=$(env_get DWARF_RUN_ARTIFACT_BASE_URL)" in installer
+    assert 'artifact_base_url="http://${DWARF_DASHBOARD_BIND:-127.0.0.1}:${dashboard_port}"' in installer
+    assert "printf 'DWARF_RUN_ARTIFACT_BASE_URL=%s\\n' \"${artifact_base_url}\"" in installer
+    contract = (ROOT / "delivery/tests/test_installer_contract.sh").read_text(encoding="utf-8")
+    assert "DWARF_RUN_ARTIFACT_BASE_URL=http://" in contract

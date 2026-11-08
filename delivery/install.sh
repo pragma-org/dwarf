@@ -450,6 +450,9 @@ env_get() {
 }
 random_token() { openssl rand -base64 48 | tr -d '\r\n'; }
 dashboard_token=$(env_get ADA2_DWARF_TOKEN)
+# The controller addresses run artifacts (governance anchors) through the dashboard's
+# /runs/<id>/output route; default the base URL to this install's dashboard, keep an override.
+artifact_base_url=$(env_get DWARF_RUN_ARTIFACT_BASE_URL)
 controller_token=$(env_get DWARF_CONTROLLER_TOKEN)
 installation_id=$(env_get DWARF_INSTALLATION_ID)
 [[ -n "${dashboard_token}" ]] || dashboard_token=$(random_token)
@@ -606,6 +609,8 @@ env_tmp=${install_root}/.env.tmp.$$
   printf 'DWARF_CATALOG_REVISION=%s\n' "${release_revision}"
   printf 'DWARF_DASHBOARD_BIND=127.0.0.1\n'
   printf 'DWARF_DASHBOARD_PORT=%s\n' "${dashboard_port}"
+  [[ -n "${artifact_base_url}" ]] || artifact_base_url="http://${DWARF_DASHBOARD_BIND:-127.0.0.1}:${dashboard_port}"
+  printf 'DWARF_RUN_ARTIFACT_BASE_URL=%s\n' "${artifact_base_url}"
   printf 'DWARF_COMPOSE_PROJECT_NAME=%s\n' "${compose_project_name}"
   printf 'DWARF_CONTAINER_NAME=%s\n' "${dashboard_container_name}"
   printf 'DWARF_CONTROLLER_CONTAINER_NAME=%s\n' "${controller_container_name}"

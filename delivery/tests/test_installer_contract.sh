@@ -203,6 +203,7 @@ cmp "${bundle}/catalog/profiles/test-profile/profile.yaml" \
   "${runtime_one}/state/profiles/test-profile/profile.yaml"
 grep -qx 'DWARF_DASHBOARD_BIND=127.0.0.1' "${install_one}/.env"
 grep -qx 'DWARF_DASHBOARD_PORT=18787' "${install_one}/.env"
+grep -q '^DWARF_RUN_ARTIFACT_BASE_URL=http://' "${install_one}/.env"
 darwin_install="${tmp}/darwin-install"
 darwin_runtime="${tmp}/darwin-runtime"
 DWARF_TEST_UNAME_S=Darwin DWARF_TEST_UNAME_M=arm64 DWARF_INSTALLER_TEST_MODE=1 \
