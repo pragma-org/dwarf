@@ -2620,33 +2620,6 @@ _No authored scenario example found._
 }
 ```
 
-## `plutus_phase2_differential_equivalent`
-
-- Family: `assertion`
-- Version: `0.1.0`
-- Module: `profile_manager.primitives`
-- Class: `PlutusPhase2DifferentialEquivalent`
-- Supports: `cardano-node`, `amaru`
-- Runtimes: `devnet`, `library`
-- Schema: `primitives/assertion/plutus_phase2_differential_equivalent.schema.json`
-
-### Parameters
-
-| Param | Type | Required | Description |
-| --- | --- | --- | --- |
-| `primitive` | `unspecified` | `yes` | - |
-
-### Example Invocation
-
-```json
-{
-  "reference": {
-    "primitive": "plutus_phase2_differential_equivalent"
-  },
-  "scenario": "conway-scriptcontext-txinfo-fidelity-differential-amaru-cardano-node"
-}
-```
-
 ## `plutus_result_and_budget_match`
 
 - Family: `assertion`
@@ -6308,46 +6281,6 @@ _No authored scenario example found._
     "target_node": "node3"
   },
   "scenario": "runtime-substrate-eclipse-topology-example-smoke"
-}
-```
-
-## `runtime_plutus_phase2_differential_observation`
-
-- Family: `load`
-- Version: `0.1.0`
-- Module: `profile_manager.primitives`
-- Class: `RuntimePlutusPhase2DifferentialObservation`
-- Supports: `cardano-node`, `amaru`
-- Runtimes: `devnet`
-- Schema: `primitives/load/runtime_plutus_phase2_probe.schema.json`
-
-### Parameters
-
-| Param | Type | Required | Description |
-| --- | --- | --- | --- |
-| `ex_units_override` | `integer` | `no` | - |
-| `expect_exit` | `integer` | `no` | - |
-| `is_valid_flag_override` | `string` | `no` | - |
-| `observer_node` | `string` | `yes` | - |
-| `output_dir` | `string` | `yes` | - |
-| `probe_case` | `string` | `yes` | - |
-| `runtime_metadata_path` | `string` | `yes` | - |
-| `target_node` | `string` | `yes` | - |
-| `timeout_seconds` | `number` | `no` | - |
-
-### Example Invocation
-
-```json
-{
-  "reference": {
-    "observer_node": "node2",
-    "output_dir": "outputs/plutus-phase2-differential",
-    "primitive": "runtime_plutus_phase2_differential_observation",
-    "probe_case": "conway-scriptcontext-txinfo",
-    "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
-    "target_node": "node1"
-  },
-  "scenario": "conway-scriptcontext-txinfo-fidelity-differential-amaru-cardano-node"
 }
 ```
 

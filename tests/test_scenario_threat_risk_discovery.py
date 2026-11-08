@@ -8,10 +8,11 @@ from profile_manager.data.threat_risk_coverage import threat_risk_discovery_inde
 from profile_manager.views.threat_coverage import current_threat_coverage_data
 
 
-# 2026-11-08: re-pinned after removing the four vacuous Plutus phase-2 submit-probe scenarios
-# (verified: the contract differs only by those four scenario ids leaving their rows).
+# 2026-11-08: re-pinned twice. First the four vacuous submit-probe scenarios left their rows;
+# then the nine fixture-replaying differential scenarios were replaced by the four on-chain
+# plutus-onchain-* case differentials (verified: only those scenario ids changed rows).
 _PRE_EXTRACTION_CONTRACT_SHA256 = (
-    "bfd1f289cc5886f2697d576afbc6e3614f51417e01185809ff8f2b2608b3e233"
+    "9660ab429d58540aab01d65cb8266d8d0409998798129b9fbb1fd1bd7860e7c0"
 )
 
 

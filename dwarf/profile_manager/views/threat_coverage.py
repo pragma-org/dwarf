@@ -64,15 +64,19 @@ _ADDITIONAL_COVERAGE = {
         "threats": ("TM-016", "TM-036",),
         "risks": ("RR-016", "RR-031",),
     },
-    "plutus-vm-crypto-builtins-differential-amaru-cardano-node": {
+    "plutus-onchain-cek-integer-division-differential-amaru-cardano-node": {
         "threats": ("TM-016",),
         "risks": ("RR-016", "RR-031",),
     },
-    "plutus-bls12-381-builtins-differential-amaru-cardano-node": {
+    "plutus-onchain-cek-value-structure-differential-amaru-cardano-node": {
         "threats": ("TM-016",),
         "risks": ("RR-016", "RR-031",),
     },
-    "plutus-cek-value-structure-differential-amaru-cardano-node": {
+    "plutus-onchain-crypto-builtins-differential-amaru-cardano-node": {
+        "threats": ("TM-016",),
+        "risks": ("RR-016", "RR-031",),
+    },
+    "plutus-onchain-bls12-381-builtins-differential-amaru-cardano-node": {
         "threats": ("TM-016",),
         "risks": ("RR-016", "RR-031",),
     },
@@ -81,10 +85,6 @@ _ADDITIONAL_COVERAGE = {
         "risks": ("RR-016",),
     },
     "reference-script-inline-datum-reference-input-differential-amaru-cardano-node": {
-        "threats": ("TM-016",),
-        "risks": ("RR-016",),
-    },
-    "conway-scriptcontext-txinfo-fidelity-differential-amaru-cardano-node": {
         "threats": ("TM-016",),
         "risks": ("RR-016",),
     },
@@ -99,22 +99,6 @@ _ADDITIONAL_COVERAGE = {
     "consensus-epoch-boundary-active-nonce-differential": {
         "threats": ("TM-013", "TM-034",),
         "risks": ("RR-013", "RR-029",),
-    },
-    "runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru": {
-        "threats": ("TM-016",),
-        "risks": ("RR-016", "RR-031"),
-    },
-    "runtime-substrate-plutus-phase2-cek-divmod-differential-mixed-amaru": {
-        "threats": ("TM-016",),
-        "risks": ("RR-016", "RR-031"),
-    },
-    "runtime-substrate-plutus-phase2-crypto-builtins-differential-mixed-amaru": {
-        "threats": ("TM-016",),
-        "risks": ("RR-016", "RR-031"),
-    },
-    "runtime-substrate-plutus-phase2-plutusdata-decode-differential-mixed-amaru": {
-        "threats": ("TM-016",),
-        "risks": ("RR-016", "RR-031"),
     },
     "runtime-substrate-mempool-failure-containment-mixed-amaru": {
         "threats": ("TM-012",),

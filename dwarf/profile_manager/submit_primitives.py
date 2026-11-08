@@ -583,6 +583,44 @@ class RuntimeUplcDeepDelayStackSafety(LoadPrimitive):
         return report
 
 
+class RuntimePlutusCaseDifferential(LoadPrimitive):
+    """Submit specification-derived Plutus phase-2 cases to Amaru and cardano-node on a live devnet."""
+
+    primitive_name = "runtime_plutus_case_differential"
+    bound_substrate = None
+
+    def run(self, handle, rng):
+        run_dir = _run_dir(handle)
+        output_dir = run_dir / self.params.get("output_dir", "outputs/plutus-case-differential")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = Path(self.params["runtime_metadata_path"])
+        if not metadata_path.is_absolute():
+            metadata_path = run_dir / metadata_path
+        runtime = json.loads(metadata_path.read_text(encoding="utf-8"))
+        target_node = str(self.params["target_node"])
+        reference_node = str(self.params["reference_node"])
+        nodes = {str(node.get("id")): node for node in (self.bound_substrate or {}).get("nodes", []) if isinstance(node, dict)}
+        target_identity, reference_identity = nodes.get(target_node), nodes.get(reference_node)
+        if not isinstance(target_identity, dict) or not isinstance(reference_identity, dict):
+            raise RuntimeError("Plutus case differential requires resolved target and reference nodes")
+        from scripts import runtime_plutus_case_differential as differential
+
+        report = differential.run_plutus_case_differential(
+            runtime=runtime,
+            output_dir=output_dir,
+            target_node=target_node,
+            reference_node=reference_node,
+            expected_target_version=str(target_identity["version"]),
+            expected_target_source=str(target_identity["source_revision"]),
+            expected_reference_version=str(reference_identity["version"]),
+            expected_reference_source=str(reference_identity["source_revision"]),
+            family_names=[str(name) for name in self.params["families"]],
+        )
+        report.update({"primitive": self.primitive_name, "target_node": target_node, "reference_node": reference_node})
+        (output_dir / "result.json").write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+        return report
+
+
 class RuntimeTransactionArrayArityDifferential(LoadPrimitive):
     """Run independent canonical controls and one exact three-element variant."""
 
@@ -874,6 +912,40 @@ class UplcDeepDelayStackSafetyMatches(AssertionPrimitive):
             "data_points_used": [status] if isinstance(status, dict) else [],
             "result": "pass" if ok else "fail",
             "note": None if ok else "UPLC deep-delay evidence is incomplete or inconclusive",
+        }
+
+
+class PlutusCaseOutcomesAgree(AssertionPrimitive):
+    """Require admitted/included/adopted controls, node agreement on every case, and the
+    specification's expected outcome; a disagreement fails with the case named."""
+
+    def evaluate(self, handle):
+        path = _run_dir(handle) / self.params.get("result_path", "outputs/plutus-case-differential/result.json")
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            report = {}
+        status = report.get("differential_status") if isinstance(report, dict) else None
+        ok = bool(isinstance(status, dict) and status.get("complete") is True and status.get("agreement") is True
+                  and status.get("specification_match") is True)
+        note = None
+        if not ok and isinstance(status, dict):
+            if status.get("disagreements"):
+                note = "nodes disagree: " + ", ".join(str(item.get("case_id")) for item in status["disagreements"])
+            elif status.get("specification_mismatches"):
+                note = "both nodes differ from the specification: " + ", ".join(
+                    str(item.get("case_id")) for item in status["specification_mismatches"])
+            else:
+                note = "Plutus case evidence is incomplete or inconclusive"
+        elif not ok:
+            note = "Plutus case differential produced no result"
+        return {
+            "primitive": "plutus_case_outcomes_agree",
+            "params": dict(self.params),
+            "evaluated_value": status or {},
+            "data_points_used": [status] if isinstance(status, dict) else [],
+            "result": "pass" if ok else "fail",
+            "note": note,
         }
 
 

@@ -183,10 +183,6 @@
       "status": "unsupported",
       "note": "Runs host tmux and a host Amaru checkout."
     },
-    "runtime_plutus_phase2_differential_observation": {
-      "status": "unsupported",
-      "note": "Resolves the target process through docker inspect or host pid files."
-    },
     "runtime_preview_parity_baseline": {
       "status": "unsupported",
       "note": "Checks host pid files and host log sizes."

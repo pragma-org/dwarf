@@ -1138,21 +1138,6 @@
       ],
       "version": "0.1.0"
     },
-    "plutus_phase2_differential_equivalent": {
-      "class": "PlutusPhase2DifferentialEquivalent",
-      "family": "assertion",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/assertion/plutus_phase2_differential_equivalent.schema.json",
-      "runtimes": [
-        "devnet",
-        "library"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
     "plutus_result_and_budget_match": {
       "class": "PlutusResultAndBudgetMatch",
       "family": "assertion",
@@ -2511,20 +2496,6 @@
       ],
       "version": "0.1.0"
     },
-    "runtime_plutus_phase2_differential_observation": {
-      "class": "RuntimePlutusPhase2DifferentialObservation",
-      "family": "load",
-      "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_plutus_phase2_probe.schema.json",
-      "runtimes": [
-        "devnet"
-      ],
-      "supports": [
-        "cardano-node",
-        "amaru"
-      ],
-      "version": "0.1.0"
-    },
     "runtime_praos_header_assertion_probe": {
       "class": "RuntimePraosHeaderAssertionProbe",
       "family": "load",
@@ -3720,6 +3691,34 @@
       "family": "assertion",
       "module": "profile_manager.submit_primitives",
       "params_schema": "primitives/assertion/inline_datum_tag24_boundary_matches.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "runtime_plutus_case_differential": {
+      "class": "RuntimePlutusCaseDifferential",
+      "family": "load",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/load/runtime_plutus_case_differential.schema.json",
+      "runtimes": [
+        "devnet"
+      ],
+      "supports": [
+        "cardano-node",
+        "amaru"
+      ],
+      "version": "0.1.0"
+    },
+    "plutus_case_outcomes_agree": {
+      "class": "PlutusCaseOutcomesAgree",
+      "family": "assertion",
+      "module": "profile_manager.submit_primitives",
+      "params_schema": "primitives/assertion/plutus_case_outcomes_agree.schema.json",
       "runtimes": [
         "devnet"
       ],

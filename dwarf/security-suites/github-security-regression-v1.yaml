@@ -332,44 +332,44 @@ groups:
       - cardano-stock-header-validation
     limitations:
     - Treat any admission difference as a validation or conformance bug unless separate impact testing supports more.
-  - id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
-    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+  - id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
+    scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
     version_policy: operator-selected
     security_objective: Detect divergent Plutus CEK value evaluation.
     target_nodes:
     - node1
     - node2
     reference_control: Normal script-value transactions succeed on both nodes before differential cases.
-    workload_fault: Execute the same script-value fixtures on Amaru and cardano-node in one runtime.
+    workload_fault: Submit specification-derived Plutus value-structure cases to Amaru and cardano-node on one live devnet.
     oracle: Compare phase-2 outcomes and retain exact script/input identity at the same boundary.
     evidence_rule: Retain frozen source and executable identities, input/fault hashes, reached-boundary diagnostics,
       assertion results and successful normal-control evidence. Missing reachability or a masked rejection is inconclusive;
       endpoint loss alone does not prove a crash.
     normal_control:
-      scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+      scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
       success_rule: Normal script-value transactions succeed on both nodes before differential cases.
     topology:
       mode: shared-runtime
       nodes:
       - node_id: node1
-        implementation: cardano-node
-      - node_id: node2
         implementation: amaru
+      - node_id: node2
+        implementation: cardano-node
     measurement_attachments:
     - node_id: node1
-      implementation: cardano-node
-      target_mode: stock
-      measurement_profile: cardano-security-default
-      result_namespace: nodes/node1/measurements/stock
-      additional_measurements:
-      - cardano-stock-header-validation
-    - node_id: node2
       implementation: amaru
       target_mode: stock
       measurement_profile: amaru-security-default
-      result_namespace: nodes/node2/measurements/stock
+      result_namespace: nodes/node1/measurements/stock
       additional_measurements:
       - amaru-stock-header-validation
+    - node_id: node2
+      implementation: cardano-node
+      target_mode: stock
+      measurement_profile: cardano-security-default
+      result_namespace: nodes/node2/measurements/stock
+      additional_measurements:
+      - cardano-stock-header-validation
     limitations: *id001
   blocked_candidates: *id002
 - id: n2n-containment

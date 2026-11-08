@@ -1012,17 +1012,6 @@ def build_runtime_hardening_probe_command(*, config_path: Path, mode: str) -> li
     ]
 
 
-def build_runtime_plutus_phase2_probe_command(*, config_path: Path, mode: str) -> list[str]:
-    return [
-        "python3",
-        str(DWARF_ROOT / "scripts" / "runtime_plutus_phase2_probe.py"),
-        "--config",
-        str(config_path),
-        "--mode",
-        mode,
-    ]
-
-
 def build_runtime_epoch_boundary_probe_command(*, config_path: Path, mode: str) -> list[str]:
     return [
         "python3",
@@ -6587,85 +6576,6 @@ class RuntimeContainerRuntimeInspect(_RuntimeHardeningProbePrimitive):
     primitive_name = "runtime_container_runtime_inspect"
     mode_name = "container_runtime_inspect"
     requires_target_node = False
-
-
-class _RuntimePlutusPhase2ProbePrimitive(LoadPrimitive):
-    primitive_name = ""
-    mode_name = ""
-
-    def run(self, handle, rng):
-        state = {}
-        runtime_metadata_value = (
-            self.params.get("runtime_metadata_path")
-            or state.get("substrate_bundle_runtime_metadata_path")
-            or state.get("substrate_runtime_metadata_path")
-            or ""
-        )
-        if not runtime_metadata_value:
-            raise ValueError(f"{self.primitive_name} requires substrate runtime metadata")
-        runtime_metadata_path = str(_resolve_output_path(handle, runtime_metadata_value))
-        output_dir = _resolve_output_path(handle, self.params["output_dir"])
-        timeout = float(self.params.get("timeout_seconds", 240))
-        expect_exit = int(self.params.get("expect_exit", 0))
-        output_dir.mkdir(parents=True, exist_ok=True)
-        config_path = output_dir / f"{self.primitive_name}-config.json"
-        config_body = {
-            "runtime_metadata_path": runtime_metadata_path,
-            "output_dir": str(output_dir),
-            "target_node": str(self.params["target_node"]),
-            "observer_node": str(self.params["observer_node"]),
-            "probe_case": str(self.params["probe_case"]),
-        }
-        if "is_valid_flag_override" in self.params:
-            config_body["is_valid_flag_override"] = str(self.params["is_valid_flag_override"])
-        if "ex_units_override" in self.params:
-            config_body["ex_units_override"] = int(self.params["ex_units_override"])
-        config_path.write_text(json.dumps(config_body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        command = build_runtime_plutus_phase2_probe_command(config_path=config_path, mode=self.mode_name)
-
-        handle.log(
-            phase="load",
-            primitive=self.primitive_name,
-            level="info",
-            event="started",
-            payload={"runtime_metadata_path": runtime_metadata_path, "output_dir": str(output_dir), "command": command},
-        )
-
-        proc = subprocess.run(
-            command,
-            cwd=DWARF_ROOT,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            env=_ensure_user_local_bin_path(_ensure_cargo_path(_build_dwarf_telemetry_env(handle))),
-        )
-        stdout = _decode_process_output(proc.stdout)
-        stderr = _decode_process_output(proc.stderr)
-        report = {}
-        report_path = output_dir / "result.json"
-        if report_path.is_file():
-            report = json.loads(report_path.read_text(encoding="utf-8"))
-        outcome = "ok" if proc.returncode == expect_exit else "unexpected_exit"
-        handle.log(
-            phase="load",
-            primitive=self.primitive_name,
-            level="info" if outcome == "ok" else "error",
-            event="completed",
-            payload={
-                "exit_code": proc.returncode,
-                "outcome": outcome,
-                "artifact_summary": {"has_result_report": report_path.is_file()},
-                "report": report,
-                "result": report.get("result") or {},
-                "stdout": stdout[-4096:],
-                "stderr": stderr[-2048:],
-            },
-        )
-
-
-class RuntimePlutusPhase2DifferentialObservation(_RuntimePlutusPhase2ProbePrimitive):
-    primitive_name = "runtime_plutus_phase2_differential_observation"
-    mode_name = "differential"
 
 
 class _RuntimeEpochBoundaryProbePrimitive(LoadPrimitive):
@@ -21884,43 +21794,6 @@ class ValidationPathParityPreserved(AssertionPrimitive):
                 "completed": 1 if latest is not None else 0,
                 "parity_match": parity_match,
                 "mismatched_validation_steps": mismatched_validation_steps,
-            },
-            "data_points_used": [payload] if latest is not None else [],
-            "result": result,
-            "note": note,
-        }
-
-
-class PlutusPhase2DifferentialEquivalent(AssertionPrimitive):
-    """Pass iff Amaru and cardano-node agree on phase-2 admission/rejection behavior for the same Plutus transaction."""
-
-    def evaluate(self, handle):
-        source_primitive = str(self.params.get("source_primitive") or "runtime_plutus_phase2_differential_observation")
-        latest, payload = _latest_completed_payload(handle, phase="load", primitive=source_primitive)
-        result_body = payload.get("result") or {}
-        equivalent = bool(result_body.get("equivalent", False))
-        amaru_decision = str(result_body.get("amaru_decision") or "")
-        cardano_node_decision = str(result_body.get("cardano_node_decision") or "")
-        reason_equivalent = bool(result_body.get("reason_equivalent", False))
-        enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and equivalent
-            and reason_equivalent
-            and bool(amaru_decision)
-            and bool(cardano_node_decision)
-        )
-        result = "pass" if enough else "fail"
-        note = None if enough else "expected Amaru and cardano-node to agree on phase-2 Plutus admission behavior"
-        return {
-            "primitive": "plutus_phase2_differential_equivalent",
-            "params": dict(self.params),
-            "evaluated_value": {
-                "completed": 1 if latest is not None else 0,
-                "equivalent": equivalent,
-                "amaru_decision": amaru_decision,
-                "cardano_node_decision": cardano_node_decision,
-                "reason_equivalent": reason_equivalent,
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,

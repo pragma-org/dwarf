@@ -39,22 +39,6 @@ SCENARIOS = (
     ("runtime-substrate-mux-ingress-overrun-mixed-amaru", "amaru"),
     ("runtime-substrate-mempool-failure-containment-mixed-amaru", "cardano-node"),
     (
-        "runtime-substrate-plutus-phase2-cek-divmod-differential-mixed-amaru",
-        "cardano-node",
-    ),
-    (
-        "runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru",
-        "cardano-node",
-    ),
-    (
-        "runtime-substrate-plutus-phase2-crypto-builtins-differential-mixed-amaru",
-        "cardano-node",
-    ),
-    (
-        "runtime-substrate-plutus-phase2-plutusdata-decode-differential-mixed-amaru",
-        "cardano-node",
-    ),
-    (
         "runtime-substrate-txsubmission-unexpected-body-mixed-amaru",
         "cardano-node",
     ),
@@ -379,10 +363,6 @@ def test_inline_substrate_prefers_operator_config_identity_when_manifest_exists(
     ids=(
         "mux-ingress",
         "mempool-containment",
-        "plutus-phase2-divmod",
-        "plutus-phase2-value",
-        "plutus-phase2-crypto",
-        "plutus-phase2-plutusdata",
         "txsubmission-unexpected-body",
     ),
 )
@@ -435,10 +415,6 @@ def test_selected_pair_is_frozen_into_launch_provenance(
     ids=(
         "mux-ingress",
         "mempool-containment",
-        "plutus-phase2-divmod",
-        "plutus-phase2-value",
-        "plutus-phase2-crypto",
-        "plutus-phase2-plutusdata",
         "txsubmission-unexpected-body",
     ),
 )

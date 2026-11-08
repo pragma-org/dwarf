@@ -370,7 +370,7 @@ exercises:
     status: ready
 - measurement_id: amaru-stock-plutus-execution
   implementation: amaru
-  scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+  scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
   version_policy: operator-selected
   rule:
     min_samples: 1
@@ -386,13 +386,13 @@ exercises:
     are not exercised. Missing rejected/accepted outcomes remain incomplete.
   runtime:
     status: missing
-    reason: The selected differential scenario references a corpus fixture that is not packaged and its current probe only replays declared expected fields; it does not submit a real Plutus transaction or retain target execution evidence.
+    reason: The version-neutral on-chain Plutus case differential (2026-11-08) submits real accepted and rejected cases to both nodes; awaiting a retained live run before this row is marked implemented.
   fallback:
-    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
     activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
       after the declared boundary, normal control and collector prerequisites are available.
     status: blocked
-    reason: Add a version-neutral funded Plutus transaction workload with real accepted and rejected outcomes before enabling this fallback.
+    reason: Enable once the on-chain Plutus case differential has a retained live run with accepted and rejected outcomes.
 - measurement_id: amaru-stock-resources
   implementation: amaru
   scenario_id: amaru-measurement-e2e-stock-portable
@@ -571,7 +571,7 @@ exercises:
       selection.
 - measurement_id: cardano-patched-ledger-plutus-stages
   implementation: cardano-node
-  scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+  scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
   version_policy: operator-selected
   rule:
     min_samples: 1
@@ -588,7 +588,7 @@ exercises:
   runtime:
     status: implemented
   fallback:
-    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
     activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
       after the declared boundary, normal control and collector prerequisites are available.
     status: ready
@@ -760,7 +760,7 @@ exercises:
     status: ready
 - measurement_id: cardano-stock-plutus-execution
   implementation: cardano-node
-  scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+  scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
   version_policy: operator-selected
   rule:
     min_samples: 1
@@ -776,13 +776,13 @@ exercises:
     are not exercised. Missing rejected/accepted outcomes remain incomplete.
   runtime:
     status: missing
-    reason: The selected differential scenario references a corpus fixture that is not packaged and its current probe only replays declared expected fields; it does not submit a real Plutus transaction or retain target execution evidence.
+    reason: The version-neutral on-chain Plutus case differential (2026-11-08) submits real accepted and rejected cases to both nodes; awaiting a retained live run before this row is marked implemented.
   fallback:
-    scenario_id: runtime-substrate-plutus-phase2-cek-value-differential-mixed-amaru
+    scenario_id: plutus-onchain-cek-value-structure-differential-amaru-cardano-node
     activation_condition: When the selected base campaign produces no evidence satisfying this tap rule; rerun only
       after the declared boundary, normal control and collector prerequisites are available.
     status: blocked
-    reason: Add a version-neutral funded Plutus transaction workload with real accepted and rejected outcomes before enabling this fallback.
+    reason: Enable once the on-chain Plutus case differential has a retained live run with accepted and rejected outcomes.
 - measurement_id: cardano-stock-resources
   implementation: cardano-node
   scenario_id: cardano-measurement-e2e-stock-portable
