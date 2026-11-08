@@ -65,6 +65,13 @@ def _add_directory_to_tar(
         relative = path.relative_to(source_root)
         archive_name = str(PurePosixPath(archive_root) / PurePosixPath(relative.as_posix()))
         info = archive.gettarinfo(str(path), arcname=archive_name)
+        if info is None:
+            # tarfile cannot represent sockets (a running node's unix socket lives in its
+            # directory); record the skip instead of crashing the checkpoint
+            manifest_entries.append(
+                {"path": archive_name, "kind": "skipped", "reason": "unix socket or unsupported special file"}
+            )
+            continue
         info.uid = 0
         info.gid = 0
         info.uname = ""
