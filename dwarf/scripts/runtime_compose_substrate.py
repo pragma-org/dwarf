@@ -1505,6 +1505,15 @@ def _compose_substrate_docker(
             raise RuntimeError("Amaru bootstrap omitted governance guardrails evidence")
         if not isinstance(generated_workload_funding, dict):
             raise RuntimeError("Amaru bootstrap omitted generated workload funding")
+        # The bootstrap synthesis pairs the producer image's pinned configuration
+        # with the synthetic ChainDB and rewrites configuration.yaml (seen live:
+        # ExperimentalProtocolsEnabled came back as true).  The handshake pin is
+        # a network setting, not chain state: apply it last.
+        cardano_experimental_protocols = _pin_cardano_experimental_protocols(
+            config_path=env_root / "configuration.yaml",
+            nodes=plan["nodes"],
+            explicit=plan.get("cardano_experimental_protocols"),
+        )
     elif not public_network:
         start_time_refresh = _refresh_cardano_testnet_start_times(env_root=runtime_root / "env")
     if plan.get("kes_genesis_override"):

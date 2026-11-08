@@ -5676,14 +5676,28 @@ class _RuntimeTxsubmissionProbePrimitive(LoadPrimitive):
             },
         )
 
-        proc = subprocess.run(
-            command,
-            cwd=DWARF_ROOT,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-            env=_ensure_cargo_path(_build_dwarf_telemetry_env(handle)),
+        # The probe is the hostile load of a measured window: write the same
+        # ``hostile`` phase markers ``runtime_protocol_decode_cases`` writes, so
+        # ``runtime_mark_hostile_window`` can verify the window (F58).  Without an
+        # active measurement runtime there is nothing to mark.
+        measurement_runtime = getattr(handle, "_measurement_runtime", None)
+        marks_window = measurement_runtime is not None and callable(
+            getattr(measurement_runtime, "mark_phase", None)
         )
+        if marks_window:
+            measurement_runtime.mark_phase("hostile", "start")
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=DWARF_ROOT,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+                env=_ensure_cargo_path(_build_dwarf_telemetry_env(handle)),
+            )
+        finally:
+            if marks_window:
+                measurement_runtime.mark_phase("hostile", "end")
         stdout = _decode_process_output(proc.stdout)
         stderr = _decode_process_output(proc.stderr)
         report = {}
@@ -17827,7 +17841,8 @@ class LoadEventsAreOk(AssertionPrimitive):
     """Pass iff all load-phase completed events report outcome=ok."""
 
     def evaluate(self, handle):
-        completed = _events_from_handle(handle, phase="load", event="completed")
+        load_events = _events_from_handle(handle, phase="load")
+        completed = [entry for entry in load_events if entry.get("event") == "completed"]
         outcomes = []
         non_ok = []
         for entry in completed:
@@ -17838,18 +17853,25 @@ class LoadEventsAreOk(AssertionPrimitive):
             if payload.get("outcome") != "ok":
                 non_ok.append(payload)
         min_completed = int(self.params.get("min_completed", 1))
+        # Non-vacuity guard: the load must have left at least this many load-phase
+        # events (a single-shot primitive leaves ``started`` + ``completed``).  The
+        # completed-with-outcome count is governed by ``min_completed`` alone; the
+        # old ``max(min_completed, min_event_count)`` made every single-shot load
+        # unsatisfiable (F59).
         min_event_count = int(self.params.get("min_event_count", 2))
-        required_completed = max(min_completed, min_event_count)
-        enough = len(outcomes) >= required_completed
+        required_completed = min_completed
+        enough = len(outcomes) >= required_completed and len(load_events) >= min_event_count
         result = "pass" if enough and not non_ok else "fail"
         note = None if enough else (
-            f"expected at least {required_completed} load completed events with outcomes"
+            f"expected at least {required_completed} load completed events with outcomes "
+            f"and at least {min_event_count} load events"
         )
         return {
             "primitive": "load_events_are_ok",
             "params": dict(self.params),
             "evaluated_value": {
                 "completed": len(outcomes),
+                "load_events": len(load_events),
                 "non_ok": len(non_ok),
                 "min_completed": min_completed,
                 "min_event_count": min_event_count,
