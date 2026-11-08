@@ -69,9 +69,14 @@ def test_antithesis_support_comes_from_the_real_generator_contract():
 
 
 def test_resolved_plan_carries_backend_capabilities():
+    # The ported substrate declares cardano-node 10.7.1 exactly (F57); that release
+    # has no deployment-contract qualification in the seed catalog, so the version
+    # gate asks for the one-run acknowledgement the wizard offers.  The gate is not
+    # what this test is about.
     plan = resolve_run_plan(
         RunPlanRequest(
-            scenario_id="runtime-substrate-honest-baseline-docker-mode-example-smoke"
+            scenario_id="runtime-substrate-honest-baseline-docker-mode-example-smoke",
+            acknowledge_unknown_versions=True,
         )
     )
 

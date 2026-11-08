@@ -1877,9 +1877,20 @@ def _retained_bootstrap_evidence(
     return {}
 
 
+# Lines of project log read per health check / evidence capture.  A two-day-old
+# Amaru relay with JSON traces holds 7-8 GB of log; an unbounded read never finished
+# inside the controller's request cap, so healthy topologies looked undeployed (F64).
+# Proven bootstrap evidence is remembered (see _retained_bootstrap_evidence), so a
+# tail is enough for the signals a health check classifies.
+COMPOSE_LOG_TAIL_LINES = 20000
+
+
 def _compose_logs(project: str, compose_file: Path) -> str:
     result = _run(
-        _compose(project, compose_file, "logs", "--no-color", "--timestamps"),
+        _compose(
+            project, compose_file, "logs", "--no-color", "--timestamps",
+            "--tail", str(COMPOSE_LOG_TAIL_LINES),
+        ),
         timeout=300,
     )
     return result.stdout + ("\n[stderr]\n" + result.stderr if result.stderr else "")

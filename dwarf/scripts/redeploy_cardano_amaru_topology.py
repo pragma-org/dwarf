@@ -259,7 +259,10 @@ def redeploy_topology(
         )
         _capture_command(
             command_runner=command_runner,
-            args=_compose_command(compose_file, "logs", "--no-color", "--timestamps"),
+            # Bounded: a long-lived topology's full project log can be many GB (F64).
+            args=_compose_command(
+                compose_file, "logs", "--no-color", "--timestamps", "--tail", "50000"
+            ),
             output=evidence_root / "compose-logs.txt",
             timeout=300,
         )

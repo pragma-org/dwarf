@@ -1903,3 +1903,26 @@ def test_plutus_v2_evidence_requires_all_genesis_and_live_protocol_parameters(tm
             conway_genesis_paths=conway_paths,
             live_protocol_parameters_path=live,
         )
+
+
+def test_compose_logs_are_read_with_a_bounded_tail(monkeypatch, tmp_path):
+    """F64 (2026-11-08): two-day-old Amaru relays had 7-8 GB of JSON trace logs and
+    the unbounded `docker compose logs` read never finished inside the controller's
+    request cap, so the dashboard saw no persisted plan and demanded a redeploy of
+    healthy topologies.  The read must be bounded; proven bootstrap evidence is
+    remembered, so a tail is enough for a health check."""
+    calls = []
+
+    def fake_run(command, timeout=None, **kwargs):
+        calls.append((list(command), timeout))
+        return subprocess.CompletedProcess(command, 0, "line\n", "")
+
+    monkeypatch.setattr(control, "_run", fake_run)
+    text = control._compose_logs("dwarf-profile-x", tmp_path / "docker-compose.json")
+    assert text.startswith("line")
+    command, timeout = calls[0]
+    assert "--tail" in command
+    tail = int(command[command.index("--tail") + 1])
+    assert 1000 <= tail <= 100000
+    assert command[-3:] == ["--no-color", "--timestamps", "--tail", str(tail)][-3:] or command[-1] == str(tail)
+    assert timeout is not None and timeout <= 300
