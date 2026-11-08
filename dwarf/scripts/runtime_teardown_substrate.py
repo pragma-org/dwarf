@@ -80,6 +80,13 @@ def teardown_substrate(*, runtime_metadata_path: Path, output_dir: Path, runner=
         runtime_root = Path(str(metadata.get("runtime_root") or runtime_metadata_path.parent))
         if not compose_project:
             raise RuntimeError(f"docker substrate metadata missing compose_project: {runtime_metadata_path}")
+        # F66: the controller joined the run-owned network after `up`; a network with an
+        # attached container cannot be removed, so leave it first.
+        attachment = metadata.get("controller_attachment")
+        controller_detached = None
+        if isinstance(attachment, dict) and attachment.get("network") and attachment.get("container"):
+            detached = runner(["docker", "network", "disconnect", str(attachment["network"]), str(attachment["container"])])
+            controller_detached = detached.returncode == 0 or "is not connected" in (detached.stderr or "")
         result = runner(
             ["docker", "compose", "--project-name", compose_project, "down", "--volumes", "--remove-orphans"],
             cwd=runtime_root,
@@ -90,6 +97,7 @@ def teardown_substrate(*, runtime_metadata_path: Path, output_dir: Path, runner=
             "compose_project": compose_project,
             "runtime_root": str(runtime_root),
             "stopped_count": len(list(metadata.get("nodes") or [])),
+            "controller_detached": controller_detached,
             "remaining_sessions": 0 if result.returncode == 0 else 1,
             "remaining_session_names": [],
             "nodes": [

@@ -4,6 +4,7 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -1347,6 +1348,30 @@ def _inspect_docker_node_remote(*, compose_project: str, node: dict, host: dict)
     }
 
 
+def _attach_controller_to_substrate_network(
+    *, docker_project: str, controller_ownership: dict | None, runner=run_command
+) -> dict | None:
+    """Join the controller container to a run-owned substrate network (F66).
+
+    Profile-bound runs get this from the controller itself; a self-composed
+    substrate creates its network during the run, so the compose script (which
+    runs inside the controller) connects the controller after ``up`` and the
+    teardown disconnects it before ``down``.  Host runs have no ownership and
+    nothing to join."""
+    if not controller_ownership:
+        return None
+    controller = str(os.environ.get("HOSTNAME") or "").strip()
+    if not controller:
+        return None
+    network = f"{docker_project}-net"
+    result = runner(["docker", "network", "connect", network, controller])
+    if result.returncode != 0 and "already exists" not in (result.stderr or ""):
+        raise RuntimeError(
+            f"controller could not join the substrate network {network}: {result.stderr or result.stdout}"
+        )
+    return {"network": network, "container": controller}
+
+
 def _compose_substrate_docker(
     *,
     plan: dict,
@@ -1554,6 +1579,9 @@ def _compose_substrate_docker(
     up = run_command(["docker", "compose", "--project-name", docker_project, "up", "-d"], cwd=runtime_root)
     if up.returncode != 0:
         raise RuntimeError(f"docker compose up failed: {up.stderr or up.stdout}")
+    controller_attachment = _attach_controller_to_substrate_network(
+        docker_project=docker_project, controller_ownership=plan.get("controller_ownership")
+    )
 
     report_nodes = []
     metadata_nodes = []
@@ -1612,6 +1640,7 @@ def _compose_substrate_docker(
         "profile_id": str(plan.get("profile_id") or compose_project),
         "runtime_root": str(runtime_root),
         "compose_project": docker_project,
+        "controller_attachment": controller_attachment,
         "network": plan["network"],
         "network_magic": resolved_public_network_magic if public_network else plan["network_magic"],
         "support_binaries": dict(support),
