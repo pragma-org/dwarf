@@ -887,6 +887,15 @@ def _public_topology_with_upstream(
     return body, [access_point]
 
 
+def _sibling_container_access_points(node: dict, plan: dict) -> list[dict[str, int | str]]:
+    """The scenario's outgoing edges from ``node`` as container endpoints (service name + container port)."""
+    return [
+        {"address": edge["to"], "port": _docker_container_port(next(peer for peer in plan["nodes"] if peer["id"] == edge["to"]))}
+        for edge in plan["topology"]["edges"]
+        if edge["from"] == node["id"]
+    ]
+
+
 def _rewrite_haskell_topology(
     node: dict,
     *,
@@ -1508,7 +1517,9 @@ def _compose_substrate_docker(
                 node,
                 topo_path=topo_path,
                 template=topology_template,
-                access_points=upstream_access_points,
+                # F83: the scenario's inter-node edges stay local roots next to the upstream relay;
+                # otherwise public-network nodes only ever peer with the real network
+                access_points=_sibling_container_access_points(node, plan) + upstream_access_points,
                 peer_snapshot_path=(
                     Path("/env/peer-snapshot.json")
                     if public_assets.get("peer-snapshot.json")
@@ -1560,11 +1571,7 @@ def _compose_substrate_docker(
             topo_path = env_root / "node-data" / f"node{node['slot_index']}" / "topology.json"
             node["topology_path"] = str(topo_path)
             node["config_path"] = str(env_root / "configuration.yaml")
-            container_access_points = [
-                {"address": edge["to"], "port": _docker_container_port(next(peer for peer in plan["nodes"] if peer["id"] == edge["to"]))}
-                for edge in plan["topology"]["edges"]
-                if edge["from"] == node["id"]
-            ]
+            container_access_points = _sibling_container_access_points(node, plan)
             template = json.loads(topo_path.read_text(encoding="utf-8"))
             _rewrite_haskell_topology(node, topo_path=topo_path, template=template, access_points=container_access_points)
     elif not public_network:

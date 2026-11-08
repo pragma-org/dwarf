@@ -315,3 +315,26 @@ def test_startup_gate_failures_also_tear_the_substrate_down_with_logs():
     docker_fn = source[source.index("def _compose_substrate_docker("):source.index("def _compose_substrate_docker_multihost(")]
     assert docker_fn.count("_cleanup_failed_substrate(") == 3  # verification + cardano gate + amaru gate
     assert docker_fn.count("output_dir=output_dir,") >= 3
+
+
+# --- F83: public-network topologies keep the scenario's inter-node edges ---------------------
+
+def _plan():
+    nodes = [{"id": f"node{i}", "impl": "cardano-node", "version": "10.7.1", "role": "honest"} for i in (1, 2, 3)]
+    edges = [{"from": a["id"], "to": b["id"]} for a in nodes for b in nodes if a is not b]
+    return {"nodes": nodes, "topology": {"edges": edges}}
+
+
+def test_sibling_container_access_points_follow_the_scenario_edges():
+    plan = _plan()
+    points = compose._sibling_container_access_points(plan["nodes"][1], plan)
+    assert [p["address"] for p in points] == ["node1", "node3"]
+    assert all(isinstance(p["port"], int) for p in points)
+
+
+def test_public_branch_passes_sibling_endpoints_next_to_the_upstream_relay():
+    source = Path(compose.__file__).read_text(encoding="utf-8")
+    docker_fn = source[source.index("def _compose_substrate_docker("):source.index("def _compose_substrate_docker_multihost(")]
+    assert "access_points=_sibling_container_access_points(node, plan) + upstream_access_points" in docker_fn
+    # the custom-testnet branch uses the same helper
+    assert docker_fn.count("_sibling_container_access_points(node, plan)") >= 2
