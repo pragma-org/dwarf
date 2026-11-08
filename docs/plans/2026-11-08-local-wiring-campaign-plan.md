@@ -73,6 +73,8 @@ Public catalog impact: 110 scenario files change two or three fields each; the e
 - 3 byzantine-proxy scenarios (`runtime_byzantine_peer`, host-model tmux relaunch) → F80; needs a proxy sidecar.
 - 1 `cardano-lsq-extract-debug-epoch-state`: needs `cargo` in the controller image (toolchain decision).
 
+- Public-network (`network: preview`) substrates: 46 self-composed scenarios start cold nodes on the real preview network. Cardano keeps tx-submission off during bulk sync (txsubmission probes time out, 5/5 so far), Amaru cannot converge to the advertised peer tip inside the gate (5.4 M slots behind in 180 s). Not wiring; a catalog decision (custom `testnet_42` devnets vs an "advancing" convergence target for public networks).
+
 ## Evidence retention and cleanup (user, 2026-11-08: "make sure the evidence/output is saved including the taps … and remove the docker containers or volumes when the scenario is validated end to end")
 
 - Every run keeps its full directory under the runs root (log, assertions, probes, `measurements/` with every tap's collector result, `report.json`, `compact-table.json`, outputs) and its run-ledger entry. The campaign additionally pulls the **signed portable bundle** of every finished run (`GET /runs/<run_id>/bundle`, produced by `runtime_bundle_export` with signature verification) and keeps a copy under `/Volumes/DevStorage/dwarf-work/bundles/campaign/`; the ledger row records the bundle path and size. Done by hand for today's five finished runs (shim pass, e2e-stock pass, profile-o workload pass 5/5, the two failing proofs) → `/Volumes/DevStorage/dwarf-work/bundles/runs/`.

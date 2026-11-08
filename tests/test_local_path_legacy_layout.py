@@ -287,3 +287,31 @@ def test_local_port_faults_refuse_container_substrates_with_a_reason(cls, tmp_pa
     prim = cls(params={"target_node": "node1", "runtime_metadata_path": "~/cardano-profiles/profile-x/runtime.json"})
     with pytest.raises(ValueError, match="host-model fault"):
         prim._target_port(_Handle(tmp_path, prepared=runtime))
+
+
+def test_failed_verification_cleanup_captures_container_logs_before_teardown(tmp_path):
+    calls = []
+
+    def runner(command, **_kwargs):
+        calls.append(list(command))
+        if command[:3] == ["docker", "compose", "--project-name"] and "logs" in command:
+            return SimpleNamespace(returncode=0, stdout="node1-1  | boot\nnode2-1  | crash\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    report = compose._cleanup_failed_substrate(
+        docker_project="dwarf-substrate-z", runtime_root=tmp_path, controller_attachment=None,
+        runner=runner, output_dir=tmp_path / "out",
+    )
+    logs = tmp_path / "out" / "failed-substrate-logs.txt"
+    assert logs.read_text(encoding="utf-8").splitlines()[-1] == "node2-1  | crash"
+    assert report["logs_path"] == str(logs)
+    down = next(i for i, c in enumerate(calls) if "down" in c)
+    captured = next(i for i, c in enumerate(calls) if "logs" in c)
+    assert captured < down
+
+
+def test_startup_gate_failures_also_tear_the_substrate_down_with_logs():
+    source = Path(compose.__file__).read_text(encoding="utf-8")
+    docker_fn = source[source.index("def _compose_substrate_docker("):source.index("def _compose_substrate_docker_multihost(")]
+    assert docker_fn.count("_cleanup_failed_substrate(") == 3  # verification + cardano gate + amaru gate
+    assert docker_fn.count("output_dir=output_dir,") >= 3

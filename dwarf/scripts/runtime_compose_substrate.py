@@ -273,7 +273,12 @@ def _verify_running_docker_nodes(*, plan: dict, docker_project: str) -> list[tup
     return verified
 
 
-def _cleanup_failed_substrate(*, docker_project: str, runtime_root: Path, controller_attachment, runner=None) -> dict:
+FAILED_SUBSTRATE_LOG_TAIL_LINES = 2000
+
+
+def _cleanup_failed_substrate(
+    *, docker_project: str, runtime_root: Path, controller_attachment, runner=None, output_dir: Path | None = None
+) -> dict:
     """Tear a substrate down after its post-``up`` verification failed.
 
     Without this the containers (often crash-looping) and the controller's network attachment
@@ -281,7 +286,21 @@ def _cleanup_failed_substrate(*, docker_project: str, runtime_root: Path, contro
     detached first because a network with an attached container cannot be removed.
     """
     runner = runner or run_command
-    report = {"controller_detached": None, "down_ok": None}
+    report = {"controller_detached": None, "down_ok": None, "logs_path": None}
+    if output_dir is not None:
+        # the containers are about to go; keep their last lines as evidence of why the gate failed
+        logs = runner(
+            ["docker", "compose", "--project-name", docker_project, "logs", "--no-color", "--tail", str(FAILED_SUBSTRATE_LOG_TAIL_LINES)],
+            cwd=runtime_root,
+        )
+        text = (logs.stdout or "") + (("\n" + logs.stderr) if logs.stderr else "")
+        try:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            logs_path = Path(output_dir) / "failed-substrate-logs.txt"
+            logs_path.write_text(text, encoding="utf-8")
+            report["logs_path"] = str(logs_path)
+        except OSError as exc:  # evidence capture must never mask the original failure
+            report["logs_error"] = str(exc)
     if isinstance(controller_attachment, dict) and controller_attachment.get("network"):
         detach = runner(
             ["docker", "network", "disconnect", str(controller_attachment["network"]), str(controller_attachment.get("container"))],
@@ -1653,7 +1672,8 @@ def _compose_substrate_docker(
         _verified_nodes = _verify_running_docker_nodes(plan=plan, docker_project=docker_project)
     except Exception as exc:
         cleanup = _cleanup_failed_substrate(
-            docker_project=docker_project, runtime_root=runtime_root, controller_attachment=controller_attachment
+            docker_project=docker_project, runtime_root=runtime_root, controller_attachment=controller_attachment,
+            output_dir=output_dir,
         )
         raise RuntimeError(f"{exc} (substrate torn down after the failed verification: {cleanup})") from exc
     for node, container, artifact_identity, version_identity in _verified_nodes:
@@ -1750,9 +1770,14 @@ def _compose_substrate_docker(
         )
         write_json(output_dir / "cardano-chain-progress-gate.json", chain_progress_gate)
         if not chain_progress_gate.get("ready"):
+            cleanup = _cleanup_failed_substrate(
+                docker_project=docker_project, runtime_root=runtime_root, controller_attachment=controller_attachment,
+                output_dir=output_dir,
+            )
             raise RuntimeError(
                 "cardano compose substrate did not produce a real block before the startup gate timed out "
-                f"(ready_node_count={chain_progress_gate.get('ready_node_count', 0)})"
+                f"(ready_node_count={chain_progress_gate.get('ready_node_count', 0)}; "
+                f"substrate torn down, logs at {cleanup.get('logs_path')})"
             )
 
     amaru_nodes = [node for node in metadata_nodes if node["impl"] == "amaru"]
@@ -1764,10 +1789,15 @@ def _compose_substrate_docker(
         )
         write_json(output_dir / "amaru-chain-progress-gate.json", amaru_progress_gate)
         if not amaru_progress_gate.get("ready"):
+            cleanup = _cleanup_failed_substrate(
+                docker_project=docker_project, runtime_root=runtime_root, controller_attachment=controller_attachment,
+                output_dir=output_dir,
+            )
             raise RuntimeError(
                 "amaru compose substrate did not intersect, advance, and converge before the startup gate failed "
                 f"(ready_node_count={amaru_progress_gate.get('ready_node_count', 0)}, "
-                f"blocking_signals={amaru_progress_gate.get('blocking_signals', {})})"
+                f"blocking_signals={amaru_progress_gate.get('blocking_signals', {})}; "
+                f"substrate torn down, logs at {cleanup.get('logs_path')})"
             )
 
     report = {
