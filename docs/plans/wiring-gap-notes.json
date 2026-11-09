@@ -4,9 +4,9 @@
   {
    "match": "phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo",
    "group": "version-tied helpers",
-   "status": "open",
+   "status": "rerun-pending",
    "cause": "F99 fixed the netns error; runtime_observability_check.py then reads only legacy logging keys (EnableLogging, minSeverity, TraceXxx). The profile-a config uses the new tracing system with \"TraceOptions\": {} (node defaults)",
-   "fix": "read both tracing systems; profile-a must enable Debug for the peer-selection/connection-manager namespaces (shared profile change: needs a decision)"
+   "fix": "F107 35913370: check reads both tracing systems; profile-a sets cardano_observability_traces (user approved 2026-11-08)"
   },
   {
    "match": "phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo",
@@ -164,10 +164,10 @@
   },
   {
    "match": "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",
-   "group": "ledger differential controls",
+   "group": "known upstream-fixed Amaru bugs",
    "status": "review",
-   "cause": "FINDING CANDIDATE (run 90c557db, F104 evidence): Amaru exited 134 \"thread 'ledger' has overflowed its stack ... fatal runtime error: stack overflow, aborting\" during the deep-delay-28000 case, which cardano-node accepted. Amaru unresponsive on this case in reruns #3, #4 and #5. Not filed anywhere",
-   "fix": "decide reporting; the scenario should name \"target crashed\" as its own outcome instead of \"incomplete\""
+   "cause": "NOT NOVEL: Amaru 10.11.20260918 (aedfe797, 2026-09-18) aborts with \"thread 'ledger' has overflowed its stack\" on the Delay^28000 vector; upstream fixed it in d9bb18e7 \"fix: decode uplc with smaller stack\" (2026-09-19), first in v10.11.20260925. DWARF detects the pre-fix build correctly (evidence: run 90c557db, F104 node log + exit 134)",
+   "fix": "rerun against a post-0925 Amaru to prove the fix; scenario should report \"target crashed\" as its own outcome"
   },
   {
    "match": "runtime-bundle-",
