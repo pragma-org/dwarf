@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 11:18 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 12:48 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,8 +8,8 @@ Generated 2026-11-09 11:18 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 5 |
-| fail | 16 |
-| pass | 99 |
+| fail | 15 |
+| pass | 100 |
 | prepare-failed | 1 |
 
 | Status | Group | Count |
@@ -17,7 +17,6 @@ Generated 2026-11-09 11:18 EST from the campaign ledger and the run bundles. Han
 | void-pass | weak proxy fault modes | 6 |
 | rerun-pending | CBOR dataset | 1 |
 | open | block-apply bridge | 3 |
-| open | duplex hard limit | 1 |
 | open | profile prepare failures | 2 |
 | open | weak proxy fault modes | 1 |
 | review | known upstream-fixed Amaru bugs | 1 |
@@ -58,13 +57,6 @@ Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply
 - `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node` (fail, run 20261109T153907Z-8fab3645): fail
   - Cause: same deferred forge/serve bridge
   - Fix: same as above
-
-## open: duplex hard limit
-
-Cause: real now (F126): node accepted 24 duplex bearers vs hard_limit 8, but 8 exists only in the probe; the node runs the default AcceptedConnectionsLimit (hard 512)
-Fix: add a substrate setting that writes AcceptedConnectionsLimit into the node config; the probe reads the node limit
-
-- `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261109T152825Z-48dd04e0): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
 
 ## open: profile prepare failures
 

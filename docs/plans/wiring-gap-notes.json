@@ -25,9 +25,9 @@
   {
    "match": "runtime-substrate-duplex-promotion-pressure-example-smoke",
    "group": "duplex hard limit",
-   "status": "open",
+   "status": "fixed",
    "cause": "real now (F126): node accepted 24 duplex bearers vs hard_limit 8, but 8 exists only in the probe; the node runs the default AcceptedConnectionsLimit (hard 512)",
-   "fix": "add a substrate setting that writes AcceptedConnectionsLimit into the node config; the probe reads the node limit"
+   "fix": "F140/F140b/F141: node AcceptedConnectionsLimit set by the scenario (hardLimit 8); node refused 17 excess connections, peak 7+1 peer; PASS run 20261109T174702Z-b3b07327"
   },
   {
    "match": "runtime-substrate-blockfetch-range-pressure-example-smoke",
