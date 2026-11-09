@@ -86,38 +86,6 @@ def _launch_haskell_node(node: dict) -> None:
         raise RuntimeError(f"failed to launch {node['id']}: {result.stderr or result.stdout}")
 
 
-def _default_observation_overrides(metadata: dict) -> dict:
-    nodes = list(metadata.get("nodes") or metadata.get("haskell_nodes") or [])
-    node_ids = [str(node.get("id") or "") for node in nodes if str(node.get("id") or "")]
-    edges = []
-    for edge in list(metadata.get("topology", {}).get("edges") or []):
-        pair = sorted([str(edge.get("from") or ""), str(edge.get("to") or "")])
-        if pair[0] and pair[1] and pair not in edges:
-            edges.append(pair)
-    latest_tips = {
-        node_id: {"slot": 0, "hash": "resource-abuse-tip-0", "block": 0}
-        for node_id in node_ids
-    }
-    return {
-        "responsive_node_count": len(node_ids),
-        "responsive_nodes": node_ids,
-        "expected_peer_edges": edges,
-        "observed_peer_edges": edges,
-        "missing_peer_edges": [],
-        "expected_peer_edge_count": len(edges),
-        "observed_peer_edge_count": len(edges),
-        "missing_peer_edge_count": 0,
-        "quorum_count": len(node_ids),
-        "quorum_fraction": 1.0 if node_ids else 0.0,
-        "quorum_tip": {"hash": "resource-abuse-tip-0", "slot": 0, "nodes": node_ids},
-        "chain_select_consistent": True,
-        "latest_tips": latest_tips,
-        "tip_group_count": 1 if node_ids else 0,
-        "tip_groups": [{"hash": "resource-abuse-tip-0", "slot": 0, "nodes": node_ids}] if node_ids else [],
-        "per_node_connectivity": {node_id: [other for other in node_ids if other != node_id] for node_id in node_ids},
-    }
-
-
 def _launch_proxy_session(
     *,
     session: str,
@@ -227,6 +195,38 @@ def _restart_node(node: dict, *, compose_mode: str) -> None:
     _launch_haskell_node(node)
 
 
+def _proxy_bind_address(network_name: str) -> str:
+    try:
+        from runtime_chainsync_blockfetch_fault import _proxy_bind_address as bind
+    except ImportError:  # pragma: no cover - package import path
+        from scripts.runtime_chainsync_blockfetch_fault import _proxy_bind_address as bind
+    return bind(network_name)
+
+
+def _proxy_route(metadata: dict, source_node: dict, upstream_node: dict) -> tuple[str, str]:
+    """(address the source node dials for the proxy, address the proxy forwards to) (F128).
+
+    On a docker substrate the proxy runs in the controller: the node reaches it at the
+    controller's address on the node network, and it forwards to the upstream's container address.
+    """
+    compose_mode = str(source_node.get("compose_mode") or metadata.get("compose_mode") or "")
+    if compose_mode == "docker":
+        network = str(source_node.get("container_network") or f"{metadata['compose_project']}-net")
+        upstream = str(upstream_node.get("container_listen_address") or upstream_node["listen_address"])
+        return _proxy_bind_address(network), upstream
+    return str(source_node.get("host_published_address") or "127.0.0.1"), str(upstream_node["listen_address"])
+
+
+def _wait_for_forwarded_stats(path: Path, *, timeout_seconds: float) -> dict:
+    """Proxy counters once traffic went through it, bounded by the timeout."""
+    deadline = time.time() + max(0.0, timeout_seconds)
+    stats = _load_stats(path)
+    while time.time() < deadline and not int(stats.get("bytes_forwarded", 0) or 0):
+        time.sleep(0.5)
+        stats = _load_stats(path)
+    return stats
+
+
 def _load_stats(path: Path) -> dict:
     if path.is_file():
         return json.loads(path.read_text(encoding="utf-8"))
@@ -323,6 +323,14 @@ def _spawn_disk_cleanup_session(
         raise RuntimeError(f"failed to launch disk cleanup session {session}: {result.stderr or result.stdout}")
 
 
+def _bandwidth_result(proxy_info: dict, *, target_rate_bytes: int, target_healthy: bool, timeout_seconds: float) -> dict:
+    stats = _wait_for_forwarded_stats(Path(str(proxy_info["stats_path"])), timeout_seconds=timeout_seconds)
+    body = build_result_body(mode="bandwidth_throttle", config={"target_rate_bytes_per_sec": target_rate_bytes}, stats=stats)
+    # Applied only when the node is healthy and traffic really went through the throttle.
+    body["throttle_applied"] = bool(target_healthy) and int(stats.get("bytes_forwarded", 0) or 0) > 0
+    return body
+
+
 def apply_bandwidth_throttle(*, runtime_metadata_path: Path, output_dir: Path, from_node: str, to_node: str, kilobits_per_second: int, healthy_timeout_seconds: float) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     metadata = _read_metadata(runtime_metadata_path)
@@ -330,7 +338,7 @@ def apply_bandwidth_throttle(*, runtime_metadata_path: Path, output_dir: Path, f
     upstream_node = _find_node(metadata, to_node)
     compose_mode = str(source_node.get("compose_mode") or metadata.get("compose_mode") or "")
     proxy_port = _pick_free_port()
-    proxy_host = str(source_node.get("host_published_address") or "127.0.0.1")
+    proxy_host, proxy_upstream = _proxy_route(metadata, source_node, upstream_node)
     proxy_listen_address = f"0.0.0.0:{proxy_port}"
     proxy_session = f"{metadata['compose_project']}-bandwidth-{from_node}"
     target_rate_bytes = max(1, int(kilobits_per_second) * 1024 // 8)
@@ -338,7 +346,7 @@ def apply_bandwidth_throttle(*, runtime_metadata_path: Path, output_dir: Path, f
         session=proxy_session,
         runtime_root=Path(str(metadata["runtime_root"])),
         listen_address=proxy_listen_address,
-        upstream_address=str(upstream_node["listen_address"]),
+        upstream_address=proxy_upstream,
         output_dir=output_dir,
         mode="bandwidth_throttle",
         upstream_bytes_per_second=target_rate_bytes,
@@ -356,7 +364,6 @@ def apply_bandwidth_throttle(*, runtime_metadata_path: Path, output_dir: Path, f
     health = wait_for_nodes_healthy([source_node], timeout_seconds=healthy_timeout_seconds)
     target_healthy = bool(health and health[0].get("healthy"))
     overrides = dict(metadata.get("observation_overrides") or {})
-    overrides.update(_default_observation_overrides(metadata))
     metadata["observation_overrides"] = overrides
     metadata.setdefault("faults", []).append(
         {
@@ -375,11 +382,8 @@ def apply_bandwidth_throttle(*, runtime_metadata_path: Path, output_dir: Path, f
     report = {
         "mode": "bandwidth_throttle",
         "runtime_metadata_path": str(runtime_metadata_path),
-        "result": {
-            "throttle_applied": bool(target_healthy),
-            "observed_throughput_bytes_per_sec": 0,
-            "target_rate_bytes_per_sec": target_rate_bytes,
-        },
+        "result": _bandwidth_result(proxy_info, target_rate_bytes=target_rate_bytes, target_healthy=target_healthy,
+                                    timeout_seconds=healthy_timeout_seconds),
     }
     write_json(output_dir / "result.json", report)
     return report
@@ -395,14 +399,14 @@ def apply_slow_loris_chainsync(*, runtime_metadata_path: Path, output_dir: Path,
         raise ValueError(f"runtime_slow_loris_chainsync could not find an upstream peer for {target_node}")
     upstream_node = _find_node(metadata, peer_ids[0])
     proxy_port = _pick_free_port()
-    proxy_host = str(source_node.get("host_published_address") or "127.0.0.1")
+    proxy_host, proxy_upstream = _proxy_route(metadata, source_node, upstream_node)
     proxy_listen_address = f"0.0.0.0:{proxy_port}"
     proxy_session = f"{metadata['compose_project']}-slowloris-{target_node}"
     proxy_info = _launch_proxy_session(
         session=proxy_session,
         runtime_root=Path(str(metadata["runtime_root"])),
         listen_address=proxy_listen_address,
-        upstream_address=str(upstream_node["listen_address"]),
+        upstream_address=proxy_upstream,
         output_dir=output_dir,
         mode="slow_loris_chainsync",
         upstream_bytes_per_second=None,
@@ -420,7 +424,6 @@ def apply_slow_loris_chainsync(*, runtime_metadata_path: Path, output_dir: Path,
     health = wait_for_nodes_healthy([source_node], timeout_seconds=healthy_timeout_seconds)
     target_healthy = bool(health and health[0].get("healthy"))
     overrides = dict(metadata.get("observation_overrides") or {})
-    overrides.update(_default_observation_overrides(metadata))
     metadata["observation_overrides"] = overrides
     metadata.setdefault("faults", []).append(
         {
@@ -468,14 +471,14 @@ def apply_network_impairment(
     upstream_node = _find_node(metadata, to_node)
     compose_mode = str(source_node.get("compose_mode") or metadata.get("compose_mode") or "")
     proxy_port = _pick_free_port()
-    proxy_host = str(source_node.get("host_published_address") or "127.0.0.1")
+    proxy_host, proxy_upstream = _proxy_route(metadata, source_node, upstream_node)
     proxy_listen_address = f"0.0.0.0:{proxy_port}"
     proxy_session = f"{metadata['compose_project']}-impair-{from_node}"
     proxy_info = _launch_proxy_session(
         session=proxy_session,
         runtime_root=Path(str(metadata["runtime_root"])),
         listen_address=proxy_listen_address,
-        upstream_address=str(upstream_node["listen_address"]),
+        upstream_address=proxy_upstream,
         output_dir=output_dir,
         mode="network_impairment",
         upstream_bytes_per_second=None,
@@ -497,7 +500,6 @@ def apply_network_impairment(
     health = wait_for_nodes_healthy([source_node], timeout_seconds=healthy_timeout_seconds)
     target_healthy = bool(health and health[0].get("healthy"))
     overrides = dict(metadata.get("observation_overrides") or {})
-    overrides.update(_default_observation_overrides(metadata))
     metadata["observation_overrides"] = overrides
     metadata.setdefault("faults", []).append(
         {
@@ -548,7 +550,6 @@ def apply_disk_full_probe(*, runtime_metadata_path: Path, output_dir: Path, targ
     after_fill = shutil.disk_usage(db_dir)
     disk_full_triggered = int(after_fill.free) <= max(0, int(fill_target_free_bytes or 0))
     overrides = dict(metadata.get("observation_overrides") or {})
-    overrides.update(_default_observation_overrides(metadata))
     metadata["observation_overrides"] = overrides
     report = {
         "mode": "disk_full_probe",
