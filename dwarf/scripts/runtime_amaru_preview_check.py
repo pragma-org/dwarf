@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import json
-import os
 import signal
 import socket
 import subprocess
@@ -14,6 +12,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import runtime_common as rc  # noqa: E402
 from runtime_telemetry import emit_runtime_metric, emit_target_event  # noqa: E402
 
 
@@ -29,43 +28,24 @@ def _listener_ok(host: str, port: int) -> bool:
         return False
 
 
-def _pid_running(pid_file: Path) -> bool:
-    if not pid_file.exists():
-        return False
-    try:
-        pid = int(pid_file.read_text(encoding="utf-8").strip())
-    except (TypeError, ValueError):
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
-
-
 def run_proof(*, runtime_root: Path, sample_seconds: int) -> int:
-    metadata_path = runtime_root / "runtime.json"
-    if not metadata_path.exists():
-        raise RuntimeError(f"missing runtime metadata: {metadata_path}")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    listen_host, listen_port_text = str(metadata["listen_address"]).rsplit(":", 1)
-    listen_port = int(listen_port_text)
-    chain_dir = Path(str(metadata["chain_dir"]))
-    log_path = Path(str(metadata["log_path"]))
-    pid_file = Path(str(metadata["pid_file"]))
+    view = rc.preview_node_view(rc.resolve_preview_runtime_root(runtime_root), "amaru")
+    listen_host, listen_port = view.listen_host, view.listen_port
+    chain_dir = view.chain_dir
+    log_path = view.log_path
     if not chain_dir.exists():
         raise RuntimeError(f"missing chain dir: {chain_dir}")
     if not log_path.exists():
         raise RuntimeError(f"missing log path: {log_path}")
-    if not _pid_running(pid_file):
-        raise RuntimeError(f"amaru pid is not running: {pid_file}")
+    if not view.is_running():
+        raise RuntimeError(f"amaru is not running: {view.describe()}")
     if not _listener_ok(listen_host, listen_port):
         raise RuntimeError(f"listener probe failed: {listen_host}:{listen_port}")
     chain_before = _dir_size_bytes(chain_dir)
     log_before = log_path.stat().st_size
     time.sleep(sample_seconds)
-    if not _pid_running(pid_file):
-        raise RuntimeError(f"amaru pid exited during proof window: {pid_file}")
+    if not view.is_running():
+        raise RuntimeError(f"amaru exited during proof window: {view.describe()}")
     chain_after = _dir_size_bytes(chain_dir)
     log_after = log_path.stat().st_size
     chain_delta = max(0, chain_after - chain_before)
@@ -84,8 +64,11 @@ def run_proof(*, runtime_root: Path, sample_seconds: int) -> int:
         primitive="runtime_amaru_preview_check",
         event="preview_proof_of_life",
         payload={
-            "listen_address": metadata["listen_address"],
-            "upstream_peer_address": metadata["upstream_peer_address"],
+            "runtime_root": str(view.runtime_root),
+            "runtime_layout": view.layout,
+            "container_name": view.container_name,
+            "listen_address": view.listen_address,
+            "upstream_peer_address": view.upstream_peer_address,
             "chain_bytes_before": chain_before,
             "chain_bytes_after": chain_after,
             "chain_bytes_delta": chain_delta,
@@ -99,7 +82,7 @@ def run_proof(*, runtime_root: Path, sample_seconds: int) -> int:
     if progress_ok != 1:
         raise RuntimeError("amaru preview proof saw no chain or log growth during the sample window")
     print(
-        f"listen_address={metadata['listen_address']} "
+        f"listen_address={view.listen_address} "
         f"chain_delta_bytes={chain_delta} "
         f"log_delta_bytes={log_delta} "
         f"progress_ok=true"

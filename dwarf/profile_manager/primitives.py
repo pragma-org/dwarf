@@ -7171,6 +7171,36 @@ def _resolve_runtime_metadata_path(handle, params: dict[str, Any], *, primitive:
     raise ValueError(f"{primitive} runtime metadata missing: {listed}")
 
 
+def _preview_runtime_root(handle, declared) -> str:
+    """Runtime root handed to a public-preview helper (``ADA2_DWARF_PREVIEW_*_ROOT`` / ``--runtime-root``).
+
+    The declared root wins when it (or its installed-layout mapping) holds a ``runtime.json``.
+    Otherwise the runtime the run service prepared for this run is used when it is the same
+    profile (``topology-runtimes/<id>/current`` or its recorded ``profile_id``). Anything else is
+    passed through unchanged so the helper's own resolver tries it and its error names it.
+    """
+    resolved = Path(_resolve_runtime_path(declared))
+    if (resolved / "runtime.json").is_file():
+        return str(resolved)
+    prepared = getattr(handle, "_prepared_runtime_metadata_path", None)
+    if prepared and Path(str(prepared)).is_file():
+        prepared_root = Path(str(prepared)).parent
+        declared_parts = Path(os.path.expanduser(str(declared))).parts
+        declared_id = (
+            declared_parts[declared_parts.index(_LEGACY_PROFILES_DIRNAME) + 1]
+            if _LEGACY_PROFILES_DIRNAME in declared_parts[:-1]
+            else Path(str(declared)).name
+        )
+        prepared_ids = {prepared_root.name, prepared_root.parent.name}
+        try:
+            prepared_ids.add(str(json.loads(Path(str(prepared)).read_text(encoding="utf-8")).get("profile_id") or ""))
+        except (OSError, ValueError):
+            pass
+        if declared_id in prepared_ids:
+            return str(prepared_root)
+    return str(declared)
+
+
 def _runtime_metadata_node(body: dict[str, Any], target_node: str) -> dict[str, Any] | None:
     """Find one node record by the controller's ``id`` or the legacy ``name``."""
     nodes = (
@@ -9502,7 +9532,7 @@ class RuntimeAmaruPreviewProof(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runtime_root = str(_resolve_runtime_path(self.params.get("runtime_root", "/opt/dwarf/cardano-profiles/profile-d-amaru-preview-proof")))
+        runtime_root = _preview_runtime_root(handle, self.params.get("runtime_root", "/opt/dwarf/cardano-profiles/profile-d-amaru-preview-proof"))
         sample_seconds = int(self.params.get("sample_seconds", 20))
         mode = "proof"
 
@@ -13175,9 +13205,9 @@ class RuntimePreviewParityBaseline(LoadPrimitive):
                 }
             )
         if preview_amaru_root:
-            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = str(preview_amaru_root)
+            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = _preview_runtime_root(handle, preview_amaru_root)
         if preview_cardano_node_root:
-            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = str(preview_cardano_node_root)
+            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = _preview_runtime_root(handle, preview_cardano_node_root)
 
         timed_out = False
         try:
@@ -13305,9 +13335,9 @@ class RuntimePreviewUpstreamDrop(LoadPrimitive):
                 }
             )
         if preview_amaru_root:
-            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = str(preview_amaru_root)
+            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = _preview_runtime_root(handle, preview_amaru_root)
         if preview_cardano_node_root:
-            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = str(preview_cardano_node_root)
+            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = _preview_runtime_root(handle, preview_cardano_node_root)
 
         timed_out = False
         try:
@@ -13440,9 +13470,9 @@ class RuntimePreviewUpstreamReset(LoadPrimitive):
                 }
             )
         if preview_amaru_root:
-            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = str(preview_amaru_root)
+            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = _preview_runtime_root(handle, preview_amaru_root)
         if preview_cardano_node_root:
-            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = str(preview_cardano_node_root)
+            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = _preview_runtime_root(handle, preview_cardano_node_root)
 
         timed_out = False
         try:
@@ -13581,9 +13611,9 @@ class RuntimePreviewUpstreamDelay(LoadPrimitive):
                 }
             )
         if preview_amaru_root:
-            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = str(preview_amaru_root)
+            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = _preview_runtime_root(handle, preview_amaru_root)
         if preview_cardano_node_root:
-            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = str(preview_cardano_node_root)
+            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = _preview_runtime_root(handle, preview_cardano_node_root)
 
         timed_out = False
         try:
@@ -13726,9 +13756,9 @@ class RuntimePreviewUpstreamLoss(LoadPrimitive):
                 }
             )
         if preview_amaru_root:
-            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = str(preview_amaru_root)
+            env["ADA2_DWARF_PREVIEW_AMARU_ROOT"] = _preview_runtime_root(handle, preview_amaru_root)
         if preview_cardano_node_root:
-            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = str(preview_cardano_node_root)
+            env["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] = _preview_runtime_root(handle, preview_cardano_node_root)
 
         timed_out = False
         try:

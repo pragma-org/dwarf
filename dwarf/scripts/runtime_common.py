@@ -4,8 +4,11 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
+import socket
 import subprocess
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -744,3 +747,323 @@ def replace_node_db(config: RuntimeConfig, target_node: str, source_db: Path) ->
     target_db = config.env_root / "node-data" / target_node / "db"
     shutil.rmtree(target_db)
     shutil.copytree(source_db, target_db)
+
+
+# --- public-preview profiles: host-era and dashboard-installed container layouts -------------------
+
+_LEGACY_PROFILES_DIRNAME = "cardano-profiles"
+_UPSTREAM_ADDR_RE = re.compile(r"(\d+\.\d+\.\d+\.\d+)\]?:(\d+)")  # IPv4 or [::ffff:IPv4]
+_NETEM_BAND = 4  # a fourth prio band the default priomap never selects: only filtered traffic is shaped
+
+
+def _profiles_module():
+    try:
+        from profile_manager import profiles
+    except ImportError:
+        dwarf_root = str(Path(__file__).resolve().parent.parent)
+        if dwarf_root not in sys.path:
+            sys.path.append(dwarf_root)
+        try:
+            from profile_manager import profiles
+        except ImportError:
+            return None
+    return profiles
+
+
+def resolve_preview_runtime_root(raw) -> Path:
+    """The runtime root a preview helper reads, for a host-era or a dashboard-installed profile.
+
+    Scenarios name ``~/cardano-profiles/<id>`` or ``/opt/dwarf/cardano-profiles/<id>`` (host era).
+    That path wins when it holds a ``runtime.json``; otherwise ``<id>`` resolves through
+    ``profiles.runtime_root`` and then the controller's own retained runtime
+    (``$ADA2_DWARF_STATE_DIR/controller/topology-runtimes/<id>/current``, the layout
+    ``controller.docker_runtime`` deploys to). When none holds metadata the declared path is
+    returned so the caller's error names it.
+    """
+    candidate = Path(os.path.expanduser(os.path.expandvars(str(raw))))
+    if (candidate / "runtime.json").is_file():
+        return candidate
+    parts = candidate.parts
+    if _LEGACY_PROFILES_DIRNAME in parts:
+        index = parts.index(_LEGACY_PROFILES_DIRNAME)
+        if index + 1 < len(parts):
+            profile_id, rest = parts[index + 1], parts[index + 2:]
+            installed = []
+            profiles = _profiles_module()
+            if profiles is not None:
+                installed.append(Path(profiles.runtime_root(profile_id)).joinpath(*rest))
+            state_dir = Path(os.environ.get("ADA2_DWARF_STATE_DIR") or "/var/dwarf/state")
+            installed.append(state_dir.joinpath("controller", "topology-runtimes", profile_id, "current", *rest))
+            for root in installed:
+                if (root / "runtime.json").is_file():
+                    return root
+    return candidate
+
+
+@dataclass(frozen=True)
+class PreviewNodeView:
+    """One preview node as the preview helpers measure it, whatever the runtime layout."""
+
+    runtime_root: Path
+    implementation: str
+    layout: str  # "host" (host-era process) or "container" (dashboard-installed)
+    listen_host: str
+    listen_port: int
+    chain_dir: Path
+    log_path: Path
+    pid_file: Path | None
+    container_name: str | None
+    upstream_peer_address: str | None
+    local_peer_ips: tuple[str, ...] = ()
+
+    @property
+    def listen_address(self) -> str:
+        return f"{self.listen_host}:{self.listen_port}"
+
+    @property
+    def process_name(self) -> str:
+        return "amaru" if self.implementation == "amaru" else "cardano-node"
+
+    def host_pid(self) -> int:
+        if self.pid_file is None:
+            raise RuntimeError(f"{self.implementation} preview node has no pid file")
+        return int(self.pid_file.read_text(encoding="utf-8").strip())
+
+    def is_running(self, runner=subprocess.run) -> bool:
+        """Container profiles: the node container's ``State.Running``; host era: the pid is alive."""
+        if self.layout == "container":
+            result = runner(["docker", "inspect", "-f", "{{.State.Running}}", str(self.container_name)],
+                            capture_output=True, text=True, timeout=15, check=False)
+            return result.returncode == 0 and (result.stdout or "").strip() == "true"
+        if self.pid_file is None or not self.pid_file.exists():
+            return False
+        try:
+            os.kill(self.host_pid(), 0)
+        except (OSError, ValueError):
+            return False
+        return True
+
+    def describe(self) -> str:
+        return f"container {self.container_name}" if self.layout == "container" else f"pid file {self.pid_file}"
+
+
+def _topology_upstream(topology_path) -> str | None:
+    try:
+        body = json.loads(Path(str(topology_path)).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for peer in body.get("bootstrapPeers") or []:
+        if isinstance(peer, dict) and peer.get("address") and peer.get("port"):
+            return f"{peer['address']}:{int(peer['port'])}"
+    return None
+
+
+def _profile_upstream(profile_id: str) -> str | None:
+    profiles = _profiles_module()
+    if profiles is None or not profile_id:
+        return None
+    try:
+        profile = profiles.find_profile(profile_id)
+    except Exception:  # noqa: BLE001 - an unknown profile has no declared upstream
+        return None
+    return getattr(profile, "upstream_peer_address", None) or None
+
+
+def preview_node_view(runtime_root, implementation: str) -> PreviewNodeView:
+    """Read ``runtime.json`` under ``runtime_root`` into a :class:`PreviewNodeView`.
+
+    Host era: top-level ``listen_address``/``chain_dir``/``log_path``/``pid_file``. Container
+    profile: the first ``haskell_nodes``/``amaru_nodes`` entry of ``implementation``; the listen
+    endpoint is the container address (``node_wire_endpoint``), the chain is ``chain_dir`` (Amaru)
+    or ``db_dir`` (cardano-node), and the upstream peer comes from the metadata, the node's
+    fallback peers, its topology ``bootstrapPeers`` or the profile definition, in that order.
+    """
+    runtime_root = Path(runtime_root)
+    metadata_path = runtime_root / "runtime.json"
+    if not metadata_path.is_file():
+        raise RuntimeError(f"missing runtime metadata: {metadata_path}")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("listen_address") and metadata.get("chain_dir"):
+        host, port_text = str(metadata["listen_address"]).rsplit(":", 1)
+        return PreviewNodeView(
+            runtime_root=runtime_root, implementation=implementation, layout="host",
+            listen_host=host, listen_port=int(port_text),
+            chain_dir=Path(str(metadata["chain_dir"])), log_path=Path(str(metadata["log_path"])),
+            pid_file=Path(str(metadata["pid_file"])), container_name=None,
+            upstream_peer_address=metadata.get("upstream_peer_address"),
+        )
+    group = "amaru_nodes" if implementation == "amaru" else "haskell_nodes"
+    impl_key = "amaru" if implementation == "amaru" else "cardano-node"
+    candidates = [entry for entry in (metadata.get(group) or []) if isinstance(entry, dict)]
+    if not candidates:
+        candidates = [entry for entry in (metadata.get("nodes") or [])
+                      if isinstance(entry, dict) and entry.get("impl") == impl_key]
+    if not candidates:
+        raise RuntimeError(f"runtime metadata {metadata_path} has no {implementation} node")
+    node = candidates[0]
+    if not node.get("container_name"):
+        raise RuntimeError(f"runtime metadata {metadata_path} node {node.get('id')!r} has no container_name")
+    host, port = node_wire_endpoint(node)
+    chain_dir = node.get("chain_dir") if implementation == "amaru" else (node.get("db_dir") or node.get("chain_dir"))
+    if not chain_dir or not node.get("log_path"):
+        raise RuntimeError(f"runtime metadata {metadata_path} node {node.get('id')!r} lacks a chain dir or log path")
+    upstream = (
+        metadata.get("upstream_peer_address")
+        or node.get("upstream_peer_address")
+        or next(iter(node.get("fallback_peer_addresses") or []), None)
+        or (_topology_upstream(node["topology_path"]) if node.get("topology_path") else None)
+        or _profile_upstream(str(metadata.get("profile_id") or ""))
+    )
+    siblings: list[str] = []
+    for entry in [*(metadata.get("nodes") or []), *(metadata.get("haskell_nodes") or []),
+                  *(metadata.get("amaru_nodes") or [])]:
+        if not isinstance(entry, dict) or entry.get("container_name") == node.get("container_name"):
+            continue
+        ip = str(entry.get("container_ip") or "")
+        if ip and ip not in siblings:
+            siblings.append(ip)
+    pid_file = node.get("pid_file")
+    return PreviewNodeView(
+        runtime_root=runtime_root, implementation=implementation, layout="container",
+        listen_host=host, listen_port=port, chain_dir=Path(str(chain_dir)), log_path=Path(str(node["log_path"])),
+        pid_file=Path(str(pid_file)) if pid_file else None, container_name=str(node["container_name"]),
+        upstream_peer_address=str(upstream) if upstream else None, local_peer_ips=tuple(siblings),
+    )
+
+
+def resolve_upstream_peer(address: str | None) -> tuple[str, int, list[str]]:
+    """Host, port and resolved IPv4 addresses of an upstream ``host:port``."""
+    if not address:
+        raise RuntimeError("preview node has no upstream peer address")
+    host, port_text = str(address).rsplit(":", 1)
+    port = int(port_text)
+    infos = socket.getaddrinfo(host, port, family=socket.AF_INET, type=socket.SOCK_STREAM)
+    ips = sorted({info[4][0] for info in infos})
+    if not ips:
+        raise RuntimeError(f"no IPv4 upstream addresses resolved for {address}")
+    return host, port, ips
+
+
+def _established_peer_ips(ss_output: str, port: int, *, line_filter=None) -> list[str]:
+    hits = []
+    for line in ss_output.splitlines():
+        if line_filter is not None and not line_filter(line):
+            continue
+        addrs = _UPSTREAM_ADDR_RE.findall(line)
+        if len(addrs) < 2:
+            continue
+        for ip, port_text in addrs[1:]:
+            if int(port_text) == port:
+                hits.append(ip)
+    return sorted(set(hits))
+
+
+def preview_active_upstream_ips(view: PreviewNodeView, port: int, *, runner=subprocess.run) -> list[str]:
+    """Remote IPs the node holds established connections to on ``port``.
+
+    Container profiles read the sockets of the node's own network namespace (sibling topology
+    nodes excluded); the host era keeps the ``ss -tnp`` process match.
+    """
+    if view.layout == "container":
+        result = run_in_node_netns(str(view.container_name), "ss -Htn state established", runner=runner)
+        excluded = set(view.local_peer_ips)
+        return [ip for ip in _established_peer_ips(result.stdout or "", port) if ip not in excluded]
+    try:
+        result = runner(["ss", "-tnp", "state", "established"], text=True, capture_output=True, check=False)
+    except FileNotFoundError:
+        return []
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or "").strip() or "ss failed")
+    pid = view.host_pid()
+    return _established_peer_ips(
+        result.stdout or "", port,
+        line_filter=lambda line: f":{port}" in line and (f"pid={pid}," in line or f'("{view.process_name}"' in line),
+    )
+
+
+def _iptables_rule(ip: str, port: int, target: list[str]) -> str:
+    return " ".join(["-p", "tcp", "-d", ip, "--dport", str(int(port)), "-j", *target])
+
+
+def preview_apply_iptables(view: PreviewNodeView, ips: list[str], port: int, target: list[str], *,
+                           runner=subprocess.run) -> dict:
+    """Install ``OUTPUT`` rules toward the upstream ``ips`` in the node container's namespace."""
+    rules = [_iptables_rule(ip, port, target) for ip in ips]
+    script = "set -e; " + "; ".join(f"iptables -w -I OUTPUT 1 {rule}" for rule in rules)
+    try:
+        run_in_node_netns(str(view.container_name), script, runner=runner)
+    except RuntimeError:
+        try:  # never leave a partial apply behind; the apply error is the one reported
+            preview_remove_iptables(view, ips, port, target, runner=runner)
+        except RuntimeError:
+            pass
+        raise
+    return {"mechanism": "container-netns", "container": view.container_name, "rules": rules}
+
+
+def preview_remove_iptables(view: PreviewNodeView, ips: list[str], port: int, target: list[str], *,
+                            runner=subprocess.run) -> dict:
+    """Remove the rules installed by :func:`preview_apply_iptables`; fails if any remains."""
+    rules = [_iptables_rule(ip, port, target) for ip in ips]
+    script = "; ".join(f"while iptables -w -D OUTPUT {rule} 2>/dev/null; do :; done" for rule in rules)
+    result = run_in_node_netns(str(view.container_name), script + "; iptables -w -S OUTPUT", runner=runner)
+    for line in (result.stdout or "").splitlines():
+        for ip in ips:
+            if f"-d {ip}/32" in line and f"--dport {int(port)}" in line and f"-j {target[0]}" in line:
+                raise RuntimeError(f"upstream fault rule still present in {view.container_name}: {line.strip()}")
+    return {"mechanism": "container-netns", "container": view.container_name, "rules": rules}
+
+
+def preview_route_interface(view: PreviewNodeView, ips: list[str], *, runner=subprocess.run) -> str:
+    script = "; ".join(f"ip -o route get {shlex.quote(ip)}" for ip in ips)
+    result = run_in_node_netns(str(view.container_name), script, runner=runner)
+    devices = set()
+    for line in (result.stdout or "").splitlines():
+        parts = line.split()
+        if "dev" in parts:
+            devices.add(parts[parts.index("dev") + 1])
+    if len(devices) != 1:
+        raise RuntimeError(f"upstream fault needs one route interface in {view.container_name}, got {sorted(devices)!r}")
+    return devices.pop()
+
+
+def preview_apply_netem(view: PreviewNodeView, ips: list[str], port: int, netem_args: list[str], *,
+                        interface: str | None = None, runner=subprocess.run) -> dict:
+    """Shape egress toward the upstream ``ips``:``port`` with netem in the node container's namespace.
+
+    A root ``prio`` qdisc with a fourth band (never chosen by the default priomap) carries netem;
+    u32 filters send only the upstream flows there. ``tc qdisc add`` refuses to replace an
+    existing non-default root qdisc, so another active fault is never overwritten.
+    """
+    interface = interface or preview_route_interface(view, ips, runner=runner)
+    dev = shlex.quote(interface)
+    band = f"1:{_NETEM_BAND}"
+    commands = [
+        f"tc qdisc add dev {dev} root handle 1: prio bands {_NETEM_BAND} priomap 1 2 2 2 1 2 0 0 1 1 1 1 1 1 1 1",
+        f"tc qdisc add dev {dev} parent {band} handle {_NETEM_BAND}0: netem {' '.join(netem_args)}",
+    ]
+    for ip in ips:
+        commands.append(
+            f"tc filter add dev {dev} protocol ip parent 1:0 prio {_NETEM_BAND} u32 "
+            f"match ip dst {ip}/32 match ip protocol 6 0xff match ip dport {int(port)} 0xffff flowid {band}"
+        )
+    try:
+        run_in_node_netns(str(view.container_name), "set -e; " + "; ".join(commands), runner=runner)
+    except RuntimeError:
+        # never leave a partial apply (qdisc added, a filter refused) behind
+        run_in_node_netns(str(view.container_name), f"tc qdisc del dev {dev} root 2>/dev/null || true", runner=runner)
+        raise
+    return {"mechanism": "container-netns", "container": view.container_name, "interface": interface,
+            "upstream_ips": list(ips), "upstream_port": int(port), "netem": list(netem_args)}
+
+
+def preview_remove_netem(view: PreviewNodeView, state: dict, *, runner=subprocess.run) -> None:
+    """Remove the root qdisc installed by :func:`preview_apply_netem`; fails if it remains."""
+    dev = shlex.quote(str(state["interface"]))
+    result = run_in_node_netns(
+        str(view.container_name), f"tc qdisc del dev {dev} root 2>/dev/null || true; tc qdisc show dev {dev}",
+        runner=runner,
+    )
+    remaining = result.stdout or ""
+    if "netem" in remaining or "prio 1:" in remaining:
+        raise RuntimeError(f"upstream fault qdisc still present in {view.container_name}: {remaining.strip()[:200]}")

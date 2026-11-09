@@ -12,6 +12,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import runtime_common as rc  # noqa: E402
 from runtime_telemetry import emit_runtime_metric, emit_target_event  # noqa: E402
 from runtime_preview_trace_metrics import collect_amaru_trace_metrics, collect_cardano_trace_metrics, read_log_window  # noqa: E402
 
@@ -33,7 +34,7 @@ def target_implementation_from_scenario(path: Path) -> str:
 
 def runtime_root_for_implementation(implementation: str) -> Path:
     env_key = f"ADA2_DWARF_PREVIEW_{implementation.upper().replace('-', '_')}_ROOT"
-    return Path(os.environ.get(env_key, DEFAULT_RUNTIME_ROOTS[implementation]))
+    return rc.resolve_preview_runtime_root(os.environ.get(env_key, DEFAULT_RUNTIME_ROOTS[implementation]))
 
 
 def _dir_size_bytes(path: Path) -> int:
@@ -48,45 +49,26 @@ def _listener_ok(host: str, port: int) -> bool:
         return False
 
 
-def _pid_running(pid_file: Path) -> bool:
-    if not pid_file.exists():
-        return False
-    try:
-        pid = int(pid_file.read_text(encoding="utf-8").strip())
-    except (TypeError, ValueError):
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
-
-
 def run_baseline(*, scenario_path: Path, sample_seconds: int) -> int:
     target_implementation = target_implementation_from_scenario(scenario_path)
     runtime_root = runtime_root_for_implementation(target_implementation)
-    metadata_path = runtime_root / "runtime.json"
-    if not metadata_path.exists():
-        raise RuntimeError(f"missing runtime metadata: {metadata_path}")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    listen_host, listen_port_text = str(metadata["listen_address"]).rsplit(":", 1)
-    listen_port = int(listen_port_text)
-    chain_dir = Path(str(metadata["chain_dir"]))
-    log_path = Path(str(metadata["log_path"]))
-    pid_file = Path(str(metadata["pid_file"]))
+    view = rc.preview_node_view(runtime_root, target_implementation)
+    listen_host, listen_port = view.listen_host, view.listen_port
+    chain_dir = view.chain_dir
+    log_path = view.log_path
     if not chain_dir.exists():
         raise RuntimeError(f"missing chain dir: {chain_dir}")
     if not log_path.exists():
         raise RuntimeError(f"missing log path: {log_path}")
-    if not _pid_running(pid_file):
-        raise RuntimeError(f"process pid is not running: {pid_file}")
+    if not view.is_running():
+        raise RuntimeError(f"{target_implementation} is not running: {view.describe()}")
     if not _listener_ok(listen_host, listen_port):
         raise RuntimeError(f"listener probe failed: {listen_host}:{listen_port}")
     chain_before = _dir_size_bytes(chain_dir)
     log_before = log_path.stat().st_size
     time.sleep(sample_seconds)
-    if not _pid_running(pid_file):
-        raise RuntimeError(f"process exited during proof window: {pid_file}")
+    if not view.is_running():
+        raise RuntimeError(f"{target_implementation} exited during proof window: {view.describe()}")
     chain_after = _dir_size_bytes(chain_dir)
     log_after = log_path.stat().st_size
     chain_delta = max(0, chain_after - chain_before)
@@ -135,8 +117,10 @@ def run_baseline(*, scenario_path: Path, sample_seconds: int) -> int:
         payload={
             "target_implementation": target_implementation,
             "runtime_root": str(runtime_root),
-            "listen_address": metadata["listen_address"],
-            "upstream_peer_address": metadata["upstream_peer_address"],
+            "runtime_layout": view.layout,
+            "container_name": view.container_name,
+            "listen_address": view.listen_address,
+            "upstream_peer_address": view.upstream_peer_address,
             "chain_bytes_before": chain_before,
             "chain_bytes_after": chain_after,
             "chain_bytes_delta": chain_delta,
@@ -152,7 +136,7 @@ def run_baseline(*, scenario_path: Path, sample_seconds: int) -> int:
         raise RuntimeError(f"{target_implementation} preview baseline saw no chain or log growth during the sample window")
     print(
         f"target_implementation={target_implementation} "
-        f"listen_address={metadata['listen_address']} "
+        f"listen_address={view.listen_address} "
         f"chain_delta_bytes={chain_delta} "
         f"log_delta_bytes={log_delta} "
         f"progress_ok=true"
