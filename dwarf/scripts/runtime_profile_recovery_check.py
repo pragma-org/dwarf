@@ -737,24 +737,24 @@ def run_copied_state_chainsync_divergence() -> int:
     source_tip = baseline[STALE_STATE_SOURCE_NODE]
     point = derive_chainsync_point(PROFILE_A_CONFIG)
     _emit_point_metrics("copied_state_chainsync_point", point=point)
-    if source_tip["slot"] >= baseline_tip["slot"]:
-        raise RuntimeError(
-            f"stale source {STALE_STATE_SOURCE_NODE} is not behind {COPIED_STATE_NODE}: "
-            f"{source_tip['slot']} >= {baseline_tip['slot']}"
-        )
     source_db = ENV_ROOT / "node-data" / STALE_STATE_SOURCE_NODE / "db"
     target_db = ENV_ROOT / "node-data" / COPIED_STATE_NODE / "db"
     remediation_db = ENV_ROOT / "node-data" / REMEDIATION_SOURCE_NODE / "db"
     with tempfile.TemporaryDirectory(prefix="dwarf-stale-db-snapshot-") as tmp:
         tmp_root = Path(tmp)
         snapshot_db = tmp_root / "stale-db"
+        # F121: create the stale snapshot instead of requiring node1 to be behind already
+        baseline, baseline_tip, source_tip = _prepare_stale_snapshot_for_recovery(
+            label="copied_state_chainsync_divergence", baseline=baseline, source_db=source_db, snapshot_db=snapshot_db,
+        )
         source_db_bytes = _emit_db_metrics("copied_state_chainsync", node=STALE_STATE_SOURCE_NODE, path=source_db, role="source")
         target_db_bytes = _emit_db_metrics("copied_state_chainsync", node=COPIED_STATE_NODE, path=target_db, role="target")
         remediation_db_bytes = _emit_db_metrics("copied_state_chainsync", node=REMEDIATION_SOURCE_NODE, path=remediation_db, role="remediation")
         _emit_db_delta("copied_state_chainsync_source_vs_target", node=COPIED_STATE_NODE, left_role="source", left_bytes=source_db_bytes, right_role="target", right_bytes=target_db_bytes)
         _emit_db_delta("copied_state_chainsync_remediation_vs_target", node=COPIED_STATE_NODE, left_role="remediation", left_bytes=remediation_db_bytes, right_role="target", right_bytes=target_db_bytes)
         _emit_operation_details("copied_state_chainsync_stop", stop_session_with_details(PROFILE_A_CONFIG))
-        shutil.copytree(source_db, snapshot_db)
+        if not snapshot_db.exists():
+            shutil.copytree(source_db, snapshot_db)
         snapshot_db_bytes = _emit_db_metrics("copied_state_chainsync", node=STALE_STATE_SOURCE_NODE, path=snapshot_db, role="snapshot")
         _emit_db_delta("copied_state_chainsync_snapshot_vs_source", node=COPIED_STATE_NODE, left_role="source", left_bytes=source_db_bytes, right_role="snapshot", right_bytes=snapshot_db_bytes)
         replace_node_db(PROFILE_A_CONFIG, COPIED_STATE_NODE, snapshot_db)

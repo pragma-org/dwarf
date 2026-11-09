@@ -38,7 +38,8 @@ class _Stop(Exception):
     pass
 
 
-@pytest.mark.parametrize("mode", ["run_copied_state_recovery_fetch", "run_copied_state_bounded_divergence"])
+@pytest.mark.parametrize("mode", ["run_copied_state_recovery_fetch", "run_copied_state_bounded_divergence",
+                                  "run_copied_state_chainsync_divergence"])
 def test_every_copied_state_mode_creates_its_stale_snapshot(monkeypatch, mode):
     tips = {name: {"slot": 3119, "block": 100, "hash": "aa"} for name in subject.NODE_NAMES}
     monkeypatch.setattr(subject, "wait_for_all_tips_with_details", lambda *a, **k: (tips, {"timed_out": False}))
