@@ -1030,7 +1030,10 @@ def _forge_from_plan(plan_path: str | None, output_dir: Path) -> dict:
     """Load the block-apply forge plan; a missing/invalid plan is a launch error, never a silent relay."""
     if not plan_path:
         raise SystemExit("forge_substitute requires --forge-plan")
-    from scripts import block_forge, praos_kes  # noqa: PLC0415
+    try:
+        from scripts import block_forge, praos_kes  # noqa: PLC0415
+    except ImportError:  # run as a script from dwarf/scripts (the live proxy)
+        import block_forge, praos_kes  # noqa: PLC0415,E401
 
     plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
     transactions = []

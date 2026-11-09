@@ -313,7 +313,10 @@ def craft_isvalid_false_donation(*, runtime: dict, out_dir: Path, reference_node
     fails and is_valid=false is the CORRECT flag), and a treasury donation in the body.
     A conformant ledger consumes only the collateral and drops the whole body.
     """
-    from scripts import block_forge  # noqa: PLC0415
+    try:
+        from scripts import block_forge  # noqa: PLC0415
+    except ImportError:  # script mode
+        import block_forge  # noqa: PLC0415
     from scripts.runtime_cardano_measurement_calibration import (  # noqa: PLC0415
         _containerized_cardano_workload, _controller_container, _query_utxo, _transaction_id, _wait_for_utxo,
     )
@@ -394,7 +397,10 @@ def craft_isvalid_false_donation(*, runtime: dict, out_dir: Path, reference_node
 
 
 def write_forge_plan(*, runtime: dict, out_dir: Path, producer_node: str, transaction_files: list[str]) -> dict:
-    from scripts import praos_kes  # noqa: PLC0415
+    try:
+        from scripts import praos_kes  # noqa: PLC0415
+    except ImportError:  # script mode
+        import praos_kes  # noqa: PLC0415
 
     runtime_root = Path(str(runtime["runtime_root"]))
     producer = find_node(runtime, producer_node)

@@ -18,7 +18,10 @@ from dataclasses import dataclass
 
 import cbor2
 
-from scripts import praos_kes
+try:
+    from scripts import praos_kes
+except ImportError:  # run from dwarf/scripts (the live proxy imports this module directly)
+    import praos_kes  # type: ignore
 
 # Conway header body fields: [block_number, slot, prev_hash, issuer_vkey, vrf_vkey,
 # vrf_result, block_body_size, block_body_hash, operational_cert, protocol_version]
