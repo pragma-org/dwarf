@@ -240,6 +240,9 @@ def _load_proxy_stats(path: Path) -> dict:
 def proxy_activity_ready(*, mode: str, stats: dict) -> bool:
     if mode == "chainsync_responder_fork_switch":
         return int(stats.get("chainsync_messages_observed", 0) or 0) >= 3
+    if mode == "blockfetch_range_pressure":
+        # F127: the range request alone is not the measurement; wait for a block reply.
+        return int(stats.get("blocks_fetched", 0) or 0) >= 1
     return int(stats.get("intercepted_segments", 0) or 0) >= 1
 
 
