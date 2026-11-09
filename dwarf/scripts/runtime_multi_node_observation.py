@@ -765,22 +765,28 @@ OBSERVATION_MEASUREMENT_KEYS = frozenset({
     "chain_eventually_consistent", "chain_select_consistent", "expected_peer_edge_count", "expected_peer_edges",
     "latest_common_tip", "latest_tips", "missing_peer_edge_count", "missing_peer_edges", "node_count",
     "observed_peer_edge_count", "observed_peer_edges", "per_node_connectivity", "quorum_count", "quorum_fraction",
-    "quorum_tip", "responsive_node_count", "responsive_nodes", "tip_group_count", "tip_groups", "topology",
+    "quorum_tip", "responsive_node_count", "responsive_nodes", "responsiveness_basis", "tip_group_count", "tip_groups", "topology",
 })
 
 
 def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metadata: dict | None = None) -> dict:
     latest_tips = {}
     responsive_nodes = []
+    responsiveness_basis: dict[str, str] = {}
     observed_edges: set[tuple[str, str]] = set()
     for node_id in node_ids:
         body = per_node.get(node_id) or {}
         connection_state = body.get("connection_state") or {}
+        latest_tip = ((body.get("tip_state") or {}).get("latest_tip")) or {}
+        # F136: a node is responsive on live evidence: its connection probe, or a successful tip answer.
         if connection_state.get("responsive"):
             responsive_nodes.append(node_id)
+            responsiveness_basis[node_id] = "connection-state"
+        elif latest_tip.get("ok") and latest_tip.get("hash"):
+            responsive_nodes.append(node_id)
+            responsiveness_basis[node_id] = "tip-answer"
         for peer in connection_state.get("peer_nodes_connected") or []:
             observed_edges.add((node_id, peer))
-        latest_tip = ((body.get("tip_state") or {}).get("latest_tip")) or {}
         if latest_tip.get("ok") and latest_tip.get("hash"):
             latest_tips[node_id] = {
                 "slot": int(latest_tip.get("slot", 0)),
@@ -831,6 +837,7 @@ def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metad
         "node_count": len(node_ids),
         "responsive_node_count": len(responsive_nodes),
         "responsive_nodes": sorted(responsive_nodes),
+        "responsiveness_basis": responsiveness_basis,
         "latest_tips": latest_tips,
         "tip_groups": tip_groups,
         "tip_group_count": len(tip_groups),

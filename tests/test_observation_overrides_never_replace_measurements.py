@@ -38,3 +38,20 @@ def test_measurement_keys_are_refused_even_when_not_measured_this_run():
         "per_node_connectivity": {"node1": ["node2"], "node2": ["node1"]}, "observed_peer_edge_count": 9}})
     assert "per_node_connectivity" not in summary or summary.get("per_node_connectivity") != {"node1": ["node2"], "node2": ["node1"]}
     assert "per_node_connectivity" in summary["observation_overrides_rejected"]
+
+
+def test_a_node_answering_tip_queries_is_responsive_without_connection_state():
+    """F136: responsiveness from live evidence the observation already has (a successful tip answer)."""
+    per_node = {
+        "node1": {"tip_state": {"latest_tip": {"ok": True, "slot": 100, "hash": "aa", "block": 10}}},
+        "node2": {"tip_state": {"latest_tip": {"ok": False}}},
+    }
+    summary = obs._summarize_observation(per_node, ["node1", "node2"], {})
+    assert summary["responsive_nodes"] == ["node1"]
+    assert summary["responsiveness_basis"] == {"node1": "tip-answer"}
+
+
+def test_connection_state_responsiveness_is_still_recorded():
+    per_node = {"node1": {"connection_state": {"responsive": True}, "tip_state": {"latest_tip": {"ok": True, "slot": 1, "hash": "a"}}}}
+    summary = obs._summarize_observation(per_node, ["node1"], {})
+    assert summary["responsiveness_basis"] == {"node1": "connection-state"}
