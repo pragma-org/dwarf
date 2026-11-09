@@ -339,6 +339,22 @@ def build_result_body(
     raise ValueError(f"unsupported mode: {mode}")
 
 
+def _wait_for_txsubmission_init_delay(node: dict) -> None:
+    """cardano-node requests transactions only ncTxSubmissionInitDelay after startup (F119).
+
+    Reuses the F97c gate: the delay is read from the node's own startup log, never assumed, and the
+    wait is bounded by it. Amaru has no such delay.
+    """
+    if str(node.get("impl") or node.get("implementation") or "") != "cardano-node":
+        return
+    try:
+        from scripts import runtime_redeemer_container_live_controls as live
+    except ImportError:  # pragma: no cover - helper subprocess path
+        import runtime_redeemer_container_live_controls as live
+    gate = live._reference_tx_submission_propagation_gate(node, inspect_container=live._inspect_container)
+    live.wait_for_target_propagation_eligibility(gate)
+
+
 def run_probe(
     *,
     runtime_metadata_path: Path | None,
@@ -372,6 +388,7 @@ def run_probe(
         network_magic = int(runtime_metadata.get("network_magic", 42))
         node = _load_runtime_node(runtime_metadata_path, target_node)
         target_host, port = _node_endpoint(node, target_host)
+        _wait_for_txsubmission_init_delay(node)
     else:
         port = int(target_port)
         if port <= 0 or port > 65535:
