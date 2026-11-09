@@ -305,6 +305,11 @@
    "id": "prepare-availability-before-deploy",
    "priority": "with profile prepare failures",
    "note": "run/prepare deploys a profile (~15 min) and only then reports availability requires-build; the availability check should run before the deploy."
+  },
+  {
+   "id": "txsubmission-window-cardano-node",
+   "priority": "after the controller volume action",
+   "note": "runtime_txsubmission_probe window_pressure never receives MsgRequestTxIds from a cardano-node target (3 scenarios: eclipse-txsubmission, snapshot-pause-txsubmission, snapshot-mid-run-corrupt), even after the init delay (F119, run 0571a907: waited 47 s, then 2 s timeout). The same mode passes against Amaru, and unexpected_body passes against cardano-node, so the connection works. Next: enable Net.ConnectionManager/InboundGovernor/TxSubmission traces for one run and read the release's ouroboros-network tx-submission inbound logic (unpromoted inbound peer / TxSubmissionLogicV2) before changing the probe."
   }
  ]
 }
