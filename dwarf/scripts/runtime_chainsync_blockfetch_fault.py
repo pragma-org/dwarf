@@ -239,6 +239,25 @@ def _load_proxy_stats(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def access_points_with_proxy(template: dict, *, selected_upstream: str, proxy_point: dict) -> list[dict]:
+    """The target's local-root access points with only the chosen upstream swapped for the proxy (F131)."""
+    host, _, port = str(selected_upstream).rpartition(":")
+    kept = []
+    for group in template.get("localRoots") or []:
+        for point in (group or {}).get("accessPoints") or []:
+            if str(point.get("address")) == host and str(point.get("port")) == port:
+                continue
+            if point not in kept:
+                kept.append(dict(point))
+    return [*kept, dict(proxy_point)]
+
+
+def peer_addresses_with_proxy(peer_addresses: list[str], *, selected_upstream: str, replacement: str) -> list[str]:
+    """The target's peer list with only the chosen upstream swapped for the proxy (F131)."""
+    kept = [address for address in peer_addresses if address != selected_upstream]
+    return [*kept, replacement]
+
+
 def peer_drop_evidence(stats: dict) -> dict:
     """Did the target node drop a connection that carried an injected message? (F130)
 
@@ -452,15 +471,21 @@ def apply_mode(
     else:
         updated_peer_addresses = [replacement_peer_address, *original_peer_addresses]
     target_node["peer_addresses"] = updated_peer_addresses
-    if str(routing["restart_mode"]) == "docker":
-        target_node["container_peer_addresses"] = [replacement_peer_address]
     topology_path = Path(str(target_node["topology_path"]))
     topology_template = json.loads(topology_path.read_text(encoding="utf-8"))
+    access_points = routing["access_points"]
+    if str(routing["restart_mode"]) == "docker":
+        # F131: swap only the chosen upstream for the proxy; the target keeps its other peers.
+        target_node["container_peer_addresses"] = peer_addresses_with_proxy(
+            list(target_node.get("container_peer_addresses") or []),
+            selected_upstream=selected_upstream, replacement=replacement_peer_address)
+        access_points = access_points_with_proxy(
+            topology_template, selected_upstream=selected_upstream, proxy_point=routing["access_points"][0])
     _rewrite_haskell_topology(
         node=target_node,
         topo_path=topology_path,
         template=topology_template,
-        access_points=routing["access_points"],
+        access_points=access_points,
     )
     restart_target_node(metadata=metadata, target_node=target_node, runtime_root=runtime_root)
 
