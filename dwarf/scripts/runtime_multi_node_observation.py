@@ -728,6 +728,38 @@ def _shared_tip_groups(per_node: dict[str, dict], node_ids: list[str]) -> list[d
     ]
 
 
+_NON_HONEST_ROLES = {"byzantine", "sybil", "adversary", "attacker", "malicious"}
+
+
+def _honest_peer_topology(observed_edges, node_ids: list[str], metadata: dict | None) -> dict:
+    """Honest peer counts and peer-set capture from the observed edges and the substrate roles (F117).
+
+    A node is honest unless its role names an adversary. An honest node is captured when it has
+    observed peers and none of them is honest.
+    """
+    roles = {}
+    for entry in [*((metadata or {}).get("nodes") or []), *((metadata or {}).get("haskell_nodes") or []),
+                  *((metadata or {}).get("amaru_nodes") or [])]:
+        if isinstance(entry, dict):
+            for key in (entry.get("id"), entry.get("name")):
+                if key:
+                    roles[str(key)] = str(entry.get("role") or "honest").lower()
+    honest = [node for node in node_ids if roles.get(node, "honest") not in _NON_HONEST_ROLES]
+    peers: dict[str, set[str]] = {node: set() for node in node_ids}
+    for left, right in observed_edges:
+        if left in peers and right != left:
+            peers[left].add(right)
+    counts = {node: len(peers[node] & set(honest)) for node in honest}
+    captured = sorted(node for node in honest if peers[node] and not (peers[node] & set(honest)))
+    return {
+        "source": "observed-peer-edges",
+        "honest_nodes": honest,
+        "honest_peer_counts": counts,
+        "peer_set_capture_detected": bool(captured),
+        "captured_honest_nodes": captured,
+    }
+
+
 def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metadata: dict | None = None) -> dict:
     latest_tips = {}
     responsive_nodes = []
@@ -814,6 +846,7 @@ def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metad
         "observed_peer_edge_count": len(observed_edge_list),
         "missing_peer_edge_count": len(missing_edges),
     }
+    summary["topology"] = _honest_peer_topology(observed_edges, node_ids, metadata)
     era_transition = (metadata or {}).get("era_transition") or {}
     for key in ("hf_boundary", "transition_window", "genesis_mode"):
         if key in era_transition:
