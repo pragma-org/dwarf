@@ -46,44 +46,44 @@
   {
    "match": "runtime-substrate-chainsync-parent-discontinuity-example-smoke",
    "group": "weak proxy fault modes",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
-   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+   "fix": "F142/F142b: real injected violation (replayed signed header / block, corrupted range request); target drops the connection; real pass 2026-11-09 (reruns #36/#37)"
   },
   {
    "match": "runtime-substrate-chainsync-nonmonotonic-slot-example-smoke",
    "group": "weak proxy fault modes",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
-   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+   "fix": "F142/F142b: real injected violation (replayed signed header / block, corrupted range request); target drops the connection; real pass 2026-11-09 (reruns #36/#37)"
   },
   {
    "match": "runtime-substrate-chainsync-nonincrementing-height-example-smoke",
    "group": "weak proxy fault modes",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
-   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+   "fix": "F142/F142b: real injected violation (replayed signed header / block, corrupted range request); target drops the connection; real pass 2026-11-09 (reruns #36/#37)"
   },
   {
    "match": "runtime-substrate-blockfetch-range-mismatch-example-smoke",
    "group": "weak proxy fault modes",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
-   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+   "fix": "F142/F142b: real injected violation (replayed signed header / block, corrupted range request); target drops the connection; real pass 2026-11-09 (reruns #36/#37)"
   },
   {
    "match": "runtime-substrate-blockfetch-invalid-range-example-smoke",
    "group": "weak proxy fault modes",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
-   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+   "fix": "F142/F142b: real injected violation (replayed signed header / block, corrupted range request); target drops the connection; real pass 2026-11-09 (reruns #36/#37)"
   },
   {
    "match": "runtime-substrate-blockfetch-continuity-failure-example-smoke",
    "group": "weak proxy fault modes",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
-   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+   "fix": "F142/F142b: real injected violation (replayed signed header / block, corrupted range request); target drops the connection; real pass 2026-11-09 (reruns #36/#37)"
   },
   {
    "match": "runtime-substrate-bootstrap-topology-concentration-example-smoke",

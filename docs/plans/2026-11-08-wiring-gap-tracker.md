@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 12:48 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 13:27 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,16 +8,14 @@ Generated 2026-11-09 12:48 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 5 |
-| fail | 15 |
+| fail | 16 |
 | pass | 100 |
-| prepare-failed | 1 |
 
 | Status | Group | Count |
 |---|---|---|
-| void-pass | weak proxy fault modes | 6 |
 | rerun-pending | CBOR dataset | 1 |
 | open | block-apply bridge | 3 |
-| open | profile prepare failures | 2 |
+| open | profile-g / profile-f preview | 2 |
 | open | weak proxy fault modes | 1 |
 | review | known upstream-fixed Amaru bugs | 1 |
 | review | review list | 1 |
@@ -25,18 +23,6 @@ Generated 2026-11-09 12:48 EST from the campaign ledger and the run bundles. Han
 | declared-gap | byzantine/amaru tmux relaunch | 1 |
 | declared-gap | superseded | 1 |
 | removed | removed from the repo | 4 |
-
-## void-pass: weak proxy fault modes
-
-Cause: VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set "rejected" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants
-Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection
-
-- `runtime-substrate-blockfetch-continuity-failure-example-smoke` (pass, run 20261108T190424Z-49954d02): pass
-- `runtime-substrate-blockfetch-invalid-range-example-smoke` (pass, run 20261108T190555Z-1ba0e315): pass
-- `runtime-substrate-blockfetch-range-mismatch-example-smoke` (pass, run 20261108T190640Z-9d2f3cdb): pass
-- `runtime-substrate-chainsync-nonincrementing-height-example-smoke` (pass, run 20261108T190853Z-27f8174e): pass
-- `runtime-substrate-chainsync-nonmonotonic-slot-example-smoke` (pass, run 20261108T190938Z-7e1ed1e1): pass
-- `runtime-substrate-chainsync-parent-discontinuity-example-smoke` (pass, run 20261108T191023Z-2a8f0763): pass
 
 ## rerun-pending: CBOR dataset
 
@@ -58,12 +44,12 @@ Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply
   - Cause: same deferred forge/serve bridge
   - Fix: same as above
 
-## open: profile prepare failures
+## open: profile-g / profile-f preview
 
-Cause: F109 works: profile-g now deploys. But profile-g ("haskell-preview2-proof") runs on the PUBLIC preview network, so readiness stays semantic_health_not_ready (cold nodes cannot sync): same class F96 fixed for scenarios
-Fix: Option A (kept as a public-preview profile; moving it to a private devnet would remove its purpose): profile-g stays deployed between runs (campaign KEEP_PROFILES) and syncs the public preview chain; its 2 scenarios rerun once the node reports semantic health. 2026-11-09 10:29: syncing, slot 1.47M, epoch 18
+Cause: profile-g synced (preview tip) and now prepares; runs fail with "missing runtime metadata: ~/cardano-profiles/<id>/runtime.json": the scenarios hard-code host-era profile paths (45 scenarios use ~/cardano-profiles/...), and phases 1-2 also drive profile-f (Amaru on public preview), which is not deployed
+Fix: map ~/cardano-profiles/<id> to the container profile runtime root (runtime_common.resolve_profile_config) in the preview primitives; deploy + sync profile-f
 
-- `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
+- `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (fail, run 20261109T175136Z-74b3755a): load_events_are_ok: fail
 - `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (fail, run 20261109T155620Z-9c805486): load_events_are_ok: fail
 
 ## open: weak proxy fault modes
