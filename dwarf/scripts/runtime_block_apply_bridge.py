@@ -20,6 +20,8 @@ epoch cannot be aligned is recorded with ``aligned: false`` and the differential
 """
 from __future__ import annotations
 
+import contextlib
+import uuid
 import hashlib
 import json
 import re
@@ -633,6 +635,55 @@ def write_gov_anchor(out_dir: Path) -> tuple[str, str]:
     return f"file://{path}", hashlib.blake2b(GOV_ANCHOR_DOCUMENT, digest_size=32).hexdigest()
 
 
+GOV_ANCHOR_SERVER = (
+    "import http.server, os\n"
+    "DOC = bytes.fromhex(os.environ['DWARF_ANCHOR_HEX'])\n"
+    "class H(http.server.BaseHTTPRequestHandler):\n"
+    "    def do_GET(self):\n"
+    "        self.send_response(200); self.send_header('Content-Length', str(len(DOC))); self.end_headers()\n"
+    "        self.wfile.write(DOC)\n"
+    "    def log_message(self, *a):\n"
+    "        pass\n"
+    "http.server.HTTPServer(('0.0.0.0', 8080), H).serve_forever()\n"
+)
+GOV_ANCHOR_IMAGE = "dwarf/framework:current"
+
+
+@contextlib.contextmanager
+def serve_gov_anchor(out_dir: Path, *, image: str = GOV_ANCHOR_IMAGE):
+    """Serve the proposal anchor over HTTP on Docker's default bridge, where the cardano-cli
+    container runs (F152): cardano-cli 11.2.3 transaction build downloads and verifies the anchor
+    and rejects file:// URLs. Yields (url, blake2b-256 hash); the container is removed on exit."""
+    _, data_hash = write_gov_anchor(out_dir)  # the served bytes, kept as evidence
+    name = f"dwarf-gov-anchor-{uuid.uuid4().hex[:12]}"
+    _checked(["docker", "run", "-d", "--rm", "--name", name,
+              "--label", "io.dwarf.managed=true", "--label", "io.dwarf.component=gov-anchor-server",
+              "-e", f"DWARF_ANCHOR_HEX={GOV_ANCHOR_DOCUMENT.hex()}", "--entrypoint", "python3", image,
+              "-c", GOV_ANCHOR_SERVER], timeout=120)
+    try:
+        address = _checked(["docker", "inspect", "-f", '{{(index .NetworkSettings.Networks "bridge").IPAddress}}',
+                            name]).strip()
+        if not address:
+            raise RuntimeError("gov anchor server has no address on the default bridge")
+
+        def ready():
+            try:
+                _checked(["docker", "exec", name, "python3", "-c",
+                          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/gov-anchor.json')"],
+                         timeout=15)
+                return True
+            except Exception:  # noqa: BLE001 - not listening yet
+                return None
+
+        _wait(ready, timeout=60, interval=1, what="the gov anchor server to listen")
+        yield f"http://{address}:8080/gov-anchor.json", data_hash
+    finally:
+        try:
+            _checked(["docker", "rm", "-f", name], timeout=60)
+        except Exception:  # noqa: BLE001 - already gone
+            pass
+
+
 def info_action_command(*, cli: str, deposit: int, stake_vkey: str, out_file: str,
                         anchor: tuple[str, str] = GOV_ANCHOR) -> list[str]:
     return [cli, "conway", "governance", "action", "create-info", "--testnet",
@@ -719,6 +770,7 @@ def craft_gov_scriptcontext(*, runtime: dict, out_dir: Path, reference_node: str
         record["setup"][label]["included_after_micros"] = micros
         return tx_id
 
+    cleanup = contextlib.ExitStack()
     try:
         with _containerized_cardano_workload(runtime_root=runtime_root, runtime=runtime, node=reference,
                                              output_dir=out_dir, controller=controller) as (workload, _node):
@@ -739,8 +791,8 @@ def craft_gov_scriptcontext(*, runtime: dict, out_dir: Path, reference_node: str
                      str(vkey), "--key-reg-deposit-amt", str(stake_deposit), "--out-file", str(cert)])
                 stake[name] = {"vkey": vkey, "skey": skey, "cert": cert, "hash": key_hash_from_vkey(vkey)}
             actions = {}
-            anchor = write_gov_anchor(out_dir)
-            record["proposal_anchor"] = {"url": anchor[0], "data_hash": anchor[1]}
+            anchor = cleanup.enter_context(serve_gov_anchor(out_dir))
+            record["proposal_anchor"] = {"url": anchor[0], "data_hash": anchor[1], "served_by": "gov-anchor-server"}
             for label, owner in (("h", "h"), ("prop3", "h"), ("f", "f")):
                 actions[label] = out_dir / f"info-{label}.action"
                 run(info_action_command(cli=cli, deposit=gov_deposit, stake_vkey=str(stake[owner]["vkey"]),
@@ -873,6 +925,7 @@ def craft_gov_scriptcontext(*, runtime: dict, out_dir: Path, reference_node: str
             subject("vote", build_vote,
                     lambda d: check_vote_subject(d, pool=pool_hash, action_tx=pplain_id, policy=votes_policy))
     finally:
+        cleanup.close()
         for secret in keys_dir.glob("*.skey"):  # ephemeral stake keys never leave the run as evidence
             secret.unlink(missing_ok=True)
     return record

@@ -8,6 +8,7 @@ the shapes to the original fixtures and the per-node evidence contract.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from pathlib import Path
@@ -312,6 +313,13 @@ def _dry_run(tmp_path, monkeypatch, *, target_log_text):
         return PPLAIN_97B0 if Path(path).stem == "pplain-h" else hashlib.sha256(str(path).encode()).hexdigest()
 
     monkeypatch.setattr(bridge, "_checked", fake_cli)
+
+    @contextlib.contextmanager
+    def fake_anchor_server(out_dir, image=None):
+        bridge.write_gov_anchor(out_dir)
+        yield "http://anchor.test:8080/gov-anchor.json", "ab" * 32
+
+    monkeypatch.setattr(bridge, "serve_gov_anchor", fake_anchor_server)
     monkeypatch.setattr(bridge, "producer_tip", lambda node, magic: {"block": 11, "slot": 880, "hash": "dd" * 32})
     monkeypatch.setattr(calibration, "_controller_container", lambda: {})
     monkeypatch.setattr(calibration, "_containerized_cardano_workload", workload)
@@ -373,3 +381,28 @@ def test_gov_anchor_is_a_local_file_whose_hash_matches(tmp_path):
     command = bridge.info_action_command(cli="cli", deposit=1, stake_vkey="v", out_file="o", anchor=(url, digest))
     assert command[command.index("--anchor-url") + 1] == url
     assert command[command.index("--anchor-data-hash") + 1] == digest
+
+
+def test_gov_anchor_is_served_over_http_and_cleaned_up(tmp_path, monkeypatch):
+    """cardano-cli 11.2.3 transaction build rejects file:// anchors (run 20261109T225207Z: 'Unsupported URL
+    scheme: file:'), so the anchor is served from a short-lived container on the cli's default bridge."""
+    import hashlib
+
+    from scripts import runtime_block_apply_bridge as bridge
+
+    calls = []
+
+    def fake_checked(command, cwd=None, timeout=120):
+        calls.append(command)
+        return "172.17.0.9\n" if command[:2] == ["docker", "inspect"] else "ok"
+
+    monkeypatch.setattr(bridge, "_checked", fake_checked)
+    monkeypatch.setattr(bridge, "_wait", lambda fn, timeout=0, interval=0, what="": fn())
+    with bridge.serve_gov_anchor(tmp_path, image="dwarf/framework:current") as (url, digest):
+        assert url == "http://172.17.0.9:8080/gov-anchor.json"
+        assert digest == hashlib.blake2b(bridge.GOV_ANCHOR_DOCUMENT, digest_size=32).hexdigest()
+        run = next(c for c in calls if c[:2] == ["docker", "run"])
+        assert "io.dwarf.managed=true" in run and "dwarf/framework:current" in run
+        assert not any(c[:3] == ["docker", "rm", "-f"] for c in calls)
+    assert any(c[:3] == ["docker", "rm", "-f"] for c in calls)
+    assert (tmp_path / "gov-anchor.json").read_bytes() == bridge.GOV_ANCHOR_DOCUMENT
