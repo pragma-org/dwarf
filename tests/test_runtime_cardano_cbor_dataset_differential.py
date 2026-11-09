@@ -96,10 +96,16 @@ print("OK")
         if host_failure_paths
         else "/output/reference-dataset"
     )
-    failure_lines = [
-        f"FAIL {failure_root}/{relative_path} (fixture rejection)"
-        for relative_path in sorted(rejected_paths)
-    ]
+    # F144: like the real verifier, failures.log lists LABEL MISMATCHES with a reason, not decode
+    # rejections: a valid file the verifier rejects, or a mutated (zap) file it accepts.
+    failure_lines = []
+    for relative_path in sorted(_relative_paths()):
+        expected_invalid = relative_path.split("/")[1] != "valid"
+        rejected = relative_path in rejected_paths
+        if rejected and not expected_invalid:
+            failure_lines.append(f"FAIL {failure_root}/{relative_path} (deserialization failed: fixture rejection)")
+        elif not rejected and expected_invalid:
+            failure_lines.append(f"FAIL {failure_root}/{relative_path} (deserialization succeeded, expected failure)")
     failure_lines.extend(structural_lines)
     verifier = _write_executable(
         tmp_path / "cbor-verifier",
@@ -299,7 +305,8 @@ def test_verifier_derived_reference_is_label_independent(tmp_path, monkeypatch):
 
     assert report["reference_verifier"]["passed"] is False
     assert report["reference_verifier"]["parsed"] is True
-    assert report["reference_verifier"]["failed_input_count"] == 8
+    # F144: failures.log lists label mismatches; rejecting all 8 inputs lists only the 2 valid ones.
+    assert report["reference_verifier"]["failed_input_count"] == 2
     assert report["reference_target"]["kind"] == "reference_verifier_failures_log"
     assert report["reference_target"]["reached"] == 8
     assert report["mismatch_count"] == 0
@@ -436,3 +443,15 @@ def test_runtime_primitive_omits_absent_reference_target(tmp_path, monkeypatch):
     primitive.run(Handle(), None)
 
     assert "reference_target_id" not in captured
+
+
+def test_mutated_files_absent_from_the_log_are_reference_rejections(tmp_path, monkeypatch):
+    """F144 (live 1833006a): the verifier rejected every zap file correctly, so none is in
+    failures.log; DWARF read 'absent' as 'ok' and reported every zap file as a divergence."""
+    zap = {p for p in _relative_paths() if p.split("/")[1] != "valid"}
+    report = _run(tmp_path, monkeypatch, rejected_paths=zap)
+    transcript = tmp_path / "output" / report["transcript"]
+    records = {r["relative_path"]: r for r in (json.loads(line) for line in transcript.read_text().splitlines() if line.strip())}
+    for path in zap:
+        assert records[path]["reference"]["outcome"] == "clean_error"
+    assert report["mismatch_count"] == 0 and report["clean"] is True

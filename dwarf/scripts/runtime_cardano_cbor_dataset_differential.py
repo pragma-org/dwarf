@@ -398,6 +398,22 @@ def _run_reference_verifier(config: dict, output_dir: Path, stage_dir: Path) -> 
     }
 
 
+def reference_verdict(relative_path: str, failure_reasons: dict) -> str:
+    """The verifier's own per-file decode verdict (F144).
+
+    failures.log lists LABEL MISMATCHES, not decode failures: a valid file it rejected
+    ("deserialization failed ...") or a mutated file it accepted. An absent file matched its
+    label: valid -> ok, mutated (zap-*) -> rejected. A listed file's reason decides when present.
+    """
+    expected_invalid = relative_path.split("/")[1] != "valid" if relative_path.count("/") >= 2 else False
+    reason = failure_reasons.get(relative_path)
+    if reason is None:
+        return "clean_error" if expected_invalid else "ok"
+    if reason.startswith("deserialization failed"):
+        return "clean_error"
+    return "ok" if expected_invalid else "clean_error"
+
+
 def _parse_reference_failures(
     output_dir: Path, stage_dir: Path, selected: list[dict]
 ) -> tuple[set[str], dict]:
@@ -407,6 +423,7 @@ def _parse_reference_failures(
     )
     expected_paths = {record["relative_path"] for record in selected}
     failed_paths: set[str] = set()
+    failure_reasons: dict[str, str] = {}
     parse_errors: list[str] = []
     failures_log = None
     if len(matches) != 1:
@@ -446,11 +463,13 @@ def _parse_reference_failures(
                 parse_errors.append(line)
                 continue
             failed_paths.add(relative_path)
+            failure_reasons[relative_path] = reason[:-1]
     return failed_paths, {
         "parsed": not parse_errors,
         "failures_log": failures_log,
         "failed_input_count": len(failed_paths),
         "failed_inputs": sorted(failed_paths),
+        "failure_reasons": failure_reasons,
         "parse_errors": parse_errors,
     }
 
@@ -531,11 +550,7 @@ def run_cardano_cbor_dataset_differential(config: dict) -> Path:
                 )
             else:
                 reference = {
-                    "outcome": (
-                        "clean_error"
-                        if source["relative_path"] in failed_reference_paths
-                        else "ok"
-                    ),
+                    "outcome": reference_verdict(source["relative_path"], failure_parse.get("failure_reasons") or {}),
                     "exit_code": None,
                     "timed_out": False,
                     "duration_ms": 0.0,
