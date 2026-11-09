@@ -212,6 +212,26 @@ def _emit_point_metrics(label: str, *, point: str | None = None, from_point: str
     )
 
 
+def copied_state_recovery_outcome(recovered, recovered_wait, *, baseline_slot: int) -> dict:
+    """The copied node must catch up to the baseline slot within the window (F125, option a)."""
+    slot = ((recovered or {}).get(COPIED_STATE_NODE) or {}).get("slot")
+    if (recovered_wait or {}).get("timed_out") or slot is None or int(slot) < int(baseline_slot):
+        raise RuntimeError(
+            f"{COPIED_STATE_NODE} did not recover from copied state to baseline slot {baseline_slot} "
+            f"within the bounded window (last slot {slot}; {(recovered_wait or {}).get('last_error')})"
+        )
+    return {"outcome": "recovered_within_bound", "recovered_slot": int(slot), "baseline_slot": int(baseline_slot),
+            "recovery_seconds": (recovered_wait or {}).get("duration_seconds")}
+
+
+def divergence_observed(tips: dict) -> dict:
+    """Record the copied node's gap to the honest node; a node already caught up is not an error (F125)."""
+    copied = int(tips[COPIED_STATE_NODE]["slot"])
+    honest = int(tips[REMEDIATION_SOURCE_NODE]["slot"])
+    return {"divergence_observed": copied < honest, "copied_slot": copied, "honest_slot": honest,
+            "slot_gap": honest - copied}
+
+
 def _prepare_stale_snapshot_for_recovery(
     *,
     label: str,
@@ -417,7 +437,6 @@ def run_copied_state_recovery() -> int:
         )
         replace_node_db(PROFILE_A_CONFIG, COPIED_STATE_NODE, snapshot_db)
         _emit_operation_details("copied_state_start", start_session_with_details(PROFILE_A_CONFIG))
-        outcome = "non_recovery_within_bound"
         try:
             recovered, recovered_wait = wait_for_node_slots_with_details(
                 PROFILE_A_CONFIG,
@@ -425,18 +444,8 @@ def run_copied_state_recovery() -> int:
                 timeout_seconds=120,
             )
             _emit_operation_details("copied_state_recovery_wait", recovered_wait)
-            if (
-                not recovered_wait.get("timed_out")
-                and recovered is not None
-                and recovered[COPIED_STATE_NODE]["slot"] >= baseline_tip["slot"]
-            ):
-                raise RuntimeError(
-                    f"{COPIED_STATE_NODE} unexpectedly recovered to slot "
-                    f"{recovered[COPIED_STATE_NODE]['slot']} within the bounded window"
-                )
-        except RuntimeError as exc:
-            if "unexpectedly recovered" in str(exc):
-                raise
+            recovery = copied_state_recovery_outcome(recovered, recovered_wait, baseline_slot=baseline_tip["slot"])
+            _emit_operation_details("copied_state_recovery_outcome", recovery)
         finally:
             _emit_operation_details("copied_state_remediation_stop", stop_session_with_details(PROFILE_A_CONFIG))
             replace_node_db(PROFILE_A_CONFIG, COPIED_STATE_NODE, remediation_db)
@@ -485,7 +494,7 @@ def run_copied_state_recovery() -> int:
         f"remediation_source_node={REMEDIATION_SOURCE_NODE} "
         f"snapshot_slot={source_tip['slot']} "
         f"baseline_slot={baseline_tip['slot']} "
-        f"outcome={outcome} "
+        f"outcome={recovery['outcome']} "
         f"restored_slot={restored[COPIED_STATE_NODE]['slot']} "
         f"snapshot_block={source_tip['block']} "
         f"baseline_block={baseline_tip['block']} "
@@ -536,18 +545,8 @@ def run_copied_state_recovery_fetch() -> int:
                 timeout_seconds=120,
             )
             _emit_operation_details("copied_state_fetch_recovery_wait", recovered_wait)
-            if (
-                not recovered_wait.get("timed_out")
-                and recovered is not None
-                and recovered[COPIED_STATE_NODE]["slot"] >= baseline_tip["slot"]
-            ):
-                raise RuntimeError(
-                    f"{COPIED_STATE_NODE} unexpectedly recovered to slot "
-                    f"{recovered[COPIED_STATE_NODE]['slot']} within the bounded window"
-                )
-        except RuntimeError as exc:
-            if "unexpectedly recovered" in str(exc):
-                raise
+            recovery = copied_state_recovery_outcome(recovered, recovered_wait, baseline_slot=baseline_tip["slot"])
+            _emit_operation_details("copied_state_fetch_recovery_outcome", recovery)
         finally:
             _emit_operation_details("copied_state_fetch_remediation_stop", stop_session_with_details(PROFILE_A_CONFIG))
             replace_node_db(PROFILE_A_CONFIG, COPIED_STATE_NODE, remediation_db)
@@ -648,11 +647,7 @@ def run_copied_state_bounded_divergence() -> int:
             right_node=REMEDIATION_SOURCE_NODE,
             right_slot=divergent[REMEDIATION_SOURCE_NODE]["slot"],
         )
-        if divergent[COPIED_STATE_NODE]["slot"] >= divergent[REMEDIATION_SOURCE_NODE]["slot"]:
-            raise RuntimeError(
-                f"expected bounded divergence with {COPIED_STATE_NODE} behind {REMEDIATION_SOURCE_NODE}, saw "
-                f"{divergent[COPIED_STATE_NODE]['slot']} and {divergent[REMEDIATION_SOURCE_NODE]['slot']}"
-            )
+        _emit_operation_details("copied_state_divergence_window_gap", divergence_observed(divergent))
         divergence_fetch_successes = 0
         divergence_total_elapsed_ms = 0.0
         for node in FETCH_TARGET_NODES:
@@ -771,11 +766,7 @@ def run_copied_state_chainsync_divergence() -> int:
             right_node=REMEDIATION_SOURCE_NODE,
             right_slot=divergent[REMEDIATION_SOURCE_NODE]["slot"],
         )
-        if divergent[COPIED_STATE_NODE]["slot"] >= divergent[REMEDIATION_SOURCE_NODE]["slot"]:
-            raise RuntimeError(
-                f"expected bounded divergence with {COPIED_STATE_NODE} behind {REMEDIATION_SOURCE_NODE}, saw "
-                f"{divergent[COPIED_STATE_NODE]['slot']} and {divergent[REMEDIATION_SOURCE_NODE]['slot']}"
-            )
+        _emit_operation_details("copied_state_chainsync_divergence_window_gap", divergence_observed(divergent))
         divergence_fetch_successes = 0
         divergence_total_elapsed_ms = 0.0
         for node in FETCH_TARGET_NODES:

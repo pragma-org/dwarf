@@ -6,7 +6,7 @@
    "group": "copied-state behaviour verdicts",
    "status": "review",
    "cause": "F121/F121b: container stop/start and stale-snapshot creation now work. On the private devnet (0.1 s slots) the copied stale node catches up within seconds, so the scenarios that expect it to stay behind fail: \"expected bounded divergence with node2 behind node3, saw 4956 and 4956\" (d95ecf3e); m3 node2 recovery \"unexpectedly recovered within the bounded window\" (02a175a4)",
-   "fix": "decide what a copied stale state should show on a fast devnet: bounded non-recovery (needs a longer stale gap or slower slots) or prompt recovery as the pass condition"
+   "fix": "F125 (decision 2026-11-09, option a): recovery to the honest tip within the window is the pass; the divergence gap is recorded (divergence_observed), not required. Rerun pending."
   },
   {
    "match": "cardano-n2n-handshake-version-table-forward-compat-1112",
@@ -111,7 +111,7 @@
    "group": "profile-a behaviour verdicts",
    "status": "review",
    "cause": "same as copied-state behaviour verdicts: node recovers within seconds on the fast devnet",
-   "fix": "decide: is fast recovery a pass, or must the window be tighter"
+   "fix": "F125 (decision 2026-11-09, option a): recovery to the honest tip within the window is the pass; the divergence gap is recorded (divergence_observed), not required. Rerun pending."
   },
   {
    "match": "cardano-lsq-extract-debug-epoch-state",
