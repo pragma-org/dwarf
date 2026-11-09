@@ -424,3 +424,31 @@ def test_live_implementation_baseline_uses_the_prepared_container_root(tmp_path,
     import random
     prim.run(handle, random.Random(0))
     assert str(root) in seen["argv"]
+
+
+def test_preview_baseline_keeps_sampling_until_the_chain_grows():
+    """Preview averages one block per 20 s, so a fixed 20 s window sees no block ~37% of the time
+    (live run 20261109T233341Z failed on a healthy, following node). Sampling continues until growth,
+    up to six expected block intervals."""
+    from scripts import runtime_preview_parity_check as parity
+
+    sizes = iter([100, 100, 100, 100, 160])          # chain size at each read: grows on the 4th poll
+    clock = {"t": 0.0}
+    result = parity._sample_until_growth(
+        read_chain=lambda: next(sizes), read_log=lambda: 50, is_running=lambda: True,
+        min_seconds=20, max_seconds=120, poll_seconds=2,
+        sleep=lambda s: clock.__setitem__("t", clock["t"] + s), now=lambda: clock["t"])
+    assert result["chain_before"] == 100 and result["chain_after"] == 160
+    assert result["log_before"] == result["log_after"] == 50
+    assert result["sampled_seconds"] == 26
+
+
+def test_preview_baseline_gives_up_after_the_budget():
+    from scripts import runtime_preview_parity_check as parity
+
+    clock = {"t": 0.0}
+    result = parity._sample_until_growth(
+        read_chain=lambda: 100, read_log=lambda: 50, is_running=lambda: True,
+        min_seconds=20, max_seconds=120, poll_seconds=2,
+        sleep=lambda s: clock.__setitem__("t", clock["t"] + s), now=lambda: clock["t"])
+    assert result["chain_after"] == 100 and result["sampled_seconds"] >= 120

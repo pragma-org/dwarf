@@ -49,6 +49,29 @@ def _listener_ok(host: str, port: int) -> bool:
         return False
 
 
+# Preview: 1 s slots, activeSlotsCoeff 0.05 -> one block per 20 s on average. A fixed 20 s window
+# misses every block ~37% of the time (e^-1); six expected intervals (120 s) leave ~0.25% (e^-6).
+PREVIEW_MAX_SAMPLE_SECONDS = 120
+
+
+def _sample_until_growth(*, read_chain, read_log, is_running, min_seconds: float, max_seconds: float,
+                         poll_seconds: float = 2.0, sleep=None, now=None) -> dict:
+    """Sample at least ``min_seconds``, then keep polling until the chain or the log grows, up to
+    ``max_seconds``. Returns the before/after sizes and how long was sampled."""
+    sleep = sleep or time.sleep  # resolved per call, so a patched time.sleep applies
+    now = now or time.monotonic
+    chain_before, log_before = read_chain(), read_log()
+    started = now()
+    sleep(min_seconds)
+    while True:
+        chain_after, log_after = read_chain(), read_log()
+        elapsed = now() - started
+        if chain_after > chain_before or log_after > log_before or elapsed >= max_seconds or not is_running():
+            return {"chain_before": chain_before, "chain_after": chain_after, "log_before": log_before,
+                    "log_after": log_after, "sampled_seconds": round(elapsed, 3)}
+        sleep(poll_seconds)
+
+
 def run_baseline(*, scenario_path: Path, sample_seconds: int) -> int:
     target_implementation = target_implementation_from_scenario(scenario_path)
     runtime_root = runtime_root_for_implementation(target_implementation)
@@ -64,13 +87,14 @@ def run_baseline(*, scenario_path: Path, sample_seconds: int) -> int:
         raise RuntimeError(f"{target_implementation} is not running: {view.describe()}")
     if not _listener_ok(listen_host, listen_port):
         raise RuntimeError(f"listener probe failed: {listen_host}:{listen_port}")
-    chain_before = _dir_size_bytes(chain_dir)
-    log_before = log_path.stat().st_size
-    time.sleep(sample_seconds)
+    sample = _sample_until_growth(
+        read_chain=lambda: _dir_size_bytes(chain_dir), read_log=lambda: log_path.stat().st_size,
+        is_running=view.is_running, min_seconds=sample_seconds,
+        max_seconds=max(sample_seconds, PREVIEW_MAX_SAMPLE_SECONDS))
     if not view.is_running():
         raise RuntimeError(f"{target_implementation} exited during proof window: {view.describe()}")
-    chain_after = _dir_size_bytes(chain_dir)
-    log_after = log_path.stat().st_size
+    chain_before, chain_after = sample["chain_before"], sample["chain_after"]
+    log_before, log_after = sample["log_before"], sample["log_after"]
     chain_delta = max(0, chain_after - chain_before)
     log_delta = max(0, log_after - log_before)
     progress_ok = 1 if chain_delta > 0 or log_delta > 0 else 0
@@ -84,6 +108,7 @@ def run_baseline(*, scenario_path: Path, sample_seconds: int) -> int:
     emit_runtime_metric("preview_log_bytes_after", value=log_after, meta=meta)
     emit_runtime_metric("preview_log_bytes_delta", value=log_delta, meta=meta)
     emit_runtime_metric("preview_progress_ok", value=progress_ok, meta=meta)
+    emit_runtime_metric("preview_sample_seconds", value=sample["sampled_seconds"], meta=meta)
     trace_window = read_log_window(log_path, log_before, log_after)
     amaru_trace_metrics = None
     if target_implementation == "amaru":
