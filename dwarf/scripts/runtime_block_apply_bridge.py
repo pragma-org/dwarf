@@ -1120,6 +1120,21 @@ def cardano_consumer_verdict(*, tip: dict | None, forged_hashes: set[str], forge
     return {"verdict": "not-observed", "tip": tip, "reason_lines": []}
 
 
+ARM_DEADLINE = 0.9
+
+
+def armable_after_snapshot(before_tip: dict, after_tip: dict, *, epoch_length: int,
+                           deadline: float = ARM_DEADLINE) -> bool:
+    """The pre-forge snapshot is usable only if the forge can still land in the snapshot's epoch.
+
+    With short epochs (local reward-window timing: 400 slots of 0.5 s) restarting Amaru for its
+    pots dump can take a large part of an epoch; a forge armed in the next epoch would make the
+    before/after snapshots misaligned. Past ``deadline`` of the epoch the snapshot is retaken.
+    """
+    return (int(after_tip["epoch"]) == int(before_tip["epoch"])
+            and int(after_tip["slotInEpoch"]) <= deadline * int(epoch_length))
+
+
 def serve_and_arm(*, run_dir: Path, runtime_metadata_path: Path, target_node: str, reference_node: str,
                   snapshots: bool, sync_timeout: float = 900, arm_window: tuple[float, float] = (0.35, 0.65)) -> dict:
     from scripts.runtime_byzantine_peer import _launch_proxy_session, _pick_free_port  # noqa: PLC0415
@@ -1192,8 +1207,14 @@ def serve_and_arm(*, run_dir: Path, runtime_metadata_path: Path, target_node: st
 
             _wait(resumed, timeout=180, interval=2, what="Amaru to resume at the tip after the snapshot restart")
             cardano_before = consumer_pots(consumer["name"], magic)
+            after = _wait(lambda: producer_tip(producer, magic), timeout=60, what="producer tip")
+            if not armable_after_snapshot(tip, after, epoch_length=genesis["epoch_length"]):
+                state["serve"].setdefault("discarded_snapshots", []).append(
+                    {"anchor": tip, "after": after, "reason": "snapshot ended past the arm deadline of its epoch"})
+                save_state(run_dir, state)
+                continue
             before = {"amaru": amaru_before, "cardano": cardano_before, "anchor": tip}
-            tip = _wait(lambda: producer_tip(producer, magic), timeout=60, what="producer tip")
+            tip = after
         break
     arm = {"armed_slot": int(tip["slot"]) + 1, "anchor": tip}
     (out / "arm.json").write_text(json.dumps(arm, indent=2) + "\n", encoding="utf-8")

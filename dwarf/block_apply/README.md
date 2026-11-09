@@ -16,7 +16,10 @@ Amaru target and a cardano-node producer/reference:
 3. `serve_crafted_block` starts `scripts/byzantine_mux_proxy.py --mutation-mode forge_substitute`
    in front of the producer, repoints the Amaru compose service to it, starts an isolated
    cardano-node reference consumer whose only peer is the proxy, waits until both follow the tip,
-   optionally takes mid-epoch pot snapshots, then arms the forge (`arm.json`).
+   optionally takes mid-epoch pot snapshots, then arms the forge (`arm.json`). A snapshot that
+   ends past 0.9 of its epoch (possible with the 200 s epochs of
+   `substrate.amaru_local_reward_window_timing`) is discarded (`serve.discarded_snapshots`) and
+   retaken in the next epoch, so the forge stays in the snapshot's epoch.
 4. The proxy (`scripts/block_forge.ForgeSubstitution`) takes the producer's next EMPTY leader block
    at/after the armed slot, keeps its slot/VRF/opcert, replaces the body with the crafted
    transaction, recomputes body hash/size and re-signs the header with the pool's KES key

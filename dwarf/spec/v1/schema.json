@@ -405,6 +405,11 @@
           "type": "boolean",
           "default": false,
           "description": "Opt-in (generated single-host docker devnets only): register each genesis stake pool's own node (service DNS name + container port) as its relay, so the ledger has ledger peers. Off: the generated genesis is unchanged."
+        },
+        "amaru_local_reward_window_timing": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in (generated single-host docker devnets with an Amaru node and the synthetic Amaru bootstrap only): apply the local reward-window timing contract of the amaru-control lifecycle (epoch 400 slots of 0.5 s, k 8, f 1/5, Amaru scale factor 10; one epoch = 200 s) to the generated Cardano genesis and to the Amaru global parameters and era history, and record the identity proof in the compose report. Off: the pinned bootstrap genesis is unchanged."
         }
       }
     },

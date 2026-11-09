@@ -116,6 +116,53 @@ It is off by default; the genesis is then unchanged. It applies only to a genera
 docker devnet; other compose modes and public networks refuse it rather than run without
 relays. Only `runtime-substrate-eclipse-topology-example-smoke` sets it.
 
+### Opt-in 2026-11-09: local reward-window timing for devnets with Amaru
+
+A self-composed devnet with an Amaru node on `testnet_<magic>` uses the synthetic Amaru
+bootstrap. Its loader copies the pinned genesis of the loader image: `epochLength` 86400,
+`slotLength` 1, `securityParam` 432, `activeSlotsCoeff` 0.05. One epoch is then 24 hours. A
+scenario that must see an epoch boundary (for example after a forged block) cannot finish in the
+controller's 40-minute run limit (run 20261109T211753Z-27b07104 ended with exit 126). Such a
+scenario sets:
+
+```json
+"substrate": { "compose_mode": "docker", "network": "testnet_42", "amaru_local_reward_window_timing": true, ... }
+```
+
+Compose then applies the local reward-window contract of the amaru-control lifecycle (profile-c,
+`LOCAL_REWARD_WINDOW_CONTRACT` in `dwarf/scripts/local_reward_window.py`): an epoch of 400 slots
+of 0.5 s (200 s), `k` 8, `f` 1/5, `rho` 0.003, `tau` 0.2, and Amaru `epoch_length_scale_factor` 10.
+The contract, the generation of the Amaru inputs and the identity proof are the same code that
+profile-c uses.
+
+1. The loader hook `apply-local-reward-window.sh` writes the contract fields into every pinned
+   Shelley genesis (and Byron `protocolConsts.k`) after the loader copies them. All other genesis
+   fields stay as pinned.
+2. The start time counts the slot length. The loader puts the synthesized tip (3.75 epochs)
+   180 s ahead of its clock, and compose starts the nodes 3 s after that tip (Amaru rejects a
+   header more than 2 s ahead of its clock). With 0.5 s slots,
+   cardano-node can forecast leadership only 120 slots (60 s) past its tip, so compose refuses to
+   start the nodes when the tip is older than 30 s.
+3. After the bootstrap producer bundle, compose generates the Amaru global parameters (contract
+   timing; KES, supply and system start read from the generated genesis) and the era history
+   (one Conway era, `stability_window` 120 = 3k/f). The era history replaces the producer's copy
+   (whose stability window is `3 * epochLength`). Amaru gets the global parameters as
+   `AMARU_GLOBAL_*` environment values, because `amaru run` has no built-in parameters for a
+   custom testnet.
+4. The identity proof (`prove_timing_identity`) must pass on the generated genesis and the
+   Amaru inputs, and compose reads the environment of each running Amaru container back.
+
+The compose report and `runtime.json` record `local_reward_window`: the contract, the proof, the
+genesis and input hashes, the producer era-history hash, the loader start-time record, the start
+wait and the Amaru environment that each container runs with. The same receipt is at
+`<runtime_root>/local-reward-window/receipt.json`.
+
+It is off by default; then the pinned genesis, the start time and the Amaru environment are not
+changed. It applies only to a single-host docker devnet with an Amaru node on `testnet_<magic>`
+and without `kes_genesis_override`; other cases refuse it. Only the two donation block-apply
+scenarios (`ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node` and
+`ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node`) set it.
+
 ## Refresh releases
 
 Opening `/operate/versions` reads retained catalog data and never contacts GitHub automatically. Each implementation has its own **Fetch Latest Version**

@@ -32,6 +32,7 @@
   "substrate": {
     "compose_mode": "docker",
     "network": "testnet_42",
+    "amaru_local_reward_window_timing": true,
     "nodes": [
       {
         "id": "node1",

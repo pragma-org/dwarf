@@ -650,6 +650,11 @@ def _validate_substrate(value):
         if not isinstance(pool_relays, bool):
             raise ScenarioValidationError("substrate.cardano_pool_relays must be a boolean")
         normalized_substrate["cardano_pool_relays"] = pool_relays
+    local_reward_window_timing = value.get("amaru_local_reward_window_timing")
+    if local_reward_window_timing is not None:
+        if not isinstance(local_reward_window_timing, bool):
+            raise ScenarioValidationError("substrate.amaru_local_reward_window_timing must be a boolean")
+        normalized_substrate["amaru_local_reward_window_timing"] = local_reward_window_timing
     return normalized_substrate
 
 

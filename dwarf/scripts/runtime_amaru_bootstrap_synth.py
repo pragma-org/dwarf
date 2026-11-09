@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -86,11 +87,17 @@ done
         AMARU_TESTNET_DIR / "apply-governance-guardrails.sh",
         guardrails_loader_path,
     )
+    local_reward_window_loader_path = scripts_root / "apply-local-reward-window.sh"
+    shutil.copy2(
+        AMARU_TESTNET_DIR / "apply-local-reward-window.sh",
+        local_reward_window_loader_path,
+    )
     cardano_loader_path.chmod(0o755)
     amaru_loader_path.chmod(0o755)
     funding_loader_path.chmod(0o755)
     producer_stake_loader_path.chmod(0o755)
     guardrails_loader_path.chmod(0o755)
+    local_reward_window_loader_path.chmod(0o755)
 
 
 def ensure_loader_image(
@@ -161,6 +168,16 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         staged_guardrails_request = workspace_root / "governance-guardrails.json"
         shutil.copy2(guardrails_request, staged_guardrails_request)
 
+    staged_local_reward_window_request = None
+    if plan.get("amaru_local_reward_window_timing"):
+        local_reward_window_request = env_root / "generated-local-reward-window.json"
+        if not local_reward_window_request.is_file():
+            raise RuntimeError(
+                "Amaru bootstrap synthesis requires the local reward-window request"
+            )
+        staged_local_reward_window_request = workspace_root / "local-reward-window.json"
+        shutil.copy2(local_reward_window_request, staged_local_reward_window_request)
+
     source_configs_root = env_root / "configs" if (env_root / "configs").exists() else env_root
 
     config_roots: dict[str, str] = {}
@@ -218,6 +235,11 @@ def prepare_loader_workspace(*, runtime_root: Path, plan: dict) -> dict:
         "workload_funding_request": str(staged_funding_request),
         "governance_guardrails_request": (
             str(staged_guardrails_request) if staged_guardrails_request else None
+        ),
+        "local_reward_window_request": (
+            str(staged_local_reward_window_request)
+            if staged_local_reward_window_request
+            else None
         ),
         "config_roots": config_roots,
         "target_config_root": str(env_root),
@@ -282,6 +304,15 @@ def loader_commands(*, layout: dict, loader_image: str = DEFAULT_LOADER_IMAGE) -
             [
                 "-v",
                 f"{_docker_bind_source(layout, layout['governance_guardrails_request'])}:/data/governance-guardrails.json:ro",
+            ]
+        )
+    if layout.get("local_reward_window_request"):
+        cardano_cmd.extend(
+            [
+                "-v",
+                f"{_docker_bind_source(layout, scripts_root / 'apply-local-reward-window.sh')}:/data/apply-local-reward-window.sh:ro",
+                "-v",
+                f"{_docker_bind_source(layout, layout['local_reward_window_request'])}:/data/local-reward-window.json:ro",
             ]
         )
     for slot, config_root in sorted(layout["config_roots"].items(), key=lambda item: int(item[0])):
@@ -429,6 +460,48 @@ def _validated_governance_guardrails_evidence(layout: dict) -> dict | None:
             raise RuntimeError("staged Conway genesis omitted governance guardrails fixture")
         if hashlib.sha256(genesis_path.read_bytes()).hexdigest() != expected_sha256:
             raise RuntimeError("staged Conway genesis does not match guardrails evidence")
+    return evidence
+
+
+def _validated_local_reward_window_evidence(layout: dict) -> dict | None:
+    """The loader's start-time record, checked against every staged genesis it produced."""
+    request_path = layout.get("local_reward_window_request")
+    if not request_path:
+        return None
+    request = json.loads(Path(str(request_path)).read_text(encoding="utf-8"))
+    evidence_path = Path(str(layout["generated_root"])) / "local-reward-window-applied.json"
+    if not evidence_path.is_file():
+        raise RuntimeError("cardano loader omitted local reward-window evidence")
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+    fields = ("system_start_unix", "synthesis_slot", "slot_length_ms", "start_lead_seconds", "synthesis_tip_unix")
+    if any(
+        not isinstance(evidence.get(field), int) or isinstance(evidence.get(field), bool)
+        for field in fields
+    ):
+        raise RuntimeError("cardano loader local reward-window evidence is invalid")
+    if evidence["start_lead_seconds"] != request.get("start_lead_seconds"):
+        raise RuntimeError("cardano loader local reward-window lead does not match the request")
+    synthesis_ms = evidence["synthesis_slot"] * evidence["slot_length_ms"]
+    if synthesis_ms % 1000 or evidence["synthesis_tip_unix"] != evidence["system_start_unix"] + synthesis_ms // 1000:
+        raise RuntimeError("cardano loader local reward-window tip time does not follow its start time")
+    expected_iso = datetime.fromtimestamp(evidence["system_start_unix"], tz=timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    for config_root in layout["config_roots"].values():
+        configs = Path(str(config_root)) / "configs"
+        shelley = json.loads((configs / "shelley-genesis.json").read_text(encoding="utf-8"))
+        byron = json.loads((configs / "byron-genesis.json").read_text(encoding="utf-8"))
+        wanted = request["shelley"]
+        if (
+            any(shelley.get(key) != wanted[key] for key in ("epochLength", "slotLength", "securityParam", "activeSlotsCoeff"))
+            or any((shelley.get("protocolParams") or {}).get(key) != value for key, value in wanted["protocolParams"].items())
+            or (byron.get("protocolConsts") or {}).get("k") != request["byron_protocol_k"]
+        ):
+            raise RuntimeError("staged genesis omitted the local reward-window contract")
+        if shelley.get("systemStart") != expected_iso or byron.get("startTime") != evidence["system_start_unix"]:
+            raise RuntimeError("staged genesis start time does not match the local reward-window evidence")
+        if round(float(shelley["slotLength"]) * 1000) != evidence["slot_length_ms"]:
+            raise RuntimeError("staged genesis slot length does not match the local reward-window evidence")
     return evidence
 
 
@@ -608,6 +681,7 @@ def synthesize_amaru_bootstrap(
         raise RuntimeError(f"cardano loader failed: {cardano.stderr or cardano.stdout}")
     workload_funding = _validated_workload_funding_evidence(layout)
     governance_guardrails = _validated_governance_guardrails_evidence(layout)
+    local_reward_window = _validated_local_reward_window_evidence(layout)
     producer_cmd = bootstrap_producer_command(layout=layout, producer_image=producer_image)
     producer = run_command(producer_cmd)
     if producer.returncode != 0:
@@ -643,6 +717,7 @@ def synthesize_amaru_bootstrap(
         "amaru_command": producer_cmd,
         "generated_workload_funding": workload_funding,
         "governance_guardrails_fixture": governance_guardrails,
+        "local_reward_window": local_reward_window,
     }
     report_path = runtime_root / "amaru-bootstrap-loader" / "synth-report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

@@ -162,6 +162,17 @@ def _cardano_pool_relays(substrate: dict) -> bool:
     return value
 
 
+def _amaru_local_reward_window_timing(substrate: dict) -> bool:
+    """substrate.amaru_local_reward_window_timing -> short-epoch local reward-window contract for
+    self-composed devnets with Amaru (opt-in, 2026-11-09; see local_reward_window.py)."""
+    value = substrate.get("amaru_local_reward_window_timing")
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise ValueError("substrate.amaru_local_reward_window_timing must be a boolean")
+    return value
+
+
 def normalize_substrate(substrate: dict) -> dict:
     if not isinstance(substrate, dict):
         raise ValueError("substrate must be a mapping")
@@ -532,6 +543,7 @@ def normalize_substrate(substrate: dict) -> dict:
         "cardano_experimental_protocols": cardano_experimental_protocols,
         "cardano_accepted_connections_limit": _accepted_connections_limit(substrate),
         "cardano_pool_relays": _cardano_pool_relays(substrate),
+        "amaru_local_reward_window_timing": _amaru_local_reward_window_timing(substrate),
         "amaru_json_traces": amaru_json_traces,
         "amaru_txsubmission_trace": amaru_txsubmission_trace,
         "controller_ownership": controller_ownership,
@@ -953,6 +965,7 @@ def allocate_node_plan(
         "cardano_experimental_protocols": normalized.get("cardano_experimental_protocols"),
         "cardano_accepted_connections_limit": normalized.get("cardano_accepted_connections_limit"),
         "cardano_pool_relays": bool(normalized.get("cardano_pool_relays")),
+        "amaru_local_reward_window_timing": bool(normalized.get("amaru_local_reward_window_timing")),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
         "amaru_txsubmission_trace": bool(
             normalized.get("amaru_txsubmission_trace")

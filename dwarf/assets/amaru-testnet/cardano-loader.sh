@@ -12,6 +12,14 @@ BOOTSTRAP_TARGET_EPOCH=3
 BOOTSTRAP_TARGET_EPOCH_FRACTION_NUMERATOR=3
 BOOTSTRAP_TARGET_EPOCH_FRACTION_DENOMINATOR=4
 SYNTHESIS_SLOT=""
+# Opt-in (substrate.amaru_local_reward_window_timing): DWARF mounts this request
+# and the hook below applies the local reward-window contract to every pinned
+# genesis.  Its slots are 0.5 s and its stability window is 60 s, so the start
+# time counts the slot length and puts the synthesized tip `start_lead_seconds`
+# ahead of now (DWARF starts the nodes just after that tip).  Without the
+# request the start-time path below is the original one.
+LOCAL_REWARD_WINDOW_REQUEST=/data/local-reward-window.json
+LOCAL_REWARD_WINDOW_SYSTEM_START=""
 
 write_file() {
     local tmp_file="${1}_$(tr </dev/urandom -dc A-Za-z0-9 | head -c16)"
@@ -75,8 +83,32 @@ set_start_time() {
         exit 1
     fi
     SYNTHESIS_SLOT=${target_slot}
+    if [[ -f "${LOCAL_REWARD_WINDOW_REQUEST}" ]]; then
+        if [[ -z "${LOCAL_REWARD_WINDOW_SYSTEM_START}" ]]; then
+            local slot_length_ms lead_seconds synthesis_ms
+            slot_length_ms=$(jq -er '(.slotLength * 1000) | select(. > 0 and . == floor)' "${SHELLEY_GENESIS_JSON}") || {
+                echo "local reward-window: slotLength is not a whole number of milliseconds" >&2
+                exit 1
+            }
+            lead_seconds=$(jq -er '.start_lead_seconds | select(type == "number" and . >= 0 and . == floor)' \
+                "${LOCAL_REWARD_WINDOW_REQUEST}") || {
+                echo "local reward-window: start_lead_seconds is invalid" >&2
+                exit 1
+            }
+            synthesis_ms=$(( SYNTHESIS_SLOT * slot_length_ms ))
+            if (( synthesis_ms % 1000 != 0 )); then
+                echo "local reward-window: synthesized tip is not on a whole second" >&2
+                exit 1
+            fi
+            # one start for every pool (Byron and Shelley agree to the second)
+            LOCAL_REWARD_WINDOW_SYSTEM_START=$(( $(date +%s) + lead_seconds - synthesis_ms / 1000 ))
+        fi
+        SYSTEM_START_UNIX=${LOCAL_REWARD_WINDOW_SYSTEM_START}
+        SYSTEM_START_ISO="$(date -u -d @${SYSTEM_START_UNIX} '+%Y-%m-%dT%H:%M:%SZ')"
+    else
     SYSTEM_START_UNIX=$(($(date +%s) - SYNTHESIS_SLOT))
     SYSTEM_START_ISO="$(date -d @${SYSTEM_START_UNIX} '+%Y-%m-%dT%H:%M:00Z')"
+    fi
     jq ".systemStart = \"${SYSTEM_START_ISO}\"" "${SHELLEY_GENESIS_JSON}" | write_file "${SHELLEY_GENESIS_JSON}"
     jq ".startTime = ${SYSTEM_START_UNIX}" "${BYRON_GENESIS_JSON}" | write_file "${BYRON_GENESIS_JSON}"
 }
@@ -89,9 +121,26 @@ for pool in $pools; do
   echo "configure pool: $pool ($pool_ix)"
   copy_config "$pool_ix"
   config_topology_json "$pool_ix" "$number_of_pools"
+  if [[ -f "${LOCAL_REWARD_WINDOW_REQUEST}" ]]; then
+    /data/apply-local-reward-window.sh "${LOCAL_REWARD_WINDOW_REQUEST}" "$pool" || exit 1
+  fi
   set_start_time "$pool"
 done
 : "${SYNTHESIS_SLOT:?bootstrap synthesis slot was not derived}"
+
+if [[ -f "${LOCAL_REWARD_WINDOW_REQUEST}" ]]; then
+  slot_length_ms=$(jq -er '(.slotLength * 1000) | floor' /configs/1/configs/shelley-genesis.json) || exit 1
+  lead_seconds=$(jq -er '.start_lead_seconds' "${LOCAL_REWARD_WINDOW_REQUEST}") || exit 1
+  jq -n \
+    --argjson system_start_unix "${LOCAL_REWARD_WINDOW_SYSTEM_START}" \
+    --argjson synthesis_slot "${SYNTHESIS_SLOT}" \
+    --argjson slot_length_ms "${slot_length_ms}" \
+    --argjson start_lead_seconds "${lead_seconds}" \
+    '{system_start_unix: $system_start_unix, synthesis_slot: $synthesis_slot,
+      slot_length_ms: $slot_length_ms, start_lead_seconds: $start_lead_seconds,
+      synthesis_tip_unix: ($system_start_unix + ($synthesis_slot * $slot_length_ms / 1000))}' \
+    | write_file /data/generated/local-reward-window-applied.json
+fi
 
 # The pinned bootstrap config retains five genesis pools even when the runtime
 # materializes only one producer.  Keep the synthesized private genesis aligned

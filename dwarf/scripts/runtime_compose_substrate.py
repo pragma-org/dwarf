@@ -36,6 +36,7 @@ from runtime_substrate_common import (
     write_json,
 )
 from runtime_amaru_bootstrap_synth import DEFAULT_LOADER_BASE_IMAGE, synthesize_amaru_bootstrap
+import local_reward_window
 from runtime_multi_node_observation import _query_tip_once, _resolve_socket_path
 
 
@@ -925,6 +926,157 @@ def _refuse_unsupported_pool_relays(plan: dict, *, mode: str) -> None:
         raise RuntimeError("substrate.cardano_pool_relays needs a generated devnet; public-network pools are real")
 
 
+# Opt-in local reward-window timing (substrate.amaru_local_reward_window_timing, 2026-11-09).
+# The synthetic bootstrap synthesizes the chain up to 3.75 epochs before the nodes start.  With
+# the contract's 0.5 s slots, cardano-node can only forecast leadership 3k/f = 120 slots (60 s)
+# past its tip, so the tip must not be older than that when the nodes start.  The loader puts the
+# synthesized tip LEAD seconds ahead of its clock (longer than the measured loader -> compose up
+# span, ~90 s in run 20261109T211753Z-27b07104); compose then starts the nodes AFTER_TIP seconds
+# after that tip (never before it: with its real system start Amaru rejects a header more than
+# MAX_HEADER_CLOCK_SKEW = 2 s ahead of its clock) and refuses to start them once the tip is older
+# than half the window.
+LOCAL_REWARD_WINDOW_START_LEAD_SECONDS = 180
+LOCAL_REWARD_WINDOW_START_AFTER_TIP_SECONDS = 3
+
+
+def _local_reward_window_request() -> dict:
+    """What the loader hook writes into every pinned genesis, and the start lead."""
+    return {
+        "shelley": local_reward_window.shelley_genesis_fields(),
+        "byron_protocol_k": local_reward_window.byron_protocol_k(),
+        "start_lead_seconds": LOCAL_REWARD_WINDOW_START_LEAD_SECONDS,
+    }
+
+
+def _refuse_unsupported_local_reward_window_timing(plan: dict, *, mode: str) -> None:
+    """The opt-in edits the synthetic Amaru bootstrap of a single-host docker devnet; refuse it
+    anywhere it would silently run with the pinned 86400-slot epochs."""
+    if not plan.get("amaru_local_reward_window_timing"):
+        return
+    key = "substrate.amaru_local_reward_window_timing"
+    if mode != "docker":
+        raise RuntimeError(f"{key} is supported only for compose_mode docker on one host, not {mode}")
+    if not str(plan.get("network") or "").startswith("testnet_"):
+        raise RuntimeError(f"{key} needs a generated testnet_<magic> devnet; public-network timing is real")
+    if not any(node.get("impl") == "amaru" for node in plan.get("nodes") or []):
+        raise RuntimeError(f"{key} applies to the synthetic Amaru bootstrap; this devnet has no Amaru node")
+    if plan.get("kes_genesis_override"):
+        raise RuntimeError(f"{key} cannot be combined with kes_genesis_override")
+
+
+def _apply_local_reward_window_to_amaru_bootstrap(*, runtime_root: Path, plan: dict, loader_evidence) -> dict:
+    """Generate the Amaru inputs for the contract and prove them identical to the generated genesis.
+
+    The genesis is the one the cardano-node containers mount (``env``), after the bootstrap
+    producer bundle was applied.  Amaru gets the contract's global parameters as ``AMARU_GLOBAL_*``
+    (``amaru run`` has no built-in parameters for a custom testnet) and the contract's era history
+    in place of the producer's (whose stability window is ``3 * epochLength``).
+    """
+    if not isinstance(loader_evidence, dict):
+        raise RuntimeError("Amaru bootstrap omitted the local reward-window loader evidence")
+    env_root = runtime_root / "env"
+    shelley_path, byron_path = env_root / "shelley-genesis.json", env_root / "byron-genesis.json"
+    shelley = json.loads(shelley_path.read_text(encoding="utf-8"))
+    byron = json.loads(byron_path.read_text(encoding="utf-8"))
+    try:
+        globals_doc = local_reward_window.amaru_global_parameters(shelley_genesis=shelley, byron_genesis=byron)
+        era_doc = local_reward_window.amaru_era_history()
+        proof = local_reward_window.prove_timing_identity(
+            testnet=local_reward_window.testnet_view(shelley_genesis=shelley, byron_genesis=byron),
+            globals_doc=globals_doc,
+            era_doc=era_doc,
+        )
+        environment = local_reward_window.amaru_environment(globals_doc)
+    except local_reward_window.LocalRewardWindowError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if loader_evidence.get("slot_length_ms") != proof["slot_length_ms"]:
+        raise RuntimeError("local reward-window loader evidence slot length differs from the generated genesis")
+    out = runtime_root / "local-reward-window"
+    out.mkdir(parents=True, exist_ok=True)
+    era_body = json.dumps(era_doc, indent=2, sort_keys=True) + "\n"
+    write_json(out / "global-parameters.json", globals_doc)
+    (out / "era-history.json").write_text(era_body, encoding="utf-8")
+    histories = {}
+    for node in plan["nodes"]:
+        if node["impl"] != "amaru":
+            continue
+        history_path = Path(str(node["state_root"])) / "era-history.json"
+        if not history_path.is_file():
+            raise RuntimeError(f"Amaru bootstrap omitted the era history of {node['id']}")
+        produced = history_path.read_bytes()
+        history_path.write_text(era_body, encoding="utf-8")
+        histories[node["id"]] = {
+            "path": str(history_path),
+            "producer_sha256": hashlib.sha256(produced).hexdigest(),
+            "producer_stability_window": json.loads(produced).get("stability_window"),
+            "sha256": hashlib.sha256(history_path.read_bytes()).hexdigest(),
+        }
+    evidence = {
+        "applied": True,
+        "contract": {key: (str(value) if not isinstance(value, int) else value)
+                     for key, value in local_reward_window.LOCAL_REWARD_WINDOW_CONTRACT.items()},
+        "proof": proof,
+        "generated_genesis_sha256": {
+            "shelley": hashlib.sha256(shelley_path.read_bytes()).hexdigest(),
+            "byron": hashlib.sha256(byron_path.read_bytes()).hexdigest(),
+        },
+        "amaru_global_parameters": globals_doc,
+        "amaru_global_parameters_sha256": hashlib.sha256((out / "global-parameters.json").read_bytes()).hexdigest(),
+        "amaru_environment": environment,
+        "amaru_era_history": histories,
+        "loader": loader_evidence,
+    }
+    write_json(out / "receipt.json", evidence)
+    return evidence
+
+
+def _await_local_reward_window_start(loader_evidence: dict, *, now=time.time, sleep=time.sleep) -> dict:
+    """Start the nodes just before the synthesized tip's wall time; refuse a tip they can no longer extend."""
+    tip = float(loader_evidence["synthesis_tip_unix"])
+    window_seconds = (
+        local_reward_window.LOCAL_REWARD_WINDOW_CONTRACT["stability_window"]
+        * float(loader_evidence["slot_length_ms"]) / 1000.0
+    )
+    current = now()
+    if current > tip + window_seconds / 2:
+        raise RuntimeError(
+            "local reward-window: the synthesized tip is "
+            f"{current - tip:.0f}s old, past half the {window_seconds:.0f}s stability window; "
+            "cardano-node could not forecast leadership to extend it (raise "
+            "LOCAL_REWARD_WINDOW_START_LEAD_SECONDS)"
+        )
+    target = tip + LOCAL_REWARD_WINDOW_START_AFTER_TIP_SECONDS
+    waited = 0.0
+    if current < target:
+        waited = target - current
+        sleep(waited)
+        current = now()
+    return {
+        "synthesis_tip_unix": loader_evidence["synthesis_tip_unix"],
+        "waited_seconds": waited,
+        "started_at_unix": current,
+        "tip_age_at_start_seconds": current - tip,
+        "stability_window_seconds": window_seconds,
+    }
+
+
+def _verify_amaru_local_reward_window_environment(*, metadata_nodes: list[dict], expected: dict) -> dict:
+    """Read the environment each running Amaru container actually got."""
+    verified = {}
+    for node in metadata_nodes:
+        if node["impl"] != "amaru":
+            continue
+        inspect = run_command(["docker", "inspect", "--format", "{{json .Config.Env}}", node["container_name"]])
+        if inspect.returncode != 0:
+            raise RuntimeError(f"docker inspect failed for {node['container_name']}: {inspect.stderr or inspect.stdout}")
+        observed = dict(item.split("=", 1) for item in json.loads(inspect.stdout) if "=" in item)
+        mismatched = sorted(key for key, value in expected.items() if observed.get(key) != value)
+        if mismatched:
+            raise RuntimeError(f"Amaru {node['id']} runs without the local reward-window parameters: {mismatched}")
+        verified[node["id"]] = {key: observed[key] for key in sorted(expected)}
+    return verified
+
+
 def _prepare_generated_workload_funding(
     *, env_root: Path, cardano_cli: str, network_magic: int
 ) -> dict:
@@ -1349,6 +1501,7 @@ def _docker_compose_body(
     docker_host_runtime_root: str | None = None,
     amaru_txsubmission_trace: bool = False,
     runtime_user: str = "1000:1000",
+    amaru_environment: dict | None = None,
 ) -> dict:
     services = {}
     for node in nodes:
@@ -1491,6 +1644,9 @@ def _docker_compose_body(
                 # actual adoption, not infer it from a ChainSync intersection.
                 "AMARU_LOG": "error,amaru=info,amaru_pure_stage=warn,amaru::consensus=debug",
             }
+            if amaru_environment:
+                # opt-in local reward-window timing: the contract's global parameters
+                services[node["id"]]["environment"].update(dict(amaru_environment))
             if amaru_txsubmission_trace:
                 services[node["id"]]["environment"].update(
                     {
@@ -1620,6 +1776,7 @@ def _compose_substrate_docker(
     generated_workload_funding = None
     kes_genesis_override_evidence = None
     pool_relays = {"applied": False}
+    local_reward_window_evidence = {"applied": False}
     governance_guardrails_fixture_evidence = None
     env_root = runtime_root / "env"
     if haskell_nodes and public_network:
@@ -1758,9 +1915,18 @@ def _compose_substrate_docker(
             cardano_cli=support["cardano-cli"],
             network_magic=int(plan["network_magic"]),
         )
+        if plan.get("amaru_local_reward_window_timing"):
+            # Opt-in: the loader hook applies the contract to the pinned genesis it copies.
+            write_json(env_root / "generated-local-reward-window.json", _local_reward_window_request())
         bootstrap_result = _synthesize_amaru_bootstrap_for_custom_testnet(
             runtime_root=runtime_root, plan=plan
         )
+        if plan.get("amaru_local_reward_window_timing"):
+            local_reward_window_evidence = _apply_local_reward_window_to_amaru_bootstrap(
+                runtime_root=runtime_root,
+                plan=plan,
+                loader_evidence=bootstrap_result.get("local_reward_window"),
+            )
         generated_workload_funding = bootstrap_result.get(
             "generated_workload_funding"
         )
@@ -1818,6 +1984,7 @@ def _compose_substrate_docker(
             plan.get("amaru_txsubmission_trace", False)
         ),
         runtime_user=_runtime_user(runtime_root),
+        amaru_environment=local_reward_window_evidence.get("amaru_environment"),
     )
     if plan.get("controller_ownership"):
         for service in compose_body["services"].values():
@@ -1828,6 +1995,9 @@ def _compose_substrate_docker(
     compose_path = runtime_root / "docker-compose.yml"
     compose_path.write_text(json.dumps(compose_body, indent=2) + "\n", encoding="utf-8")
 
+    if local_reward_window_evidence.get("applied"):
+        local_reward_window_evidence["start"] = _await_local_reward_window_start(
+            local_reward_window_evidence["loader"])
     up = run_command(["docker", "compose", "--project-name", docker_project, "up", "-d"], cwd=runtime_root)
     if up.returncode != 0:
         raise RuntimeError(f"docker compose up failed: {up.stderr or up.stdout}")
@@ -1847,6 +2017,21 @@ def _compose_substrate_docker(
             output_dir=output_dir,
         )
         raise RuntimeError(f"{exc} (substrate torn down after the failed verification: {cleanup})") from exc
+    if local_reward_window_evidence.get("applied"):
+        try:
+            local_reward_window_evidence["amaru_running_environment"] = (
+                _verify_amaru_local_reward_window_environment(
+                    metadata_nodes=[{**node, **container} for node, container, _a, _v in _verified_nodes],
+                    expected=local_reward_window_evidence["amaru_environment"],
+                )
+            )
+        except Exception as exc:
+            cleanup = _cleanup_failed_substrate(
+                docker_project=docker_project, runtime_root=runtime_root, controller_attachment=controller_attachment,
+                output_dir=output_dir,
+            )
+            raise RuntimeError(f"{exc} (substrate torn down: {cleanup})") from exc
+        write_json(runtime_root / "local-reward-window" / "receipt.json", local_reward_window_evidence)
     for node, container, artifact_identity, version_identity in _verified_nodes:
         container_peer_addresses = [
             f"{edge['to']}:{_docker_container_port(next(peer for peer in plan['nodes'] if peer['id'] == edge['to']))}"
@@ -1902,6 +2087,7 @@ def _compose_substrate_docker(
         "genesis_hash_pins": genesis_hash_pins,
         "accepted_connections_limit": accepted_connections_limit,
         "pool_relays": pool_relays,
+        "local_reward_window": local_reward_window_evidence,
         "nodes": metadata_nodes,
         "haskell_nodes": [node for node in metadata_nodes if node["impl"] == "cardano-node"],
         "amaru_nodes": [node for node in metadata_nodes if node["impl"] == "amaru"],
@@ -1997,6 +2183,7 @@ def _compose_substrate_docker(
         "genesis_hash_pins": genesis_hash_pins,
         "accepted_connections_limit": accepted_connections_limit,
         "pool_relays": pool_relays,
+        "local_reward_window": local_reward_window_evidence,
         "cardano_chain_progress_gate": chain_progress_gate,
         "amaru_chain_progress_gate": amaru_progress_gate,
         "public_network_assets": public_assets,
@@ -2459,6 +2646,10 @@ def compose_substrate(
     )
 
     _refuse_unsupported_pool_relays(
+        plan,
+        mode="multi-host" if compose_mode == "docker" and plan.get("host_strategy") == "explicit" else compose_mode,
+    )
+    _refuse_unsupported_local_reward_window_timing(
         plan,
         mode="multi-host" if compose_mode == "docker" and plan.get("host_strategy") == "explicit" else compose_mode,
     )
