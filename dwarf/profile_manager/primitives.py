@@ -23521,7 +23521,9 @@ def _run_in_node_netns(executor, params, *, container: str, script: str, primiti
     """Run ``script`` in the node container's network namespace with NET_ADMIN only.
 
     The helper is the controller's own image (already present, carries iptables and iproute2);
-    rules it installs live in the node's namespace after the helper exits.
+    rules it installs live in the node's namespace after the helper exits. That image runs as a
+    non-root user, and iptables / tc need uid 0, so the helper runs as root with every other
+    capability dropped and no privilege gain.
     """
     import shlex as _shlex
 
@@ -23533,7 +23535,8 @@ def _run_in_node_netns(executor, params, *, container: str, script: str, primiti
         if not image:
             raise RuntimeError(f"{primitive} could not resolve the controller image for the netns helper")
     command = (
-        f"docker run --rm --network container:{_shlex.quote(container)} --cap-add NET_ADMIN "
+        f"docker run --rm --network container:{_shlex.quote(container)} --user 0:0 "
+        f"--cap-drop ALL --cap-add NET_ADMIN --security-opt no-new-privileges "
         f"--entrypoint sh {_shlex.quote(image)} -c {_shlex.quote(script)}"
     )
     result = executor(command, timeout=60, dry_run=False)

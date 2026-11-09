@@ -129,3 +129,17 @@ def test_node_freeze_marks_the_hostile_window_for_the_taps(tmp_path):
     handle = _Handle(tmp_path, tmp_path / "runtime.json"); handle._measurement_runtime = _Runtime()
     prim.apply(handle); prim.remove(handle)
     assert handle._measurement_runtime.marks == [("hostile", "start"), ("hostile", "end")]
+
+
+def test_netns_helper_runs_as_root_with_only_net_admin(tmp_path, monkeypatch):
+    """The controller image runs as a non-root user; iptables and tc need uid 0 in the node
+    namespace. The helper runs as root, with every capability dropped except NET_ADMIN."""
+    monkeypatch.setenv("HOSTNAME", "controllerid")
+    calls = []
+    prim = primitives.FaultLocalPortDrop(params={"target_node": "node1", "runtime_metadata_path": "outputs/x/runtime.json",
+                                                 "executor": _executor(calls)})
+    prim.apply(_Handle(tmp_path, _runtime(tmp_path)))
+    (run,) = _helper_calls(calls)
+    assert "--user 0:0" in run
+    assert "--cap-drop ALL" in run and run.index("--cap-drop ALL") < run.index("--cap-add NET_ADMIN")
+    assert "--security-opt no-new-privileges" in run
