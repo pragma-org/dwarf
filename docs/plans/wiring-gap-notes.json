@@ -145,8 +145,8 @@
    "match": "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",
    "group": "ledger differential controls",
    "status": "investigate",
-   "cause": "deep vector inclusion file says included, but boundary_included=false and role_outcomes_recorded=false",
-   "fix": "re-check after F97d deploy; then read the role outcome assembly; F102/F103 also apply"
+   "cause": "run cd2ed13a: cardano-node accepted the 28000-deep delay case; Amaru submit API then stopped answering (container still running at teardown). No node log was kept, so panic / hang / stack overflow is unknown. Possible Amaru finding: do not claim it before the log shows the cause",
+   "fix": "F104 39834874 keeps node state and log tail; rerun #5 on 39834874"
   },
   {
    "match": "runtime-bundle-",
@@ -166,8 +166,8 @@
    "match": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru",
    "group": "review list",
    "status": "review",
-   "cause": "the assertion fails because the known coin-overflow finding reproduces; verdict wording needs a decision (regression scenario reports the finding as failure)",
-   "fix": null
+   "cause": "regression reproduces the known Amaru coin-overflow DoS on 10.11.20260918: after the i64-max+1 case the Amaru submit API stops answering (\"fresh-funded value-overflow security finding observed\"). The scenario fails because the bug is still present, not because DWARF is broken",
+   "fix": "none in DWARF; decide whether this regression should report \"finding still present\" as its own outcome. F104 keeps the Amaru log on the next run"
   },
   {
    "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
