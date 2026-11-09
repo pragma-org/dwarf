@@ -308,6 +308,7 @@ def run_value_coin_overflow_regression(
         _envelope,
         _query_reference_tip,
         _reference_tx_submission_propagation_gate,
+    wait_for_target_propagation_eligibility,
         _select_funding_input,
         _submit_amaru_container,
         _wait_for_reference_inclusion,
@@ -342,6 +343,7 @@ def run_value_coin_overflow_regression(
     propagation_gate = _reference_tx_submission_propagation_gate(
         reference, inspect_container=_inspect_container
     )
+    wait_for_target_propagation_eligibility(propagation_gate)
     records: list[dict[str, Any]] = []
 
     with _containerized_cardano_workload(

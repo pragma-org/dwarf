@@ -1,28 +1,167 @@
 {
  "_about": "Hand-kept causes and statuses for the wiring-campaign gap tracker. Rules are matched in order; the first match wins. 'match' is a scenario-id prefix or an exact id. Statuses: rerun-pending (fix deployed, not re-run yet), open (cause known, no fix yet), investigate (cause not yet known), review (verdict needs a human look), declared-gap (accepted limitation), removed.",
  "rules": [
-  {"match": "cardano-lsq-extract-debug-epoch-state", "group": "Rust runtime tools", "status": "rerun-pending", "cause": "controller had no cargo", "fix": "F98 host-built extractor (deploy 2ef565b8)"},
-  {"match": "m3-runtime-", "group": "profile-a helper family", "status": "rerun-pending", "cause": "missing Rust tools, removed fetch-chain-headers, host-loopback endpoints, 125-byte socket path", "fix": "F94 short socket path + F98 tools and container endpoints (deploys 2ef565b8+)"},
-  {"match": "phase3-runtime-profile-a-", "group": "profile-a helper family", "status": "rerun-pending", "cause": "as m3-runtime-*", "fix": "F94 + F98"},
-  {"match": "phase3-runtime-generated-haskell3-", "group": "profile-a helper family", "status": "rerun-pending", "cause": "as m3-runtime-*; port faults were host-model", "fix": "F94 + F95 netns port faults + F98"},
-  {"match": "cardano-amaru-cbor-dataset-", "group": "CBOR dataset", "status": "rerun-pending", "cause": "dataset not mounted into the controller", "fix": "DWARF_CBOR_DATASET_DIR mount (deploy 2ef565b8)"},
-  {"match": "governance-zero-denominator-admission-differential-amaru-cardano-node", "group": "install defaults", "status": "rerun-pending", "cause": "raw LocalTxSubmission helper image not pulled", "fix": "F89c pre-pull (deployed after rerun #2)"},
-  {"match": "runtime-bundle-", "group": "bundle-tool fixtures", "status": "rerun-pending", "cause": "April demo runs not shipped", "fix": "f56f9ecc fixtures"},
-  {"match": "runtime-forensic-snapshot-example-smoke", "group": "bundle-tool fixtures", "status": "rerun-pending", "cause": "April demo runs not shipped", "fix": "f56f9ecc fixtures"},
-  {"match": "runtime-substrate-checkpoint-resume-recovers-example-smoke", "group": "checkpoint evidence", "status": "rerun-pending", "cause": "checkpoint health reported only as a boolean", "fix": "F93 per-node health (deployed after rerun #2)"},
-  {"match": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru", "group": "review list", "status": "review", "cause": "the assertion fails because the known coin-overflow finding reproduces; verdict wording needs a decision (regression scenario reports the finding as failure)", "fix": null},
-  {"match": "runtime-substrate-compound-panic-bootstrap-example-smoke", "group": "review list", "status": "review", "cause": "bootstrap_assumptions_safe verdict needs a human look", "fix": null},
-  {"match": "runtime-substrate-byzantine-blockfetch-example-smoke", "group": "review list", "status": "review", "cause": "node3 design of the smoke scenario questioned", "fix": null},
-  {"match": "runtime-substrate-praos-header-assertion-example-smoke", "group": "superseded", "status": "declared-gap", "cause": "assertion deliberately superseded by the opcert header scenarios", "fix": "remove or repoint the smoke scenario"},
-  {"match": "phase1-runtime-live-amaru-parity-baseline", "group": "byzantine/amaru tmux relaunch", "status": "declared-gap", "cause": "needs the host tmux Amaru relaunch model", "fix": null}
+  {
+   "match": "ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node",
+   "group": "ledger differential controls",
+   "status": "rerun-pending",
+   "cause": "Amaru admitted the compact control before cardano-node's tx-submission init delay elapsed and never re-offered it (same class as F97c)",
+   "fix": "F97d shared wait_for_target_propagation_eligibility in all six gated runners (commit after d6211168; deploy after rerun #3)"
+  },
+  {
+   "match": "ledger-submit-empty-redeemers-container-differential-amaru-cardano-node",
+   "group": "ledger differential controls",
+   "status": "investigate",
+   "cause": "controls included on both nodes, but 'one or more live outcomes are unavailable or inconclusive'; reconciled_control_inclusion_count=0",
+   "fix": "F97d may cover it; re-check after deploy, then read the outcome records"
+  },
+  {
+   "match": "ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node",
+   "group": "ledger differential controls",
+   "status": "investigate",
+   "cause": "valid controls complete; the tag24-trailing boundary transaction was not included and its outcome record is empty, so divergence is not established either way",
+   "fix": "re-check after F97d deploy; possible real divergence, do not assume"
+  },
+  {
+   "match": "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",
+   "group": "ledger differential controls",
+   "status": "investigate",
+   "cause": "deep vector inclusion file says included, but boundary_included=false and role_outcomes_recorded=false",
+   "fix": "re-check after F97d deploy; then read the role outcome assembly"
+  },
+  {
+   "match": "cardano-lsq-extract-debug-epoch-state",
+   "group": "Rust runtime tools",
+   "status": "rerun-pending",
+   "cause": "controller had no cargo",
+   "fix": "F98 host-built extractor (deploy 2ef565b8)"
+  },
+  {
+   "match": "m3-runtime-",
+   "group": "profile-a helper family",
+   "status": "rerun-pending",
+   "cause": "missing Rust tools, removed fetch-chain-headers, host-loopback endpoints, 125-byte socket path",
+   "fix": "F94 short socket path + F98 tools and container endpoints (deploys 2ef565b8+)"
+  },
+  {
+   "match": "phase3-runtime-profile-a-",
+   "group": "profile-a helper family",
+   "status": "rerun-pending",
+   "cause": "as m3-runtime-*",
+   "fix": "F94 + F98"
+  },
+  {
+   "match": "phase3-runtime-generated-haskell3-",
+   "group": "profile-a helper family",
+   "status": "rerun-pending",
+   "cause": "as m3-runtime-*; port faults were host-model",
+   "fix": "F94 + F95 netns port faults + F98"
+  },
+  {
+   "match": "cardano-amaru-cbor-dataset-",
+   "group": "CBOR dataset",
+   "status": "rerun-pending",
+   "cause": "dataset not mounted into the controller",
+   "fix": "DWARF_CBOR_DATASET_DIR mount (deploy 2ef565b8)"
+  },
+  {
+   "match": "governance-zero-denominator-admission-differential-amaru-cardano-node",
+   "group": "install defaults",
+   "status": "rerun-pending",
+   "cause": "raw LocalTxSubmission helper image not pulled",
+   "fix": "F89c pre-pull (deployed after rerun #2)"
+  },
+  {
+   "match": "runtime-bundle-",
+   "group": "bundle-tool fixtures",
+   "status": "rerun-pending",
+   "cause": "April demo runs not shipped",
+   "fix": "f56f9ecc fixtures"
+  },
+  {
+   "match": "runtime-forensic-snapshot-example-smoke",
+   "group": "bundle-tool fixtures",
+   "status": "rerun-pending",
+   "cause": "April demo runs not shipped",
+   "fix": "f56f9ecc fixtures"
+  },
+  {
+   "match": "runtime-substrate-checkpoint-resume-recovers-example-smoke",
+   "group": "checkpoint evidence",
+   "status": "rerun-pending",
+   "cause": "checkpoint health reported only as a boolean",
+   "fix": "F93 per-node health (deployed after rerun #2)"
+  },
+  {
+   "match": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru",
+   "group": "review list",
+   "status": "review",
+   "cause": "the assertion fails because the known coin-overflow finding reproduces; verdict wording needs a decision (regression scenario reports the finding as failure)",
+   "fix": null
+  },
+  {
+   "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
+   "group": "review list",
+   "status": "review",
+   "cause": "bootstrap_assumptions_safe verdict needs a human look",
+   "fix": null
+  },
+  {
+   "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
+   "group": "review list",
+   "status": "review",
+   "cause": "node3 design of the smoke scenario questioned",
+   "fix": null
+  },
+  {
+   "match": "runtime-substrate-praos-header-assertion-example-smoke",
+   "group": "superseded",
+   "status": "declared-gap",
+   "cause": "assertion deliberately superseded by the opcert header scenarios",
+   "fix": "remove or repoint the smoke scenario"
+  },
+  {
+   "match": "phase1-runtime-live-amaru-parity-baseline",
+   "group": "byzantine/amaru tmux relaunch",
+   "status": "declared-gap",
+   "cause": "needs the host tmux Amaru relaunch model",
+   "fix": null
+  }
  ],
  "reason_rules": [
-  {"contains": "compose substrate did not intersect, advance, and converge", "group": "Amaru mixed compose startup gate", "status": "investigate", "cause": "Amaru+cardano mixed compose: ready_node_count=0 at the startup gate on 42fdc8f0; the later plutus-onchain runs on the same shape pass on 343ee0c1", "fix": "re-run on 343ee0c1 first; read failed-substrate-logs.txt if it repeats"},
-  {"contains": "TopologyActionError: controller runtime failed", "group": "profile prepare failures", "status": "investigate", "cause": "topology apply failed in the controller", "fix": null},
-  {"contains": "readiness blocked", "group": "profile prepare failures", "status": "investigate", "cause": "readiness blocked with an empty payload", "fix": null},
-  {"contains": "preflight_failed", "group": "profile prepare failures", "status": "investigate", "cause": "run preflight refused", "fix": null},
-  {"contains": "incomplete or inconclusive", "group": "ledger differential controls", "status": "investigate", "cause": "the control did not complete (likely the same tx-submission init-delay race as F97c)", "fix": "apply the F97c propagation wait to these runners"},
-  {"contains": "controls are incomplete", "group": "ledger differential controls", "status": "investigate", "cause": "as above", "fix": "as above"}
+  {
+   "contains": "compose substrate did not intersect, advance, and converge",
+   "group": "Amaru mixed compose startup gate",
+   "status": "investigate",
+   "cause": "Amaru+cardano mixed compose: ready_node_count=0 at the startup gate on 42fdc8f0; the later plutus-onchain runs on the same shape pass on 343ee0c1",
+   "fix": "re-run on 343ee0c1 first; read failed-substrate-logs.txt if it repeats"
+  },
+  {
+   "contains": "TopologyActionError: controller runtime failed",
+   "group": "profile prepare failures",
+   "status": "investigate",
+   "cause": "topology apply failed in the controller",
+   "fix": null
+  },
+  {
+   "contains": "readiness blocked",
+   "group": "profile prepare failures",
+   "status": "investigate",
+   "cause": "readiness blocked with an empty payload",
+   "fix": null
+  },
+  {
+   "contains": "preflight_failed",
+   "group": "profile prepare failures",
+   "status": "investigate",
+   "cause": "run preflight refused",
+   "fix": null
+  }
  ],
- "default": {"group": "smoke-scenario assertion verdicts", "status": "review", "cause": "the scenario ran and an assertion failed; decide whether the node, the scenario or the assertion is wrong", "fix": null}
+ "default": {
+  "group": "smoke-scenario assertion verdicts",
+  "status": "review",
+  "cause": "the scenario ran and an assertion failed; decide whether the node, the scenario or the assertion is wrong",
+  "fix": null
+ }
 }

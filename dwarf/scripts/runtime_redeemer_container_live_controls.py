@@ -453,6 +453,32 @@ def _docker_started_at_epoch(timestamp: object) -> float:
     return epoch
 
 
+def wait_for_target_propagation_eligibility(
+    gate: Mapping[str, Any] | None,
+    *,
+    now: Callable[[], float] | None = None,
+    sleep: Callable[[float], None] | None = None,
+    margin_seconds: float = 5.0,
+) -> float:
+    """Block until the reference accepts transactions relayed from the target.
+
+    cardano-node's tx-submission responder starts ``ncTxSubmissionInitDelay`` after startup. A
+    transaction Amaru admits before then is never re-offered, so it cannot be included and a valid
+    control reads as incomplete (live: plutus case differential F97c, multiasset compact control).
+    The wait is capped at the retained delay plus the margin.
+    """
+    import time as _time
+
+    eligible = (gate or {}).get("eligible_at_epoch_seconds")
+    if not isinstance(eligible, (int, float)):
+        return 0.0
+    cap = float((gate or {}).get("tx_submission_init_delay_seconds") or 60.0) + margin_seconds
+    wait = min(cap, max(0.0, float(eligible) + margin_seconds - (now or _time.time)()))
+    if wait:
+        (sleep or _time.sleep)(wait)
+    return wait
+
+
 def _reference_tx_submission_propagation_gate(
     reference: Mapping[str, Any],
     *,
@@ -2043,6 +2069,7 @@ def run_fresh_funded_live_controls(
     target_propagation_gate = _reference_tx_submission_propagation_gate(
         reference, inspect_container=_inspect_container
     )
+    wait_for_target_propagation_eligibility(target_propagation_gate)
     if not (
         _REPO_DIGEST_IMAGE.fullmatch(helper_image)
         or _CONFIG_ID_IMAGE.fullmatch(helper_image)

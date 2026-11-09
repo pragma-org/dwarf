@@ -300,6 +300,7 @@ def run_multiasset_compact_boundary(
         _envelope,
         _query_reference_tip,
         _reference_tx_submission_propagation_gate,
+    wait_for_target_propagation_eligibility,
         _select_funding_input,
         _submit_amaru_container,
         _submit_reference_raw,
@@ -334,6 +335,7 @@ def run_multiasset_compact_boundary(
     target_propagation_gate = _reference_tx_submission_propagation_gate(
         reference, inspect_container=_inspect_container
     )
+    wait_for_target_propagation_eligibility(target_propagation_gate)
 
     with _containerized_cardano_workload(
         runtime_root=runtime_root,
