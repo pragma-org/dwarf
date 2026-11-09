@@ -200,14 +200,32 @@ def test_mixed_devnet_pins_experimental_protocols_false_for_cardano_11_1(tmp_pat
     }
 
 
-@pytest.mark.parametrize("nodes", [
-    [{"id": "node1", "impl": "cardano-node", "version": "11.1.2", "role": "honest"}],   # cardano-only
-    _mixed_nodes("10.7.1"),                                                              # pre-11.1
-])
-def test_cardano_only_and_pre_11_1_devnets_are_left_untouched(tmp_path, nodes):
+def test_cardano_only_devnet_pins_the_public_network_default_false(tmp_path):
+    """Decision 2026-11-09 (CHANGED BEHAVIOUR): cardano-only devnets used to keep cardano-testnet's
+    ExperimentalProtocolsEnabled=true (the node then also offers the unreleased NodeToNodeV_16).
+    They now pin the public-network default false; substrate.cardano_experimental_protocols: true
+    restores the old behaviour per scenario."""
+    config_path = tmp_path / "configuration.yaml"
+    config_path.write_text(json.dumps({"Protocol": "Cardano", "ExperimentalProtocolsEnabled": True}) + "\n", encoding="utf-8")
+    nodes = [{"id": "node1", "impl": "cardano-node", "version": "11.1.2", "role": "honest"}]
+    result = compose._pin_cardano_experimental_protocols(config_path=config_path, nodes=nodes)
+    assert json.loads(config_path.read_text(encoding="utf-8"))["ExperimentalProtocolsEnabled"] is False
+    assert result["pinned"] is True and result["value"] is False and result["policy_source"] == "public-network-default"
+
+
+def test_cardano_only_explicit_true_restores_the_old_behaviour(tmp_path):
     config_path = tmp_path / "configuration.yaml"
     config_path.write_text(json.dumps({"Protocol": "Cardano"}) + "\n", encoding="utf-8")
-    result = compose._pin_cardano_experimental_protocols(config_path=config_path, nodes=nodes)
+    nodes = [{"id": "node1", "impl": "cardano-node", "version": "11.1.2", "role": "honest"}]
+    result = compose._pin_cardano_experimental_protocols(config_path=config_path, nodes=nodes, explicit=True)
+    assert json.loads(config_path.read_text(encoding="utf-8"))["ExperimentalProtocolsEnabled"] is True
+    assert result["policy_source"] == "explicit"
+
+
+def test_pre_11_1_mixed_devnets_are_left_untouched(tmp_path):
+    config_path = tmp_path / "configuration.yaml"
+    config_path.write_text(json.dumps({"Protocol": "Cardano"}) + "\n", encoding="utf-8")
+    result = compose._pin_cardano_experimental_protocols(config_path=config_path, nodes=_mixed_nodes("10.7.1"))
     assert "ExperimentalProtocolsEnabled" not in json.loads(config_path.read_text(encoding="utf-8"))
     assert result["pinned"] is False and result["value"] is None
 

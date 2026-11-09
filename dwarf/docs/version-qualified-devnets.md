@@ -77,6 +77,23 @@ Cardano-node experimental protocols pinned off, Cardano-node `11.1.2`
 (`fef83fed`) with Amaru `10.11.20260918` (`aedfe797`) is confirmed for mixed
 (2026-09-23).
 
+### Changed 2026-11-09: experimental protocols off on cardano-only devnets
+
+Self-composed **cardano-only** devnets now pin `ExperimentalProtocolsEnabled: false`, the
+public-network default. Before this date they kept the value `cardano-testnet` generates
+(`true`), so Cardano-node also offered the unreleased node-to-node version V16. Devnets with
+Amaru already pinned `false` (see above); pre-11.1 mixed devnets are unchanged.
+
+To restore the old behaviour for one scenario, set it in the substrate:
+
+```json
+"substrate": { "cardano_experimental_protocols": true, ... }
+```
+
+The compose report records the decision as `experimental_protocols.policy_source`
+(`public-network-default`, `amaru-interop-policy` or `explicit`). Runs before 2026-11-09 on
+cardano-only devnets used `true`; compare across that date with this in mind.
+
 ## Refresh releases
 
 Opening `/operate/versions` reads retained catalog data and never contacts GitHub automatically. Each implementation has its own **Fetch Latest Version**

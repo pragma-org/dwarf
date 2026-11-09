@@ -209,7 +209,9 @@ def _pin_cardano_experimental_protocols(
     cardano_experimental_protocols_policy``): cardano-node 11.1+ offers
     NodeToNodeV_16 when the flag is on and Amaru drops the whole handshake, so
     an Amaru-bearing devnet pins the public-network default (false).  An
-    explicit substrate value wins; cardano-only and pre-11.1 devnets are left
+    explicit substrate value wins.  Cardano-only devnets also pin false since
+    2026-11-09 (changed behaviour; set substrate.cardano_experimental_protocols
+    true to restore cardano-testnet's default); pre-11.1 mixed devnets are left
     untouched."""
     from qualify_node_versions import cardano_experimental_protocols_policy
 
@@ -226,7 +228,10 @@ def _pin_cardano_experimental_protocols(
         value = False if decisions == {False} else None
         source = "amaru-interop-policy" if value is not None else "none"
     else:
-        value, source = None, "none"
+        # CHANGED 2026-11-09 (user decision): cardano-only devnets pin the public-network default
+        # (false) instead of keeping cardano-testnet's true, which also offers the unreleased
+        # NodeToNodeV_16. substrate.cardano_experimental_protocols: true restores the old behaviour.
+        value, source = False, "public-network-default"
     if value is not None:
         body = json.loads(config_path.read_text(encoding="utf-8"))
         body["ExperimentalProtocolsEnabled"] = value
