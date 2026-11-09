@@ -344,6 +344,7 @@ class ForgeSubstitution:
                 "target_real_hash": target.hex() if target else None,
                 "forged_hash": self.real_to_forged[target].hex() if target else None,
                 "forged_count": len(self.real_to_forged),
+                "forged_event": next((e for e in self.events if e.get("kind") == "forged"), None),
                 "crafted_tx_count": len(self.tx_parts),
                 "crafted_invalid_indices": cbor2.loads(self.segments[3]),
                 "crafted_body_hash": body_hash(self.segments).hex(),
@@ -354,6 +355,8 @@ class ForgeSubstitution:
     # ------------------------------------------------------------- headers
     def _forge_header(self, header: bytes) -> bytes | None:
         """Forged replacement for a real header, or None to pass it through."""
+        if self.armed_slot is None and not self.forged_headers:
+            return None  # unarmed relay (e.g. the reference consumer syncing from genesis)
         real = header_hash(header)
         with self.lock:
             if real in self.forged_headers:
@@ -433,6 +436,8 @@ class ForgeSubstitution:
                 return encode_array([items[0], _map_point(items[1], self.forged_to_real),
                                      _map_point(items[2], self.forged_to_real)])
         if from_responder and key == 4 and len(items) == 2:          # MsgBlock
+            if not self.forged_headers:
+                return message
             wrapped = cbor2.loads(items[1])
             if not (isinstance(wrapped, cbor2.CBORTag) and wrapped.tag == 24):
                 return message

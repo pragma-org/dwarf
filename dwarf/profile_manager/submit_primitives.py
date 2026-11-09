@@ -237,6 +237,42 @@ def run_redeemer_container_differential(
     }
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_FIXTURE_PACKAGE = _REPO_ROOT / "antithesis" / "cardano_amaru_adversarial"
+_UNKNOWN_INPUT_MARKERS = ("badinputsutxo", "bad inputs", "unknown input", "inputs not found", "missing input")
+
+
+def stage_fixture(run_dir: Path, tx_file: str) -> tuple[Path, dict]:
+    """Copy a fixture transaction into the run directory and record where it came from.
+
+    Scenario fixture paths are written relative to the run dir (already staged), the
+    repository root (``antithesis/cardano_amaru_adversarial/fixture/...``) or the adversarial
+    package (``fixture/...``). The staged copy is what is submitted, so the bundle holds the
+    exact bytes and their digest.
+    """
+    path = Path(tx_file)
+    if path.is_absolute():
+        return path, {"source": str(path), "staged": False}
+    staged = run_dir / path
+    if staged.is_file():
+        return staged, {"source": str(staged), "staged": False}
+    for root in (_REPO_ROOT, _FIXTURE_PACKAGE):
+        candidate = root / path
+        if candidate.is_file():
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_bytes(candidate.read_bytes())
+            return staged, {"source": str(candidate), "staged": True,
+                            "sha256": hashlib.sha256(staged.read_bytes()).hexdigest()}
+    raise FileNotFoundError(
+        f"fixture {tx_file!r} is not in the run dir, the repository root or {_FIXTURE_PACKAGE}"
+    )
+
+
+def _unknown_inputs(response: dict) -> bool:
+    body = str(response.get("body") or "").lower()
+    return any(marker in body for marker in _UNKNOWN_INPUT_MARKERS)
+
+
 class RuntimeTxSubmitDifferential(LoadPrimitive):
     """Submit a fixture tx to the target + reference submit-APIs; record each node's outcome."""
     primitive_name = "runtime_tx_submit_differential"
@@ -245,9 +281,7 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
         rd = _run_dir(handle)
         out = rd / self.params.get("output_dir", f"outputs/{self.primitive_name}")
         out.mkdir(parents=True, exist_ok=True)
-        tx_path = Path(self.params["tx_file"])
-        if not tx_path.is_absolute():
-            tx_path = rd / tx_path
+        tx_path, fixture = stage_fixture(rd, str(self.params["tx_file"]))
         raw = tx_path.read_bytes()
         # accept either a raw CBOR tx (.cbor) or a cardano-cli text envelope ({"cborHex": ...})
         payload = raw
@@ -284,6 +318,13 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
                   "target": {"url": target_url, **(_submit(target_url, payload) if target_url else {"outcome": "unknown", "note": "no target submit-api resolved"})},
                   "reference": {"url": ref_url, **(_submit(ref_url, payload) if ref_url else {"outcome": "unknown", "note": "no reference submit-api resolved"})}}
         result["divergent"] = result["target"].get("outcome") != result["reference"].get("outcome")
+        result["fixture"] = fixture
+        result["expected_target"] = self.params.get("expected_target")
+        result["expected_reference"] = self.params.get("expected_reference")
+        # A fixture built against another chain's UTxO is rejected for its inputs by both nodes:
+        # that is a stale fixture, not a ledger verdict on the rule under test.
+        result["inputs_unknown_on_live_chain"] = {
+            "target": _unknown_inputs(result["target"]), "reference": _unknown_inputs(result["reference"])}
         (out / "result.json").write_text(json.dumps(result, indent=2))
         return result
 
@@ -742,24 +783,38 @@ class SubmitOutcomeMatches(AssertionPrimitive):
 
     def evaluate(self, handle):
         rd = _run_dir(handle)
-        exp_t = str(self.params.get("expected_target_outcome") or "accept")
-        exp_r = str(self.params.get("expected_reference_outcome") or "reject")
-        observed = None
-        for p in rd.rglob("runtime_tx_submit_differential/result.json"):
+        rows = []
+        for path in sorted(rd.glob("outputs/**/result.json")):
             try:
-                observed = json.loads(p.read_text())
-            except Exception:  # noqa: BLE001
-                pass
-        obs_t = (observed or {}).get("target", {}).get("outcome")
-        obs_r = (observed or {}).get("reference", {}).get("outcome")
-        ok = observed is not None and obs_t == exp_t and obs_r == exp_r
+                observed = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(observed, dict) or observed.get("primitive") != "runtime_tx_submit_differential":
+                continue
+            # assertion params win; otherwise each submit step's own declared expectation
+            exp_t = str(self.params.get("expected_target_outcome") or observed.get("expected_target") or "accept")
+            exp_r = str(self.params.get("expected_reference_outcome") or observed.get("expected_reference") or "reject")
+            obs_t = (observed.get("target") or {}).get("outcome")
+            obs_r = (observed.get("reference") or {}).get("outcome")
+            rows.append({"result_path": str(path.relative_to(rd)), "tx_file": observed.get("tx_file"),
+                         "expected": {"target": exp_t, "reference": exp_r},
+                         "observed": {"target": obs_t, "reference": obs_r},
+                         "inputs_unknown_on_live_chain": observed.get("inputs_unknown_on_live_chain"),
+                         "match": obs_t == exp_t and obs_r == exp_r})
+        ok = bool(rows) and all(row["match"] for row in rows)
+        mismatched = [row for row in rows if not row["match"]]
         return {
             "primitive": "submit_outcome_matches",
             "params": dict(self.params),
-            "evaluated_value": {"expected": {"target": exp_t, "reference": exp_r},
-                                "observed": {"target": obs_t, "reference": obs_r}},
+            "evaluated_value": {"submissions": len(rows), "mismatched": len(mismatched)},
+            "data_points_used": rows,
             "result": "pass" if ok else "fail",
-            "note": None if ok else f"expected target={exp_t}/reference={exp_r}, observed target={obs_t}/reference={obs_r}",
+            "note": None if ok else (
+                "no runtime_tx_submit_differential result was recorded" if not rows else
+                "; ".join(f"{row['tx_file']}: expected {row['expected']}, observed {row['observed']}"
+                          + (" (inputs unknown on the live chain: stale fixture)"
+                             if any((row.get("inputs_unknown_on_live_chain") or {}).values()) else "")
+                          for row in mismatched)),
         }
 
 

@@ -82,6 +82,7 @@ def _launch_proxy_session(
     mutation_protocol: str,
     mutate_after_segments: int,
     mutation_message: str | None = None,
+    forge_plan: str | None = None,
 ) -> dict:
     _ensure_tmux_session_absent(session)
     host, port_text = listen_address.rsplit(":", 1)
@@ -108,6 +109,8 @@ def _launch_proxy_session(
     ]
     if mutation_message:
         command_parts += ["--mutation-message", mutation_message]
+    if forge_plan:
+        command_parts += ["--forge-plan", forge_plan]
     command = (
         f"cd {json.dumps(str(runtime_root))} && "
         f"exec {' '.join(json.dumps(part) for part in command_parts)} 2>&1 | tee -a {json.dumps(str(stdout_path))}"

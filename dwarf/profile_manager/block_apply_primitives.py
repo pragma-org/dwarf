@@ -1,21 +1,32 @@
-"""DWARF block-apply bridge primitives (PATH-B forged-block pipeline).
+"""DWARF block-apply bridge primitives.
 
-Formalizes the block-apply adversary bridge used to demonstrate ledger findings at block-apply
-(vs submit) against amaru: forge a block at amaru tip+1 under amaru's own (buggy) epoch nonce,
-serve it over one socket, repoint amaru, and observe adopt / block-fetch / apply / crash.
+Demonstrate ledger behaviour at BLOCK APPLY (not submit) on a self-composed devnet: a crafted
+transaction is put in a block forged from the devnet producer's own leader header (same slot,
+VRF and opcert; body commitment and KES signature redone with the pool's own KES key), served
+through the mux proxy to the Amaru target and to an isolated cardano-node reference, and each
+node's own verdict on that block is recorded.
 
-Thin wrappers over the tracked helper scripts in dwarf/block_apply/. The forced-nonce VRF+KES forge
-itself requires cardano-crypto tooling (cod-forge) and the serve requires the tx-submission responder
-(wire); these primitives invoke the tracked scripts and record their outputs into the run bundle.
-Kept in a separate module so a wrapper error can never break profile_manager.primitives.
+Live path (``scripts.runtime_block_apply_bridge``), selected by the step parameters:
+
+* build_block_segments ``recipe``        -> craft the transaction live (setup submitted honestly)
+* forge_block ``reference_node``         -> forge plan: producer KES key proven against its opcert
+* serve_crafted_block (after a plan)     -> proxy + Amaru repoint + reference consumer, then arm
+* block_apply_differential (after serve) -> per-node verdicts (+ epoch-aligned pot snapshots)
+* invalid_tx_body_differential / epoch_boundary_pot_differential -> verdicts from those snapshots
+
+Scenarios that still name the earlier campaign scripts (``tx_file`` fixtures, ``args``) keep the
+legacy script invocation unchanged. Kept in a separate module so a wrapper error can never break
+profile_manager.primitives.
 """
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+import sys
 from pathlib import Path
 
-from profile_manager.primitives import LoadPrimitive, AssertionPrimitive
+from profile_manager.primitives import AssertionPrimitive, LoadPrimitive
 
 # dwarf/ root relative to this file (dwarf/profile_manager/block_apply_primitives.py -> dwarf/)
 _DWARF = Path(__file__).resolve().parents[1]
@@ -35,60 +46,185 @@ def _sh(args, cwd=None, timeout=240):
         return {"rc": None, "error": f"{type(exc).__name__}: {exc}"}
 
 
+def _bridge():
+    from scripts import runtime_block_apply_bridge  # noqa: PLC0415
+
+    return runtime_block_apply_bridge
+
+
+def _runtime_path(rd: Path, params: dict) -> Path:
+    path = Path(str(params.get("runtime_metadata_path") or "outputs/substrate-compose/runtime.json"))
+    return path if path.is_absolute() else rd / path
+
+
+def _write(out: Path, result: dict) -> dict:
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "result.json").write_text(json.dumps(result, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    return result
+
+
 class _ScriptLoadPrimitive(LoadPrimitive):
     """Base: invoke a tracked block_apply script, record result; graceful if deps absent."""
     primitive_name = "block_apply_base"
     script = None  # relative to dwarf/block_apply/
 
+    def _out(self, handle) -> Path:
+        return _run_dir(handle) / self.params.get("output_dir", f"outputs/{self.primitive_name}")
+
     def run(self, handle, rng):
-        out = _run_dir(handle) / self.params.get("output_dir", f"outputs/{self.primitive_name}")
+        return self._legacy(handle)
+
+    def _legacy(self, handle):
+        out = self._out(handle)
         out.mkdir(parents=True, exist_ok=True)
         result = {"primitive": self.primitive_name, "params": dict(self.params)}
         script = _SCRIPTS / self.script if self.script else None
         if script and script.exists():
             args = [str(script)] + [str(a) for a in self.params.get("args", [])]
             if script.suffix == ".py":
-                args = ["python3"] + args
+                args = [sys.executable or "python3"] + args
             elif script.suffix == ".sh":
                 args = ["bash"] + args
             result["exec"] = _sh(args)
             result["outcome"] = "ok" if result["exec"].get("rc") == 0 else "error"
         else:
-            # external dependency (cod-forge forge / wire serve) or script missing: record intent
             result["outcome"] = "deferred"
-            result["note"] = f"tracked script {self.script} not present or external-dep; see dwarf/block_apply/README.md"
+            result["note"] = (f"no live bridge state for {self.primitive_name} and tracked script {self.script} "
+                              "is not present; see dwarf/block_apply/README.md")
         (out / "result.json").write_text(json.dumps(result, indent=2))
         return result
 
 
 class BuildBlockSegments(_ScriptLoadPrimitive):
-    """Build Conway block body segments [[tx_body],[tx_wits],aux,invalid] from a tx fixture."""
+    """Craft the block's transaction(s). ``recipe`` builds them live on the devnet."""
     primitive_name = "build_block_segments"
     script = "build_block_segments.py"
 
+    def run(self, handle, rng):
+        recipe = self.params.get("recipe")
+        if not recipe:
+            return self._legacy(handle)
+        bridge = _bridge()
+        if recipe != bridge.DONATION_RECIPE:
+            raise ValueError(f"unknown block-apply recipe {recipe!r}")
+        rd = _run_dir(handle)
+        runtime = json.loads(_runtime_path(rd, self.params).read_text(encoding="utf-8"))
+        record = bridge.craft_isvalid_false_donation(
+            runtime=runtime, out_dir=self._out(handle), reference_node=str(self.params["reference_node"]),
+            donation=int(self.params.get("donation_lovelace", 5_000_000)),
+        )
+        state = bridge.load_state(rd)
+        state["craft"] = record
+        bridge.save_state(rd, state)
+        return _write(self._out(handle), {"primitive": self.primitive_name, "params": dict(self.params),
+                                          "outcome": "ok", **record})
+
 
 class ForgeBlock(_ScriptLoadPrimitive):
-    """Forge a block header at amaru tip+1 with a forced epoch nonce (VRF+KES). External: cod-forge."""
+    """Write the forge plan: the producer pool's own KES key (proven against its opcert)."""
     primitive_name = "forge_block"
-    script = None  # forced-nonce VRF+KES forge is external (cod-forge cardano-crypto tool)
+    script = None
+
+    def run(self, handle, rng):
+        rd = _run_dir(handle)
+        bridge = _bridge()
+        state = bridge.load_state(rd)
+        if "craft" not in state or not self.params.get("reference_node"):
+            return self._legacy(handle)
+        runtime = json.loads(_runtime_path(rd, self.params).read_text(encoding="utf-8"))
+        plan = bridge.write_forge_plan(runtime=runtime, out_dir=bridge.bridge_dir(rd),
+                                       producer_node=str(self.params["reference_node"]),
+                                       transaction_files=state["craft"]["transaction_files"])
+        state["plan"] = plan
+        bridge.save_state(rd, state)
+        public = {k: v for k, v in plan.items() if k != "kes_skey"}
+        return _write(self._out(handle), {"primitive": self.primitive_name, "params": dict(self.params),
+                                          "outcome": "ok", "plan": public})
 
 
 class AssembleBlockjson(_ScriptLoadPrimitive):
-    """Assemble block.json (header+body, point_hash) with the race-guard body_hash check."""
+    """Legacy: assemble block.json from an external forge result (the live bridge forges on the wire)."""
     primitive_name = "assemble_blockjson"
     script = "assemble_blockjson.py"
 
 
 class ServeCraftedBlock(_ScriptLoadPrimitive):
-    """Serve a crafted block to amaru over one socket (chain-sync RollForward + block-fetch). External: wire."""
+    """Serve the forged block through the mux proxy to the Amaru target and a cardano-node reference."""
     primitive_name = "serve_crafted_block"
-    script = None  # tx-submission/block-fetch responder is external (wire runtime_serve_crafted_block)
+    script = None
+
+    def run(self, handle, rng):
+        rd = _run_dir(handle)
+        bridge = _bridge()
+        if "plan" not in bridge.load_state(rd):
+            return self._legacy(handle)
+        report = bridge.serve_and_arm(
+            run_dir=rd, runtime_metadata_path=_runtime_path(rd, self.params),
+            target_node=str(self.params.get("target_node", "node1")),
+            reference_node=str(self.params.get("reference_node", "node2")),
+            snapshots=bool(self.params.get("pot_snapshots", False)),
+            sync_timeout=float(self.params.get("sync_timeout_seconds", 900)),
+        )
+        return _write(self._out(handle), {"primitive": self.primitive_name, "params": dict(self.params), **report})
 
 
 class BlockApplyDifferential(_ScriptLoadPrimitive):
-    """Reset+repoint amaru to the serve, watch adopt/block-fetch/apply/crash, record the verdict."""
+    """Each node's own verdict on the forged block (adopt / reject / crash), compared per node."""
     primitive_name = "block_apply_differential"
     script = "block_apply_differential.sh"
+
+    def run(self, handle, rng):
+        rd = _run_dir(handle)
+        bridge = _bridge()
+        if "serve" not in bridge.load_state(rd):
+            return self._legacy(handle)
+        report = bridge.observe(run_dir=rd, watch_seconds=float(self.params.get("watch_seconds", 180)),
+                                snapshots=bool(self.params.get("pot_snapshots", False)))
+        return _write(self._out(handle), {"primitive": self.primitive_name, "params": dict(self.params), **report})
+
+
+def _bridge_snapshots(rd: Path) -> dict | None:
+    state = _bridge().load_state(rd)
+    return (state.get("observe") or {}).get("snapshots") if state.get("observe") else None
+
+
+def _find_result(rd: Path, primitive: str, explicit: str | None = None) -> dict | None:
+    """The newest result.json written by ``primitive`` (wherever its output_dir put it)."""
+    if explicit:
+        path = Path(explicit) if Path(explicit).is_absolute() else rd / explicit
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+    found = []
+    for path in rd.glob("outputs/**/result.json"):
+        try:
+            body = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(body, dict) and body.get("primitive") == primitive:
+            found.append((path.stat().st_mtime, body))
+    return max(found, key=lambda item: item[0])[1] if found else None
+
+
+def _stdout_verdict(result: dict | None) -> str | None:
+    if not result:
+        return None
+    stdout = (result.get("exec") or {}).get("stdout") or ""
+    match = re.search(r'"verdict":\s*"([^"]+)"', stdout)
+    return match.group(1) if match else result.get("verdict")
+
+
+def _assertion(name, params, *, expected, observed, data_points, note):
+    ok = observed is not None and observed == expected
+    return {
+        "primitive": name,
+        "params": dict(params),
+        "evaluated_value": {"expected": expected, "observed": observed},
+        "data_points_used": data_points,
+        "result": "pass" if ok else "fail",
+        "note": None if ok else note,
+    }
 
 
 class BlockApplyOutcomeMatches(AssertionPrimitive):
@@ -97,28 +233,34 @@ class BlockApplyOutcomeMatches(AssertionPrimitive):
 
     def evaluate(self, handle):
         expected = str(self.params.get("expected_outcome") or "accept_invalid")
-        rd = _run_dir(handle)
-        observed = None
-        for p in rd.rglob("block_apply_differential/result.json"):
-            try:
-                observed = json.loads(p.read_text()).get("verdict") or json.loads(p.read_text()).get("outcome")
-            except Exception:  # noqa: BLE001
-                pass
-        ok = observed is not None and observed == expected
-        return {
-            "primitive": "block_apply_outcome_matches",
-            "params": dict(self.params),
-            "evaluated_value": {"expected": expected, "observed": observed},
-            "result": "pass" if ok else "fail",
-            "note": None if ok else f"expected block-apply outcome {expected!r}, observed {observed!r}",
-        }
+        result = _find_result(_run_dir(handle), "block_apply_differential", self.params.get("source_path"))
+        observed = (result or {}).get("verdict") or (result or {}).get("outcome")
+        points = [{"target": (result or {}).get("target"), "reference": (result or {}).get("reference"),
+                   "forge": (result or {}).get("forge")}] if result else []
+        return _assertion("block_apply_outcome_matches", self.params, expected=expected, observed=observed,
+                          data_points=points,
+                          note=f"expected block-apply outcome {expected!r}, observed {observed!r}")
 
 
 class InvalidTxBodyDifferential(_ScriptLoadPrimitive):
     """Apply an is_valid=false tx and classify whether its body (donation/output/mint/withdrawal)
-    leaked on amaru vs cardano = value-creation/theft detector. Reads post-apply state; writes verdict."""
+    leaked on amaru vs cardano = value-creation/theft detector."""
     primitive_name = "invalid_tx_body_differential"
     script = "invalid_tx_body_differential.py"
+
+    def run(self, handle, rng):
+        rd = _run_dir(handle)
+        state = _bridge().load_state(rd)
+        if "observe" not in state:
+            return self._legacy(handle)
+        effect = str(self.params.get("body_effect") or "donation")
+        if effect != "donation":
+            raise ValueError(f"the live bridge measures the donation body effect, not {effect!r}")
+        snapshots = _bridge_snapshots(rd) or {}
+        verdict = _bridge().value_creation_verdict(snapshots, donation=int(state["craft"]["donation"]))
+        return _write(self._out(handle), {"primitive": self.primitive_name, "params": dict(self.params),
+                                          "body_effect": effect, "block_apply": state["observe"].get("verdict"),
+                                          "snapshots": snapshots, **verdict})
 
 
 class InvalidTxBodyDropped(AssertionPrimitive):
@@ -127,60 +269,48 @@ class InvalidTxBodyDropped(AssertionPrimitive):
 
     def evaluate(self, handle):
         expected = str(self.params.get("expected_verdict") or "no_body_leak")
-        rd = _run_dir(handle)
-        observed = None
-        for p in rd.rglob("invalid_tx_body_differential/result.json"):
-            try:
-                r = json.loads(p.read_text())
-                observed = (r.get("exec", {}).get("stdout") or "")
-                import re as _re
-                m = _re.search(r'"verdict":\s*"([^"]+)"', observed)
-                observed = m.group(1) if m else r.get("verdict")
-            except Exception:  # noqa: BLE001
-                pass
-        ok = observed is not None and observed == expected
-        return {
-            "primitive": "invalid_tx_body_dropped",
-            "params": dict(self.params),
-            "evaluated_value": {"expected": expected, "observed": observed},
-            "result": "pass" if ok else "fail",
-            "note": None if ok else f"is_valid=false body-leak: expected {expected!r}, observed {observed!r}",
-        }
+        result = _find_result(_run_dir(handle), "invalid_tx_body_differential", self.params.get("source_path"))
+        observed = _stdout_verdict(result)
+        points = [{"evidence": (result or {}).get("evidence"), "reason": (result or {}).get("reason")}] if result else []
+        return _assertion("invalid_tx_body_dropped", self.params, expected=expected, observed=observed,
+                          data_points=points,
+                          note=f"is_valid=false body-leak: expected {expected!r}, observed {observed!r}")
 
 
 class EpochBoundaryPotDifferential(_ScriptLoadPrimitive):
     """Diff the pot TRANSITION (treasury/reserves/fees) across an epoch boundary: amaru's delta vs
-    cardano-node's. A divergence means amaru's epoch-boundary pot accounting differs from the
-    cardano-node reference (e.g. the is_valid=false donation realizing into amaru's treasury at the
-    boundary while cardano's is unchanged). Invoked with transition-diff over before/after snapshots;
-    prints a verdict JSON to stdout."""
+    cardano-node's, from epoch-aligned snapshots on both sides of the boundary."""
     primitive_name = "epoch_boundary_pot_differential"
     script = "epoch_boundary_pot_differential.py"
+
+    def run(self, handle, rng):
+        rd = _run_dir(handle)
+        if "observe" not in _bridge().load_state(rd):
+            return self._legacy(handle)
+        snapshots = _bridge_snapshots(rd) or {}
+        result = {"primitive": self.primitive_name, "params": dict(self.params), "snapshots_aligned": bool(snapshots.get("aligned"))}
+        if not snapshots.get("aligned"):
+            result.update({"verdict": "inconclusive", "reason": snapshots.get("alignment_note") or "no snapshots"})
+            return _write(self._out(handle), result)
+        sys.path.insert(0, str(_SCRIPTS))
+        from epoch_boundary_pot_differential import transition_diff  # noqa: PLC0415
+
+        result.update(transition_diff(snapshots["amaru_before"], snapshots["amaru_after"],
+                                      snapshots["cardano_before"], snapshots["cardano_after"]))
+        result["epochs"] = snapshots.get("epochs")
+        return _write(self._out(handle), result)
 
 
 class EpochBoundaryPotsMatch(AssertionPrimitive):
     """Pass iff amaru's epoch-boundary pot transition matches cardano-node's (verdict CONFORMANT).
-    Fails (= finding) on POT_TRANSITION_DIVERGENCE (e.g. amaru's treasury inflates across the boundary
-    where cardano-node's does not)."""
+    Fails (= finding) on POT_TRANSITION_DIVERGENCE."""
 
     def evaluate(self, handle):
         expected = str(self.params.get("expected_verdict") or "CONFORMANT")
-        rd = _run_dir(handle)
-        observed = None
-        for p in rd.rglob("epoch_boundary_pot_differential/result.json"):
-            try:
-                r = json.loads(p.read_text())
-                stdout = (r.get("exec", {}).get("stdout") or "")
-                import re as _re
-                m = _re.search(r'"verdict":\s*"([^"]+)"', stdout)
-                observed = m.group(1) if m else r.get("verdict")
-            except Exception:  # noqa: BLE001
-                pass
-        ok = observed is not None and observed == expected
-        return {
-            "primitive": "epoch_boundary_pots_match",
-            "params": dict(self.params),
-            "evaluated_value": {"expected": expected, "observed": observed},
-            "result": "pass" if ok else "fail",
-            "note": None if ok else f"epoch-boundary pot transition: expected {expected!r}, observed {observed!r}",
-        }
+        result = _find_result(_run_dir(handle), "epoch_boundary_pot_differential", self.params.get("source_path"))
+        observed = _stdout_verdict(result)
+        points = [{"transition_diffs": (result or {}).get("transition_diffs"), "epochs": (result or {}).get("epochs"),
+                   "reason": (result or {}).get("reason")}] if result else []
+        return _assertion("epoch_boundary_pots_match", self.params, expected=expected, observed=observed,
+                          data_points=points,
+                          note=f"epoch-boundary pot transition: expected {expected!r}, observed {observed!r}")

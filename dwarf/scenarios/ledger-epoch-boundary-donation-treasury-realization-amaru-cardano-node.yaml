@@ -72,56 +72,48 @@
     },
     {
       "primitive": "build_block_segments",
+      "recipe": "isvalid-false-donation",
+      "donation_lovelace": 5000000,
+      "reference_node": "node2",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "output_dir": "outputs/build-segments",
-      "tx_file": "fixture/donation_invalid/l3-donation-bal.tx",
-      "label": "l3-donation-bal"
+      "label": "l3-donation-bal",
+      "note": "built live from the devnet's own genesis funding: a setup tx (spend + collateral outputs) is submitted to the cardano-node producer and confirmed; the crafted tx mints under an always-failing Plutus V3 policy with is_valid=false and a 5 ADA treasury donation, exactly the confirmed finding's shape, and is never submitted"
     },
     {
       "primitive": "forge_block",
+      "reference_node": "node2",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "output_dir": "outputs/forge-block",
-      "body_segments_path": "outputs/build-segments/body-segments.json",
-      "forced_nonce": "85e36f9d54bf512a0e841210f9a0f765b6151ffb33d53383fae37c303173a493",
-      "pool_keys_dir": "block_apply/keys-97b0",
-      "slot": 1209,
-      "prev_hash": "181e9b48af913dd4823f9a44a7460c90b61f55e6f51f4a8050fe2c4f0c642d37",
-      "block_height": 214,
-      "note": "block 214 carries the is_valid=false donation (5000000); then empty extenders chain past the next epoch boundary (epoch 3->4) so the donations pot is applied to the treasury."
-    },
-    {
-      "primitive": "assemble_blockjson",
-      "output_dir": "outputs/assemble",
-      "forge_result_path": "outputs/forge-block/forge-result.json"
+      "note": "forged mid-epoch from the producer's own next empty leader block; every later block is re-parented onto it (same slot/VRF/body, KES re-signed) so both nodes cross the next epoch boundary on the fork, where the donations pot is realized into the treasury"
     }
   ],
   "load": [
     {
       "primitive": "serve_crafted_block",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "pot_snapshots": true,
       "output_dir": "outputs/serve",
-      "block_json_path": "outputs/assemble/block.json",
-      "bind_port": 3001,
-      "note": "multi-block ordered serve: donation block 214 then empty extenders crossing the epoch boundary"
+      "note": "pre-forge pots snapshot mid-epoch on both nodes, then the forge is armed"
     },
     {
       "primitive": "block_apply_differential",
+      "expected_outcome": "adopt",
       "output_dir": "outputs/block-apply-differential",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
-      "expected_outcome": "adopt",
-      "watch_seconds": 180
+      "reference_node": "node2",
+      "pot_snapshots": true,
+      "watch_seconds": 300
     },
     {
       "primitive": "epoch_boundary_pot_differential",
       "output_dir": "outputs/epoch-boundary-pot-differential",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
-      "reference_node": "node2",
-      "args": [
-        "transition-diff",
-        "outputs/pots/amaru-before.json",
-        "outputs/pots/amaru-after.json",
-        "outputs/pots/cardano-before.json",
-        "outputs/pots/cardano-after.json"
-      ]
+      "reference_node": "node2"
     },
     {
       "primitive": "runtime_multi_node_observation",

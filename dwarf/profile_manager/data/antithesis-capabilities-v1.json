@@ -173,15 +173,15 @@
     },
     "forge_block": {
       "status": "unsupported",
-      "note": "Deferred host-side block-apply workbench."
+      "note": "Reads the devnet producer pool's KES key from the controller-composed substrate."
     },
     "serve_crafted_block": {
       "status": "unsupported",
-      "note": "Deferred host-side block-apply workbench."
+      "note": "Runs the controller mux proxy and recreates the Amaru compose service."
     },
     "block_apply_differential": {
       "status": "unsupported",
-      "note": "Runs host tmux and a host Amaru checkout."
+      "note": "Reads controller-side docker logs and a reference consumer container."
     },
     "runtime_preview_parity_baseline": {
       "status": "unsupported",

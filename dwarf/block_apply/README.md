@@ -1,30 +1,46 @@
-# dwarf/block_apply — forged-block bridge scripts (tracked)
+# dwarf/block_apply — block-apply bridge
 
-Formalized from the campaign forge-work; invoked by the block-apply bridge primitives
-(dwarf/profile_manager/block_apply_primitives.py), registered in dwarf/primitives/registry.json.
+## Live bridge (in-tree; no external forge or wire tool)
 
-## Scripts
-- build_block_segments.py  — any single tx .tx -> block body segments [[tx_body],[tx_wits],aux,invalid] (invalid=[0] iff is_valid=false)
-- build_stakeaddr_block.py — stake-addr 2-tx create+spend body (tx1 makes a 0xe0 output, tx2 spends it -> inputs.rs:122 on apply)
-- build_certphantom.py      — StakeDelegation-for-unregistered-credential body
-- build_collateral.py       — no-script tx + unwitnessed FOREIGN collateral body (uses a live foreign UTxO)
-- build_l3_block.py         — is_valid=false donation body
-- assemble_blockjson.py     — forged header + body -> block.json (race-guarded: header.body_hash == body)
-- repoint-amaru-pair1.sh    — reset amaru to a fresh tip-1199 store + repoint it to dial the serve
-- block_apply_differential.sh — repoint + watch amaru for adopt / block-fetch / apply / crash; records the verdict
+Driven by the existing block-apply primitives (`dwarf/profile_manager/block_apply_primitives.py`)
+through `dwarf/scripts/runtime_block_apply_bridge.py`, on a self-composed docker devnet with an
+Amaru target and a cardano-node producer/reference:
 
-## External dependencies (not in-tree)
-- forge_block: forced-nonce VRF+KES header forge needs cardano-crypto (cod-forge tool); feeds forge-result.json.
-- serve_crafted_block: tx-submission/block-fetch responder that answers amaru's chain-sync+block-fetch
-  (wire runtime_serve_crafted_block), writes serve-addr.txt (host-only) + ACTIVE-BODY.txt (<label> <point_hash>).
+1. `build_block_segments` with `recipe: isvalid-false-donation` builds the crafted transaction live
+   from the devnet's genesis funding. A setup transaction (spend + collateral outputs) is submitted
+   honestly to the producer and confirmed; the crafted transaction (mint under the always-failing
+   Plutus V3 policy in `fixtures/always-fails-v3.plutus`, `is_valid=false`, treasury donation) is
+   never submitted.
+2. `forge_block` writes the forge plan: the producer pool's own `kes.skey`, proven to be the key
+   its `opcert.cert` certifies, and `slotsPerKESPeriod` read from the devnet's genesis.
+3. `serve_crafted_block` starts `scripts/byzantine_mux_proxy.py --mutation-mode forge_substitute`
+   in front of the producer, repoints the Amaru compose service to it, starts an isolated
+   cardano-node reference consumer whose only peer is the proxy, waits until both follow the tip,
+   optionally takes mid-epoch pot snapshots, then arms the forge (`arm.json`).
+4. The proxy (`scripts/block_forge.ForgeSubstitution`) takes the producer's next EMPTY leader block
+   at/after the armed slot, keeps its slot/VRF/opcert, replaces the body with the crafted
+   transaction, recomputes body hash/size and re-signs the header with the pool's KES key
+   (`scripts/praos_kes.py`, Sum6KES). Every later block is re-parented the same way, so both
+   consumers can follow the fork across one epoch boundary (the epoch nonce two epochs on
+   depends on the forked hashes, so the fork ends there).
+5. `block_apply_differential` records each node's own verdict on the forged hash: Amaru from its
+   consensus log (`chain.select_from_block_validation valid=`, `tip.adopt`), the reference from its
+   tip and its log. With `pot_snapshots`, Amaru is restarted to dump its stable pots
+   (`pots.dump`), the reference's ledger state is queried, and snapshots are only compared when
+   both are epoch-aligned (otherwise `inconclusive`).
 
-## Runtime work-dir
-The scripts operate on a per-run work-dir (campaign used /home/nigel/forge-work/pathb/outputs/forged-block/);
-parameterize via the primitives' output_dir. amaru pair1: host tmux binary, submit :3210, log /tmp/amaru-pair1.log.
+Evidence: `outputs/block-apply-bridge/` (bridge-state.json, forge-plan.json, proxy/forge-record.json,
+pots/*.json) and each step's `result.json`.
 
-## Hard lessons (baked into the harness)
-- ALWAYS pre-flight a hand-built/fixture tx against the LIVE UTxO set before forging (fixture txs from prior
-  re-bakes reference absent UTxOs -> both nodes unknown-input, proves nothing).
-- Race guard checks block.json point_hash == ACTIVE-BODY.txt (serialize forge<->run); it does NOT catch a
-  semantically-broken body — that's what pre-flight is for.
-- serve-addr is HOST-ONLY (the repoint appends :3001); amaru dials its upstream :3001 as the chain-sync initiator.
+## Not yet live-supported
+
+- Recipes other than `isvalid-false-donation` (the other block-apply scenarios still name the
+  campaign scripts below and stay `deferred`/legacy).
+- `conway-gov-scriptcontext-proposals-votes-fidelity`: its fixture transactions are now staged into
+  the run dir, but they spend UTxOs of the 97b0 re-bake; a live rebuild of reg/pplain/prop3/vote is
+  needed before its submit differential can say anything about ScriptContext.
+
+## Legacy campaign scripts (kept for the scenarios that still name them)
+- build_block_segments.py, build_*.py — body builders from the forge-work campaign
+- assemble_blockjson.py, repoint-amaru-pair1.sh, block_apply_differential.sh — pair1 host layout
+  (/home/nigel/forge-work/pathb); not usable on a self-composed devnet.
