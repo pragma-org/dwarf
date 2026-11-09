@@ -577,6 +577,11 @@ def _validate_substrate(value):
                 )
         elif network.startswith("testnet_"):
             network_magic = int(network.split("_", 1)[1])
+    if "edges" not in topology and network.startswith("testnet_") and len(normalized_nodes) > 1:
+        # F118: no declared topology on a private devnet is a full mesh (same rule as
+        # runtime_substrate_common.normalize_substrate); an explicit empty edge list stays empty.
+        ordered = [str(node["id"]) for node in normalized_nodes]
+        normalized_edges = [{"from": left, "to": right} for left in ordered for right in ordered if left != right]
     compose_mode = value.get("compose_mode", "host")
     if compose_mode not in VALID_SUBSTRATE_COMPOSE_MODES:
         raise ScenarioValidationError(
