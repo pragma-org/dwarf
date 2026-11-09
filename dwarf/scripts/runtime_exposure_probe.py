@@ -825,6 +825,26 @@ def _read_peers_for_node(node: dict):
     return peers, (read_from or "none")
 
 
+def _trustable_peers(node: dict) -> tuple[int | None, str]:
+    """Trustable peers in the node's own topology file (F129): access points of localRoots groups
+    marked trustable, plus bootstrapPeers. None when the file cannot be read."""
+    topo_path = _resolve_node_topology_path(node)
+    if not topo_path or not Path(topo_path).exists():
+        return None, "not-observable"
+    try:
+        topo = json.loads(Path(topo_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, "not-observable"
+    count = 0
+    for group in topo.get("localRoots") or []:
+        if isinstance(group, dict) and group.get("trustable") is True:
+            count += len(group.get("accessPoints") or [])
+    bootstrap = topo.get("bootstrapPeers")
+    if isinstance(bootstrap, list):
+        count += len(bootstrap)
+    return count, "topology_file"
+
+
 def _run_bootstrap_topology_concentration(*, metadata: dict, config: dict) -> dict:
     if "runtime_metadata_path" not in config:
         return {
@@ -848,8 +868,11 @@ def _run_bootstrap_topology_concentration(*, metadata: dict, config: dict) -> di
         top_host = top_subnet = None
         host_share = subnet_share = None
     distinct_subnets = len(set(subnets))
+    trustable_count, trustable_source = _trustable_peers(node)
     return {
         "measured": True,
+        "trustable_peer_count": trustable_count,
+        "trustable_source": trustable_source,
         "source": source,
         "target_node": target_node,
         "total_peers": total,

@@ -2,6 +2,20 @@
  "_about": "Hand-kept causes and statuses for the wiring-campaign gap tracker. Rules are matched in order; the first match wins. 'match' is a scenario-id prefix or an exact id. Statuses: rerun-pending (fix deployed, not re-run yet), open (cause known, no fix yet), investigate (cause not yet known), review (verdict needs a human look), declared-gap (accepted limitation), removed.",
  "rules": [
   {
+   "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
+   "group": "scenario design question",
+   "status": "review",
+   "cause": "DESIGN: node3 is an ordinary honest node; the malformed block-fetch comes from the DWARF shim sent TO node3 (node3 replied MsgNoBlocks, the known LOW G4 leniency). The assertions expect node1/node2 to evict node3, which never misbehaved. Also pinned to 10.7.1 (must be resolved-plan)",
+   "fix": "needs a decision: make node3 really byzantine (runtime_byzantine_peer proxy mutating block-fetch toward node1/node2), or assert what is measured (node3 contains the shim, honest quorum of 3)"
+  },
+  {
+   "match": "runtime-substrate-bootstrap-topology-concentration-example-smoke",
+   "group": "bootstrap trustable count",
+   "status": "rerun-pending",
+   "cause": "producer never wrote trustable_peer_count; the assertion read 0 (minimum 2)",
+   "fix": "F129: count trustable localRoots access points + bootstrapPeers from the node topology file; rerun pending"
+  },
+  {
    "match": "runtime-substrate-blockfetch-range-pressure-example-smoke",
    "group": "block-fetch range read timing",
    "status": "rerun-pending",
