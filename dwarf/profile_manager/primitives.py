@@ -274,7 +274,7 @@ def _optional_runtime_path(path):
     """``_resolve_runtime_path`` for an optional parameter: None and "" stay unset (F101)."""
     if path is None or str(path) == "":
         return path
-    return Path(_resolve_runtime_path(path)).absolute()
+    return str(Path(_resolve_runtime_path(path)).absolute())
 
 
 def _resolve_aflnet_target_binary_path(path) -> Path:

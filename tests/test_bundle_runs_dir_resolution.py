@@ -69,3 +69,11 @@ def test_bundle_diff_of_two_present_files_is_clean(monkeypatch):
                              "verdict": "diff"}])
     monkeypatch.setattr(primitives, "_events_from_handle", lambda *a, **k: [{"payload": payload}])
     assert primitives.BundleDiffCompletedClean(params={}).evaluate(None)["result"] == "pass"
+
+
+def test_resolved_runs_dir_is_json_serialisable():
+    """The primitives log runs_dir in their events; a Path broke the event log live (F101b)."""
+    import json
+    value = primitives._optional_runtime_path("dwarf/corpora/bundle-runs")
+    assert isinstance(value, str)
+    json.dumps({"runs_dir": value})
