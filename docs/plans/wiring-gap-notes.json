@@ -449,6 +449,11 @@
    "id": "experimental-protocols-default-change",
    "priority": "note",
    "note": "CHANGED 2026-11-09: cardano-only devnets now run ExperimentalProtocolsEnabled=false (was cardano-testnet default true, offering N2N V16). Override per scenario with substrate.cardano_experimental_protocols: true. Sample of cardano-only scenarios rerun after deploy to confirm nothing depended on V16."
+  },
+  {
+   "id": "self-compose-taps-final-rerun",
+   "priority": "after all scenarios pass (user decision 2026-11-09, option b)",
+   "note": "All 280 runs have exported bundles (0 missing). Tap output: 42 of 118 latest runs; 12 library runs have none by design; ~64 runtime runs on self-composed devnets have no taps attached (resolver attaches only to profile/attached runs). Plan: fix tap attachment for self-composed substrates, then one full rerun of all scenarios to capture taps. Also pending later: F138 cardano-only sample check (ExperimentalProtocolsEnabled=false)."
   }
  ]
 }
