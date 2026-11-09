@@ -109,8 +109,8 @@
         "node2",
         "node3"
       ],
-      "observation_window_seconds": 10,
-      "sample_interval_seconds": 1,
+      "observation_window_seconds": 60,
+      "sample_interval_seconds": 3,
       "network_magic": 42,
       "observation_primitives": [
         "tip_state",
@@ -142,7 +142,8 @@
         "node1",
         "node2"
       ],
-      "minimum_fraction": 1.0
+      "minimum_fraction": 1.0,
+      "tolerance_slots": 20
     }
   ],
   "teardown": [

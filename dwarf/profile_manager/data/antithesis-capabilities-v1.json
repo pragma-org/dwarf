@@ -200,6 +200,10 @@
     "chain_select_differential": {
       "status": "runs",
       "note": "Compares node tips from the in-package observation (cardano-cli for cardano-node, the node log for Amaru)."
+    },
+    "chain_select_consistent": {
+      "status": "runs",
+      "note": "Compares node tips from the in-package observation (cardano-cli for cardano-node, the node log for Amaru)."
     }
   },
   "evidence_producer": "Optional per assertion: the probe primitive that writes the proof this assertion reads. When that producer is skipped in a scenario (unsupported or delegated-fault), the assertion is classified unsupported with a gap naming the producer instead of failing for a proof the package can never write."

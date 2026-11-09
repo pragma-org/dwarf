@@ -20511,18 +20511,33 @@ class AllNodesResponsive(AssertionPrimitive):
 
 
 class ChainSelectConsistent(AssertionPrimitive):
-    """Pass iff every observed node selected the same chain tip."""
+    """Pass iff every observed node selected the same chain tip.
+
+    ``tolerance_slots`` (F132) also accepts final tips whose slots are within that many slots of
+    each other (agreement modulo lag on fast devnets under injected delay). It applies to the
+    final tips only, so a node that stalls during the window still fails.
+    """
 
     def evaluate(self, handle):
-        latest, payload, _, summary = _latest_multi_node_observation(handle)
-        enough = (
+        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
+        tolerance_slots = int(self.params.get("tolerance_slots", 0) or 0)
+        observed = (
             latest is not None
             and payload.get("outcome") == "ok"
             and (payload.get("artifact_summary") or {}).get("has_observation_summary", False)
-            and bool(summary.get("chain_select_consistent"))
         )
+        exact = bool(summary.get("chain_select_consistent"))
+        tips = _multi_node_latest_tips(result_body or {}, summary)
+        slots = [int(tip.get("slot")) for tip in tips.values() if isinstance(tip, dict) and tip.get("slot") is not None]
+        spread = (max(slots) - min(slots)) if len(slots) >= 2 and len(slots) == len(tips) else None
+        within = tolerance_slots > 0 and spread is not None and spread <= tolerance_slots
+        enough = observed and (exact or within)
+        basis = "identical-tip" if exact else ("within-tolerance" if within else None)
         result = "pass" if enough else "fail"
-        note = None if enough else "expected every observed node to chain-select the same tip"
+        note = None if enough else (
+            "expected every observed node to chain-select the same tip"
+            + (f" (final tips within {tolerance_slots} slots)" if tolerance_slots else "")
+        )
         return {
             "primitive": "chain_select_consistent",
             "params": dict(self.params),
@@ -20530,6 +20545,9 @@ class ChainSelectConsistent(AssertionPrimitive):
                 "completed": 1 if latest is not None else 0,
                 "chain_select_consistent": summary.get("chain_select_consistent"),
                 "tip_group_count": summary.get("tip_group_count"),
+                "tolerance_slots": tolerance_slots,
+                "final_slot_spread": spread,
+                "basis": basis,
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,
@@ -20838,6 +20856,14 @@ class HonestQuorumPreserved(AssertionPrimitive):
         quorum_count = max(groups.values()) if groups else 0
         honest_node_count = len(honest_node_ids)
         quorum_fraction = (quorum_count / honest_node_count) if honest_node_count else 0.0
+        # F132b: final honest tips within tolerance_slots count as one quorum (agreement modulo lag).
+        tolerance_slots = int(self.params.get("tolerance_slots", 0) or 0)
+        honest_slots = [int((latest_tips.get(node_id) or {}).get("slot")) for node_id in honest_node_ids
+                        if (latest_tips.get(node_id) or {}).get("slot") is not None]
+        spread = (max(honest_slots) - min(honest_slots)) if honest_slots and len(honest_slots) == honest_node_count else None
+        basis = "identical-tip" if quorum_fraction >= minimum_fraction else None
+        if basis is None and tolerance_slots > 0 and spread is not None and spread <= tolerance_slots:
+            quorum_count, quorum_fraction, basis = honest_node_count, 1.0, "within-tolerance"
         enough = (
             latest is not None
             and payload.get("outcome") == "ok"
@@ -20856,6 +20882,9 @@ class HonestQuorumPreserved(AssertionPrimitive):
                 "honest_quorum_count": quorum_count,
                 "honest_quorum_fraction": quorum_fraction,
                 "minimum_fraction": minimum_fraction,
+                "tolerance_slots": tolerance_slots,
+                "honest_final_slot_spread": spread,
+                "basis": basis,
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,

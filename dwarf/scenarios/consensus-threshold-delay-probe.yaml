@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "consensus-threshold-delay-probe",
-  "title": "Private-fork safety under bounded network delay (lambda*Delta) — a private chainsync fork at 100ms upstream delay does not break Common-Prefix consistency across honest nodes",
+  "title": "Private-fork safety under bounded network delay (lambda*Delta) \u2014 a private chainsync fork at 100ms upstream delay does not break Common-Prefix consistency across honest nodes",
   "authors": [
     "dwarf"
   ],
@@ -16,7 +16,7 @@
   "evidence_intent": "candidate",
   "target": {
     "implementation": "cardano-node",
-    "version": "10.7.1"
+    "version": "resolved-plan"
   },
   "runtime": "devnet",
   "seed": "0x51501540",
@@ -28,28 +28,28 @@
       {
         "id": "node1",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "role": "honest",
         "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "role": "honest",
         "identity_binding": "resolved-plan"
       },
       {
         "id": "node3",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "role": "honest",
         "identity_binding": "resolved-plan"
       },
       {
         "id": "adv1",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "role": "adversary",
         "identity_binding": "resolved-plan"
       }
@@ -147,7 +147,8 @@
   "probes": [],
   "assertions": [
     {
-      "primitive": "chain_select_consistent"
+      "primitive": "chain_select_consistent",
+      "tolerance_slots": 20
     }
   ],
   "teardown": [

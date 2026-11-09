@@ -1,6 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "properties": {},
+  "properties": {
+    "tolerance_slots": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Allowed slot spread between the final tips of all observed nodes. 0 requires hash-identical tips; >0 permits agreement modulo lag (basis within-tolerance). Applies to the final tips only."
+    }
+  },
   "additionalProperties": false
 }
