@@ -491,6 +491,53 @@ def _patched_amaru_identity(runtime: dict[str, Any], scenario) -> dict[str, Any]
     return result
 
 
+def _container_socket_path(container: str) -> str | None:
+    """The --socket-path the node container was started with (its own command line)."""
+    result = subprocess.run(
+        ["docker", "inspect", "-f", "{{json .Config.Cmd}}", container],
+        capture_output=True, text=True, check=False, timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        command = json.loads(result.stdout) or []
+    except ValueError:
+        return None
+    for flag, value in zip(command, command[1:]):
+        if flag == "--socket-path":
+            return str(value)
+    return None
+
+
+def _mixed_cardano_nodes(runtime: dict[str, Any]) -> list[dict[str, Any]]:
+    """Cardano-node targets of a mixed Cardano/Amaru controller runtime (no ``nodes`` list).
+
+    Built only from what the deploy proved: the selected node service, its identity record
+    (running image id and the version/commit the binary reported) and the pinned image."""
+    topology = runtime.get("actual_topology") or {}
+    cardano_services = set(topology.get("cardano_services") or [])
+    services = ((runtime.get("identity") or {}).get("services")) or {}
+    image_ref = str((runtime.get("images") or {}).get("cardano-node") or "")
+    nodes = []
+    for node_id, service in (topology.get("selected_node_services") or {}).items():
+        record = services.get(service)
+        if service not in cardano_services or not isinstance(record, dict):
+            continue
+        running = str(record.get("running_image_id") or "")
+        proven = record.get("matched") is True and running == str(record.get("expected_image_id") or "")
+        container = str(record.get("container") or "")
+        nodes.append({
+            "id": node_id, "impl": "cardano-node", "service": service,
+            "container_name": container,
+            "container_socket_path": _container_socket_path(container) if container else None,
+            "source_revision": str(record.get("reported_git_commit") or ""),
+            "image_ref": image_ref, "target_mode": "stock",
+            "artifact_identity": {"satisfied": proven, "container_image_id": running},
+            "version_identity": {"satisfied": proven, "reported_version": record.get("expected_version")},
+        })
+    return nodes
+
+
 def _stock_cardano_identity(
     runtime: dict[str, Any], scenario, *, expected_identity: dict[str, Any] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -517,7 +564,7 @@ def _stock_cardano_identity(
     digest = str(artifact.get("digest") or "")
     nodes = [
         node
-        for node in (runtime.get("nodes") or runtime.get("haskell_nodes") or [])
+        for node in (runtime.get("nodes") or runtime.get("haskell_nodes") or _mixed_cardano_nodes(runtime))
         if node.get("impl") == "cardano-node"
     ]
     if not nodes:

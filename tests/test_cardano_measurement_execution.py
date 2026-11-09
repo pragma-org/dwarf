@@ -285,3 +285,62 @@ def test_prepare_cardano_measurements_rejects_wrong_patched_identity(tmp_path):
 
     with pytest.raises(MeasurementExecutionError, match="patch-set"):
         prepare_scenario_measurements(scenario, runtime_metadata_path=runtime_path)
+
+
+def _mixed_runtime(path, *, matched=True, running=DIGEST):
+    """The controller runtime record of a mixed Cardano/Amaru profile (profile-c shape, no nodes list)."""
+    release = {
+        "implementation": "cardano-node", "version": VERSION, "source_revision": REVISION,
+        "artifacts": [{"kind": "oci", "availability": "available",
+                       "reference": "ghcr.io/intersectmbo/cardano-node:11.1.2", "digest": DIGEST}],
+        "operator_registration": None,
+    }
+    container = "dwarf-profile-install-x-profile-mixed-p1-1"
+    body = {
+        "profile_id": "profile-mixed", "network_magic": 42, "target_implementation": "mixed",
+        "versions": {"catalog_revision": "a" * 64, "catalog_snapshot": {"selected_releases": [release]}},
+        "images": {"cardano-node": f"ghcr.io/intersectmbo/cardano-node:11.1.2@{DIGEST}"},
+        "actual_topology": {"cardano_services": ["p1", "p2", "relay1"], "amaru_services": ["amaru-relay-1"],
+                            "selected_node_services": {"node1": "p1", "amaru1": "amaru-relay-1"}},
+        "identity": {"matched": matched, "services": {"p1": {
+            "container": container, "matched": matched, "expected_version": VERSION,
+            "expected_image_id": DIGEST, "running_image_id": running,
+            "reported_git_commit": REVISION,
+        }}},
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(body))
+    return path, container
+
+
+def test_prepare_cardano_measurements_reads_a_mixed_profile_runtime(tmp_path, monkeypatch):
+    from profile_manager import measurement_execution
+
+    scenario = replace(load_scenario("dwarf/scenarios/cardano-measurement-e2e-stock.yaml"), profile="profile-mixed")
+    runtime_path, container = _mixed_runtime(tmp_path / "runtime.json")
+    seen = []
+    monkeypatch.setattr(measurement_execution, "_container_socket_path",
+                        lambda name: seen.append(name) or "/state/node.socket")
+    prepared = prepare_scenario_measurements(
+        scenario, runtime_metadata_path=runtime_path,
+        tip_probe=lambda: {"block_height": 1, "block_hash": "a" * 64},
+    )
+    identity = prepared.resolution["target_identity"]
+    assert identity["implementation"] == "cardano-node"
+    assert identity["source_revision"] == REVISION
+    assert identity["image_digest"] == DIGEST
+    assert identity["mode"] == "stock"
+    assert seen == [container]
+
+
+def test_a_mixed_profile_cardano_node_must_be_proven(tmp_path, monkeypatch):
+    from profile_manager import measurement_execution
+
+    scenario = replace(load_scenario("dwarf/scenarios/cardano-measurement-e2e-stock.yaml"), profile="profile-mixed")
+    monkeypatch.setattr(measurement_execution, "_container_socket_path", lambda name: "/state/node.socket")
+    runtime_path, _ = _mixed_runtime(tmp_path / "runtime.json", matched=False)
+    with pytest.raises(MeasurementExecutionError, match="identity is not proven"):
+        prepare_scenario_measurements(scenario, runtime_metadata_path=runtime_path)
+    runtime_path, _ = _mixed_runtime(tmp_path / "runtime.json", running="sha256:" + "9" * 64)
+    with pytest.raises(MeasurementExecutionError, match="identity is not proven|image digest"):
+        prepare_scenario_measurements(scenario, runtime_metadata_path=runtime_path)
