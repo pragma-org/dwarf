@@ -132,9 +132,9 @@
   {
    "contains": "compose substrate did not intersect, advance, and converge",
    "group": "Amaru mixed compose startup gate",
-   "status": "investigate",
-   "cause": "Amaru+cardano mixed compose: ready_node_count=0 at the startup gate on 42fdc8f0; the later plutus-onchain runs on the same shape pass on 343ee0c1",
-   "fix": "re-run on 343ee0c1 first; read failed-substrate-logs.txt if it repeats"
+   "status": "rerun-pending",
+   "cause": "rerun #2 ran on 42fdc8f0, before F96: these scenarios still declared network preview, so Amaru synced the public chain (slot ~121M) and cardano-node dialled public peers; the startup gate never saw the nodes converge",
+   "fix": "F96 moved them to testnet_42 (deployed 2ef565b8+); rerun #3 runs them on the private devnet"
   },
   {
    "contains": "TopologyActionError: controller runtime failed",
