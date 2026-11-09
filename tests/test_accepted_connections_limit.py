@@ -61,3 +61,40 @@ def test_scenario_loader_rejects_a_bad_limit():
     body["substrate"]["cardano_accepted_connections_limit"] = {"hardLimit": 2, "softLimit": 5, "delay": 1}
     with pytest.raises(scenario_module.ScenarioValidationError, match="softLimit"):
         scenario_module.scenario_from_body(json.dumps(body).encode())
+
+
+def _duplex(result):
+    from types import SimpleNamespace
+    from profile_manager import primitives
+    event = {"phase": "load", "event": "completed", "primitive": "runtime_duplex_promotion_pressure",
+             "payload": {"outcome": "ok", "result": result}}
+    return primitives.DuplexPromotionSlotLimitEnforced(params={}).evaluate(SimpleNamespace(events=[event], run_dir="/x"))
+
+
+BASE = {"hard_limit": 8, "hard_limit_exceeded": False, "accepted_connection_count_peak": 7}
+
+
+def test_refusing_excess_connections_is_enforcement():
+    """F141 (decision 2026-11-09, a): cardano-node enforces the hard limit by refusing new
+    connections, not by resetting live ones (live e8d0b0b1: peak 7 + 1 peer = 8, 17 refused)."""
+    out = _duplex({**BASE, "inbound_preferred_reset_applied": False, "handshake_failures": 9, "tcp_connect_failures": 8,
+                   "connection_resets_observed": 0})
+    assert out["result"] == "pass" and out["evaluated_value"]["enforcement"] == "refused"
+
+
+def test_resetting_is_still_enforcement():
+    out = _duplex({**BASE, "inbound_preferred_reset_applied": True, "handshake_failures": 0, "tcp_connect_failures": 0,
+                   "connection_resets_observed": 3})
+    assert out["result"] == "pass" and out["evaluated_value"]["enforcement"] == "reset"
+
+
+def test_no_excess_turned_away_is_not_enforcement():
+    out = _duplex({**BASE, "inbound_preferred_reset_applied": False, "handshake_failures": 0, "tcp_connect_failures": 0,
+                   "connection_resets_observed": 0})
+    assert out["result"] == "fail"
+
+
+def test_exceeding_the_limit_fails():
+    out = _duplex({"hard_limit": 8, "hard_limit_exceeded": True, "accepted_connection_count_peak": 24,
+                   "inbound_preferred_reset_applied": True, "handshake_failures": 0, "tcp_connect_failures": 0})
+    assert out["result"] == "fail"

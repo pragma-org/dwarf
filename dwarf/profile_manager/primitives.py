@@ -21785,12 +21785,16 @@ class DuplexPromotionSlotLimitEnforced(AssertionPrimitive):
         hard_limit = int(result_body.get("hard_limit", 0) or 0)
         # F140: the limit must be the node's measured configuration (or an explicit value), never absent.
         hard_limit_measured = isinstance(result_body.get("hard_limit"), int) and isinstance(result_body.get("hard_limit_exceeded"), bool)
+        # F141 (decision 2026-11-09, a): the excess must be turned away; cardano-node refuses new
+        # connections at its hard limit, other implementations may reset live ones. Either counts.
+        refused = int(result_body.get("handshake_failures", 0) or 0) + int(result_body.get("tcp_connect_failures", 0) or 0)
+        enforcement = "reset" if inbound_preferred_reset_applied else ("refused" if refused > 0 else None)
         enough = (
             latest is not None
             and payload.get("outcome") == "ok"
             and hard_limit_measured
             and not hard_limit_exceeded
-            and inbound_preferred_reset_applied
+            and enforcement is not None
             and accepted_connection_count_peak <= hard_limit
         )
         result = "pass" if enough else "fail"
@@ -21804,6 +21808,8 @@ class DuplexPromotionSlotLimitEnforced(AssertionPrimitive):
                 "inbound_preferred_reset_applied": inbound_preferred_reset_applied,
                 "accepted_connection_count_peak": accepted_connection_count_peak,
                 "hard_limit": hard_limit,
+                "excess_refused": refused,
+                "enforcement": enforcement,
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,
