@@ -8,7 +8,8 @@ node's own verdict on that block is recorded.
 
 Live path (``scripts.runtime_block_apply_bridge``), selected by the step parameters:
 
-* build_block_segments ``recipe``        -> craft the transaction live (setup submitted honestly)
+* build_block_segments ``recipe``        -> craft the transaction(s) live (setup submitted honestly);
+                                          isvalid-false-donation | gov-scriptcontext
 * forge_block ``reference_node``         -> forge plan: producer KES key proven against its opcert
 * serve_crafted_block (after a plan)     -> proxy + Amaru repoint + reference consumer, then arm
 * block_apply_differential (after serve) -> per-node verdicts (+ epoch-aligned pot snapshots)
@@ -105,14 +106,21 @@ class BuildBlockSegments(_ScriptLoadPrimitive):
         if not recipe:
             return self._legacy(handle)
         bridge = _bridge()
-        if recipe != bridge.DONATION_RECIPE:
-            raise ValueError(f"unknown block-apply recipe {recipe!r}")
         rd = _run_dir(handle)
-        runtime = json.loads(_runtime_path(rd, self.params).read_text(encoding="utf-8"))
-        record = bridge.craft_isvalid_false_donation(
-            runtime=runtime, out_dir=self._out(handle), reference_node=str(self.params["reference_node"]),
-            donation=int(self.params.get("donation_lovelace", 5_000_000)),
-        )
+        if recipe == bridge.DONATION_RECIPE:
+            runtime = json.loads(_runtime_path(rd, self.params).read_text(encoding="utf-8"))
+            record = bridge.craft_isvalid_false_donation(
+                runtime=runtime, out_dir=self._out(handle), reference_node=str(self.params["reference_node"]),
+                donation=int(self.params.get("donation_lovelace", 5_000_000)),
+            )
+        elif recipe == bridge.GOV_SCRIPTCONTEXT_RECIPE:
+            runtime = json.loads(_runtime_path(rd, self.params).read_text(encoding="utf-8"))
+            record = bridge.craft_gov_scriptcontext(
+                runtime=runtime, out_dir=self._out(handle), reference_node=str(self.params["reference_node"]),
+                target_node=str(self.params.get("target_node", "node1")),
+            )
+        else:
+            raise ValueError(f"unknown block-apply recipe {recipe!r}")
         state = bridge.load_state(rd)
         state["craft"] = record
         bridge.save_state(rd, state)

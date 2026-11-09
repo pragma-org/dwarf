@@ -396,6 +396,472 @@ def craft_isvalid_false_donation(*, runtime: dict, out_dir: Path, reference_node
     return record
 
 
+# --------------------------------------------------------------------------- #
+# Recipe gov-scriptcontext: the governance ScriptContext sequence, built live
+# --------------------------------------------------------------------------- #
+#
+# The fixture set (antithesis/.../fixture/gov_scriptcontext) encodes, on the 97b0 re-bake:
+#   reg.tx    Conway stake registration (cert 7, deposit) of the proposal return credential
+#   pplain.tx a plain Info proposal (gov action 6) returning its deposit to that credential
+#   prop3.tx  an Info proposal plus three Plutus V3 MINT observers whose ScriptContext reads
+#             tx.proposal_procedures: ctx_proposal_is_info (redeemer 1: the single proposal is
+#             NicePoll), ctx_proposal_deposit (redeemer = deposit) and ctx_num_proposals (redeemer 1)
+#   vote.tx   a StakePool Yes vote on pplain's action plus the ctx_votes MINT observer, whose
+#             ScriptContext must hold exactly that pool -> {action: Yes} entry in tx.votes
+# Live, the same shapes are rebuilt from the run's genesis funding: an honest split (with the
+# return-credential registration) and an honest plain proposal are submitted to the producer and
+# confirmed, prop3 and vote are built against that live state as the submit SUBJECTS, and a
+# second registration + plain proposal pair (never submitted) is the forged block body.
+
+GOV_SCRIPTCONTEXT_RECIPE = "gov-scriptcontext"
+GOV_FIXTURE_DIR = DWARF_ROOT.parent / "antithesis" / "cardano_amaru_adversarial" / "fixture" / "gov_scriptcontext"
+GOV_FIXTURE_POOL = "97b0f582dcf255b2c776f3540454b99fbf26e48833f275bfcd63bfcd"
+GOV_ANCHOR = ("https://dwarf.test/a", "249d3389a61084339bdd2c55fd42b8dcc35357e0705b515ecc3a2a4e50babc11")
+GOV_TOKEN = "434f4c4c"  # "COLL", the token name every fixture observer mints
+PROP3_OBSERVERS = {  # role -> fixture script; the order is the fixture's --mint order
+    "is_info": "ctx_proposal_is_info.plutus",
+    "deposit": "ctx_proposal_deposit.plutus",
+    "num_proposals": "ctx_num_proposals.plutus",
+}
+VOTES_OBSERVER = "ctx_votes.plutus"
+ADA = 1_000_000
+INFO_ACTION_TAG = 6
+STAKE_REGISTRATION_TAG = 7
+STAKE_POOL_VOTER_TAG = 4
+VOTE_YES = 1
+
+
+def _blake2b224(data: bytes) -> str:
+    return hashlib.blake2b(data, digest_size=28).hexdigest()
+
+
+def script_policy_id(envelope: dict) -> str:
+    """Plutus V3 script hash (= minting policy id) of a cardano-cli script envelope."""
+    import cbor2  # noqa: PLC0415
+
+    return _blake2b224(b"\x03" + cbor2.loads(bytes.fromhex(envelope["cborHex"])))
+
+
+def key_hash_from_vkey(path: Path) -> str:
+    """Blake2b-224 key hash of a cardano-cli verification key envelope (stake / pool cold key)."""
+    import cbor2  # noqa: PLC0415
+
+    key = cbor2.loads(bytes.fromhex(json.loads(Path(path).read_text(encoding="utf-8"))["cborHex"]))
+    if not isinstance(key, bytes) or len(key) != 32:
+        raise ValueError(f"{path} is not an Ed25519 verification key envelope")
+    return _blake2b224(key)
+
+
+def parameterize_ctx_votes(envelope: dict, pool: str, *, current: str = GOV_FIXTURE_POOL) -> dict:
+    """ctx_votes with its pool constant swapped for ``pool`` (same length, nothing else changes).
+
+    The Aiken source (ctxvotes.ak) compares the voter with a 28-byte pool hash literal. In the
+    compiled flat program that literal is a byte-aligned bytestring chunk ``01 1c <28 bytes> 00``,
+    so the live pool's hash replaces it in place without changing any length or other byte.
+    """
+    if len(pool) != 56 or any(c not in "0123456789abcdef" for c in pool):
+        raise ValueError(f"pool key hash must be 28 bytes of lowercase hex, got {pool!r}")
+    raw = str(envelope["cborHex"])
+    old, new = f"011c{current}00", f"011c{pool}00"
+    if raw.count(old) != 1:
+        raise ValueError("script does not hold exactly one ctx_votes pool literal")
+    return {**envelope, "cborHex": raw.replace(old, new),
+            "description": f"ctx_votes (ctxvotes.ak) for StakePool {pool}"}
+
+
+def _items(value) -> list:
+    import cbor2  # noqa: PLC0415
+
+    if isinstance(value, cbor2.CBORTag):
+        value = value.value
+    return list(value or [])
+
+
+def _redeemer_value(data):
+    return data if isinstance(data, int) else repr(data)
+
+
+def describe_gov_transaction(raw: bytes) -> dict[str, Any]:
+    """What a Conway transaction carries for this recipe: certs, proposals, votes, mints, redeemers."""
+    import cbor2  # noqa: PLC0415
+
+    tx = cbor2.loads(raw)
+    body, witnesses, is_valid = tx[0], tx[1], tx[2]
+    certificates = []
+    for cert in _items(body.get(4)):
+        entry: dict[str, Any] = {"tag": int(cert[0])}
+        if int(cert[0]) in (0, 1, 7, 8):
+            entry["credential"] = bytes(cert[1][1]).hex()
+        if int(cert[0]) in (7, 8):
+            entry["deposit"] = int(cert[2])
+        certificates.append(entry)
+    proposals = [{"deposit": int(p[0]), "return_account": bytes(p[1])[1:].hex(), "action": int(p[2][0])}
+                 for p in _items(body.get(20))]
+    votes = []
+    for voter, actions in (body.get(19) or {}).items():
+        for action, procedure in actions.items():
+            votes.append({"voter_tag": int(voter[0]), "voter": bytes(voter[1]).hex(),
+                          "action_tx": bytes(action[0]).hex(), "action_index": int(action[1]),
+                          "vote": int(procedure[0])})
+    redeemers: dict[str, Any] = {}
+    raw_redeemers = witnesses.get(5) if isinstance(witnesses, dict) else None
+    if isinstance(raw_redeemers, dict):
+        for (tag, index), (data, _units) in raw_redeemers.items():
+            redeemers[f"{['spend', 'mint', 'cert', 'reward', 'vote', 'propose'][tag]}:{index}"] = _redeemer_value(data)
+    elif raw_redeemers:
+        for tag, index, data, _units in raw_redeemers:
+            redeemers[f"{['spend', 'mint', 'cert', 'reward', 'vote', 'propose'][tag]}:{index}"] = _redeemer_value(data)
+    return {
+        "is_valid": is_valid,
+        "inputs": sorted(f"{bytes(i[0]).hex()}#{int(i[1])}" for i in _items(body.get(0))),
+        "certificates": certificates,
+        "proposals": proposals,
+        "votes": votes,
+        "mint_policies": sorted(bytes(p).hex() for p in (body.get(9) or {})),
+        "redeemers": redeemers,
+    }
+
+
+def _prop3_policies() -> dict[str, str]:
+    return {role: script_policy_id(json.loads((GOV_FIXTURE_DIR / name).read_text(encoding="utf-8")))
+            for role, name in PROP3_OBSERVERS.items()}
+
+
+def check_prop3_subject(desc: dict, *, deposit: int, return_account: str) -> str | None:
+    """None when ``desc`` is prop3's shape: one Info proposal + the three proposal observers."""
+    if desc.get("is_valid") is not True:
+        return "prop3 is not flagged is_valid=true"
+    expected = [{"deposit": deposit, "return_account": return_account, "action": INFO_ACTION_TAG}]
+    if desc.get("proposals") != expected:
+        return f"prop3 proposal/deposit/return account is {desc.get('proposals')}, expected {expected}"
+    policies = _prop3_policies()
+    if desc.get("mint_policies") != sorted(policies.values()):
+        return f"prop3 mint policies are {desc.get('mint_policies')}, expected the observers {sorted(policies.values())}"
+    order = sorted(policies.values())
+    wanted = {f"mint:{order.index(policy)}": (deposit if role == "deposit" else 1) for role, policy in policies.items()}
+    if desc.get("redeemers") != wanted:
+        return f"prop3 redeemers are {desc.get('redeemers')}, expected {wanted} (deposit observer gets the deposit)"
+    return None
+
+
+def check_vote_subject(desc: dict, *, pool: str, action_tx: str, policy: str) -> str | None:
+    """None when ``desc`` is vote's shape: one StakePool Yes vote on (action_tx, 0) + ctx_votes."""
+    if desc.get("is_valid") is not True:
+        return "vote is not flagged is_valid=true"
+    expected = [{"voter_tag": STAKE_POOL_VOTER_TAG, "voter": pool, "action_tx": action_tx, "action_index": 0,
+                 "vote": VOTE_YES}]
+    if desc.get("votes") != expected:
+        return f"vote voter/action/vote is {desc.get('votes')}, expected {expected}"
+    if desc.get("mint_policies") != [policy]:
+        return f"vote mint policies are {desc.get('mint_policies')}, expected the ctx_votes observer {policy}"
+    return None
+
+
+def check_setup_pair(reg: dict, pplain: dict, *, stake_deposit: int, deposit: int) -> str | None:
+    """None when the forged pair is reg.tx + pplain.tx's shape (registration, then a plain Info
+    proposal returning to the credential registered in the same block)."""
+    certs = reg.get("certificates") or []
+    if len(certs) != 1 or certs[0].get("tag") != STAKE_REGISTRATION_TAG or certs[0].get("deposit") != stake_deposit:
+        return f"first forged transaction registers no stake credential with deposit {stake_deposit}: {certs}"
+    expected = [{"deposit": deposit, "return_account": certs[0]["credential"], "action": INFO_ACTION_TAG}]
+    if pplain.get("proposals") != expected or pplain.get("mint_policies") or pplain.get("certificates"):
+        return f"second forged transaction is not a plain Info proposal returning to it: {pplain.get('proposals')}"
+    if reg.get("is_valid") is not True or pplain.get("is_valid") is not True:
+        return "forged setup transactions must be is_valid=true"
+    return None
+
+
+def gov_split_plan(*, funding_lovelace: int, stake_deposit: int, gov_deposit: int, fee: int) -> dict[str, Any]:
+    """Outputs of the honest split (which also registers the return credential, paying its deposit)."""
+    outputs = [
+        {"role": "pplain_h", "lovelace": gov_deposit + 10 * ADA},
+        {"role": "prop3", "lovelace": gov_deposit + 20 * ADA},
+        {"role": "prop3_collateral", "lovelace": 10 * ADA},
+        {"role": "vote", "lovelace": 20 * ADA},
+        {"role": "vote_collateral", "lovelace": 10 * ADA},
+        {"role": "reg_f", "lovelace": 10 * ADA},
+        {"role": "pplain_f", "lovelace": gov_deposit + 10 * ADA},
+    ]
+    change = funding_lovelace - sum(o["lovelace"] for o in outputs) - fee - stake_deposit
+    if change < 10 * ADA:
+        raise RuntimeError(f"funding UTxO of {funding_lovelace} lovelace cannot fund the gov sequence "
+                           f"(three {gov_deposit} proposal deposits)")
+    outputs.append({"role": "change", "lovelace": change})
+    return {"outputs": outputs, "fee": fee, "stake_deposit": stake_deposit}
+
+
+def _mint_value(policies: list[str]) -> str:
+    return " + ".join(f"1 {policy}.{GOV_TOKEN}" for policy in policies)
+
+
+def prop3_build_command(*, cli: str, socket_path: str, magic: int, tx_in: str, collateral: str,
+                        scripts: dict[str, tuple[str, str]], deposit: int, action_file: str,
+                        change_address: str, out_file: str) -> list[str]:
+    """``transaction build`` for prop3: the cardano-node producer balances it and sizes the budgets."""
+    cmd = [cli, "conway", "transaction", "build", "--socket-path", socket_path, "--testnet-magic", str(magic),
+           "--tx-in", tx_in, "--tx-in-collateral", collateral,
+           "--mint", _mint_value([policy for _path, policy in scripts.values()])]
+    for role, (path, _policy) in scripts.items():
+        cmd += ["--mint-script-file", path, "--mint-redeemer-value", str(deposit) if role == "deposit" else "1"]
+    return cmd + ["--proposal-file", action_file, "--change-address", change_address, "--out-file", out_file]
+
+
+def vote_create_command(*, cli: str, action_tx: str, cold_vkey: str, out_file: str) -> list[str]:
+    return [cli, "conway", "governance", "vote", "create", "--yes", "--governance-action-tx-id", action_tx,
+            "--governance-action-index", "0", "--cold-verification-key-file", cold_vkey, "--out-file", out_file]
+
+
+def vote_build_command(*, cli: str, socket_path: str, magic: int, tx_in: str, collateral: str,
+                       script: tuple[str, str], vote_file: str, change_address: str, out_file: str) -> list[str]:
+    path, policy = script
+    return [cli, "conway", "transaction", "build", "--socket-path", socket_path, "--testnet-magic", str(magic),
+            "--tx-in", tx_in, "--tx-in-collateral", collateral, "--mint", _mint_value([policy]),
+            "--mint-script-file", path, "--mint-redeemer-value", "1", "--vote-file", vote_file,
+            "--witness-override", "2", "--change-address", change_address, "--out-file", out_file]
+
+
+def info_action_command(*, cli: str, deposit: int, stake_vkey: str, out_file: str) -> list[str]:
+    return [cli, "conway", "governance", "action", "create-info", "--testnet",
+            "--governance-action-deposit", str(deposit), "--deposit-return-stake-verification-key-file", stake_vkey,
+            "--anchor-url", GOV_ANCHOR[0], "--anchor-data-hash", GOV_ANCHOR[1], "--out-file", out_file]
+
+
+def _signed_bytes(path: Path) -> bytes:
+    return bytes.fromhex(json.loads(Path(path).read_text(encoding="utf-8"))["cborHex"])
+
+
+def _write_unbuilt(path: Path, reason: str) -> None:
+    Path(str(path) + ".unbuilt.json").write_text(
+        json.dumps({"measured": False, "reason": reason}, indent=2) + "\n", encoding="utf-8")
+
+
+def craft_gov_scriptcontext(*, runtime: dict, out_dir: Path, reference_node: str, target_node: str,
+                            fee: int = 2 * ADA, adoption_timeout: float = 240) -> dict[str, Any]:
+    """Honest setup (split + return-credential registration, plain proposal) on the producer,
+    then the forged pair (registration + plain proposal, never submitted) and the subjects
+    prop3 / vote (built against the confirmed live state, submitted later by the scenario).
+
+    A subject that cannot be built is recorded as ``measured: false`` with its reason next to
+    where its transaction would be (``subjects/<name>.tx.unbuilt.json``); nothing is substituted.
+    """
+    from scripts.runtime_cardano_measurement_calibration import (  # noqa: PLC0415
+        _containerized_cardano_workload, _controller_container, _query_utxo, _transaction_id, _wait_for_utxo,
+    )
+    from scripts.runtime_redeemer_container_live_controls import (  # noqa: PLC0415
+        _select_funding_input, _submit_reference_cli,
+    )
+    from scripts.runtime_transaction_array_arity import _funding_credentials  # noqa: PLC0415
+
+    controller = _controller_container()
+    if controller is None:
+        raise RuntimeError("the live block-apply bridge requires the installed Docker controller")
+    runtime_root = Path(str(runtime["runtime_root"]))
+    reference, target = find_node(runtime, reference_node), find_node(runtime, target_node)
+    magic = int(runtime["network_magic"])
+    socket_path = str(reference.get("container_socket_path") or "")
+    credential = _funding_credentials(runtime, runtime_root)[0]
+    address = credential["address"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    scripts_dir, keys_dir, subjects_dir = out_dir / "scripts", out_dir / "keys", out_dir / "subjects"
+    for directory in (scripts_dir, keys_dir, subjects_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    # The producer's own pool votes: its cold key hash is the ctx_votes literal.
+    pool_index = int(reference["host_slot_index"])
+    pool_hash = key_hash_from_vkey(producer_pool_dir(runtime_root, reference) / "cold.vkey")
+    cold_vkey, cold_skey = (f"/env/pools-keys/pool{pool_index}/cold.vkey", f"/env/pools-keys/pool{pool_index}/cold.skey")
+    prop3_scripts: dict[str, tuple[str, str]] = {}
+    for role, name in PROP3_OBSERVERS.items():
+        shutil.copyfile(GOV_FIXTURE_DIR / name, scripts_dir / name)
+        prop3_scripts[role] = (str(scripts_dir / name),
+                               script_policy_id(json.loads((scripts_dir / name).read_text(encoding="utf-8"))))
+    votes_live = parameterize_ctx_votes(json.loads((GOV_FIXTURE_DIR / VOTES_OBSERVER).read_text(encoding="utf-8")), pool_hash)
+    votes_script = scripts_dir / "ctx_votes-live.plutus"
+    votes_script.write_text(json.dumps(votes_live, indent=2) + "\n", encoding="utf-8")
+    votes_policy = script_policy_id(votes_live)
+
+    commands: list[list[str]] = []
+    record: dict[str, Any] = {
+        "recipe": GOV_SCRIPTCONTEXT_RECIPE, "funding_credential": credential["id"], "pool_key_hash": pool_hash,
+        "observers": {**{role: policy for role, (_p, policy) in prop3_scripts.items()}, "votes": votes_policy},
+        "ctx_votes_sha256": digest(votes_script), "cardano_cli_commands": commands, "subjects": {},
+    }
+
+    def run(cmd: list[str], timeout: float = 120) -> str:
+        commands.append(["cardano-cli", *cmd[1:]])
+        return _checked(cmd, timeout=timeout)
+
+    def submit_and_confirm(cli: str, signed: Path, label: str) -> str:
+        tx_id = _transaction_id(cli, signed)
+        commands.append(["cardano-cli", "conway", "transaction", "submit", "--tx-file", str(signed),
+                         "--socket-path", socket_path, "--testnet-magic", str(magic)])
+        submitted = _submit_reference_cli(cli, signed, socket_path=socket_path, network_magic=magic)
+        record.setdefault("setup", {})[label] = {"transaction_id": tx_id, "submit": submitted}
+        if submitted.get("http") != 202:
+            raise RuntimeError(f"{label} was not accepted by the producer: {submitted.get('body')}")
+        _, micros = _wait_for_utxo(cli=cli, socket_path=socket_path, network_magic=magic, address=address,
+                                   destination=out_dir / f"{label}-included-utxo.json", transaction_id=tx_id,
+                                   present=True, timeout_seconds=180)
+        record["setup"][label]["included_after_micros"] = micros
+        return tx_id
+
+    try:
+        with _containerized_cardano_workload(runtime_root=runtime_root, runtime=runtime, node=reference,
+                                             output_dir=out_dir, controller=controller) as (workload, _node):
+            cli = str(workload["support_binaries"]["cardano-cli"])
+            pparams = out_dir / "protocol-parameters.json"
+            run([cli, "conway", "query", "protocol-parameters", "--socket-path", socket_path,
+                 "--testnet-magic", str(magic), "--out-file", str(pparams)])
+            params = json.loads(pparams.read_text(encoding="utf-8"))
+            stake_deposit, gov_deposit = int(params["stakeAddressDeposit"]), int(params["govActionDeposit"])
+            record["deposits"] = {"stakeAddressDeposit": stake_deposit, "govActionDeposit": gov_deposit}
+
+            stake = {}
+            for name in ("h", "f"):  # h: honest return credential; f: registered inside the forged block
+                vkey, skey, cert = keys_dir / f"stake-{name}.vkey", keys_dir / f"stake-{name}.skey", out_dir / f"reg-{name}.cert"
+                run([cli, "conway", "stake-address", "key-gen", "--verification-key-file", str(vkey),
+                     "--signing-key-file", str(skey)])
+                run([cli, "conway", "stake-address", "registration-certificate", "--stake-verification-key-file",
+                     str(vkey), "--key-reg-deposit-amt", str(stake_deposit), "--out-file", str(cert)])
+                stake[name] = {"vkey": vkey, "skey": skey, "cert": cert, "hash": key_hash_from_vkey(vkey)}
+            actions = {}
+            for label, owner in (("h", "h"), ("prop3", "h"), ("f", "f")):
+                actions[label] = out_dir / f"info-{label}.action"
+                run(info_action_command(cli=cli, deposit=gov_deposit, stake_vkey=str(stake[owner]["vkey"]),
+                                        out_file=str(actions[label])))
+            record["return_credentials"] = {"honest": stake["h"]["hash"], "forged": stake["f"]["hash"]}
+
+            utxos = _query_utxo(cli=cli, socket_path=socket_path, network_magic=magic, address=address,
+                                destination=out_dir / "funding-before.json")
+            needed = 3 * gov_deposit + stake_deposit + 200 * ADA
+            funding_input, funding_lovelace = _select_funding_input(utxos, minimum_lovelace=needed)
+            plan = gov_split_plan(funding_lovelace=funding_lovelace, stake_deposit=stake_deposit,
+                                  gov_deposit=gov_deposit, fee=fee)
+            split_body, split_signed = out_dir / "split.body", out_dir / "split.signed"
+            cmd = [cli, "conway", "transaction", "build-raw", "--tx-in", funding_input]
+            for output in plan["outputs"]:
+                cmd += ["--tx-out", f"{address}+{output['lovelace']}"]
+            run(cmd + ["--certificate-file", str(stake["h"]["cert"]), "--fee", str(fee), "--out-file", str(split_body)])
+            run([cli, "conway", "transaction", "sign", "--tx-body-file", str(split_body), "--signing-key-file",
+                 credential["container_skey"], "--signing-key-file", str(stake["h"]["skey"]),
+                 "--testnet-magic", str(magic), "--out-file", str(split_signed)])
+            split_id = submit_and_confirm(cli, split_signed, "split_and_register")
+            outref = {o["role"]: (f"{split_id}#{i}", o["lovelace"]) for i, o in enumerate(plan["outputs"])}
+            record["split"] = {"transaction_id": split_id, "funding_input": funding_input, "plan": plan,
+                               "outputs": {role: ref for role, (ref, _l) in outref.items()}}
+
+            def plain_tx(label: str, role: str, *, cert: Path | None, action: Path | None, skeys: list[str]) -> Path:
+                tx_in, lovelace = outref[role]
+                deposit = (stake_deposit if cert else 0) + (gov_deposit if action else 0)
+                body, signed = out_dir / f"{label}.body", out_dir / f"{label}.signed"
+                cmd = [cli, "conway", "transaction", "build-raw", "--tx-in", tx_in,
+                       "--tx-out", f"{address}+{lovelace - fee - deposit}"]
+                if cert:
+                    cmd += ["--certificate-file", str(cert)]
+                if action:
+                    cmd += ["--proposal-file", str(action)]
+                run(cmd + ["--fee", str(fee), "--out-file", str(body)])
+                sign = [cli, "conway", "transaction", "sign", "--tx-body-file", str(body)]
+                for key in skeys:
+                    sign += ["--signing-key-file", key]
+                run(sign + ["--testnet-magic", str(magic), "--out-file", str(signed)])
+                return signed
+
+            pplain_h = plain_tx("pplain-h", "pplain_h", cert=None, action=actions["h"], skeys=[credential["container_skey"]])
+            pplain_id = submit_and_confirm(cli, pplain_h, "plain_proposal")
+            record["gov_action"] = {"transaction_id": pplain_id, "index": 0}
+
+            # Amaru must hold the honest setup before it is asked about prop3 / vote.
+            confirmed_tip = producer_tip(reference, magic)
+            record["setup_tip"] = confirmed_tip
+            target_log = Path(str(target.get("log_path") or ""))
+
+            def target_holds_setup():
+                tips = amaru_tips(_read_text(target_log))
+                if confirmed_tip and tips and max(t["block"] for t in tips) >= int(confirmed_tip["block"]):
+                    return tips[-1]
+                return None
+
+            not_ready = None
+            if not confirmed_tip:
+                not_ready = "the producer tip after the honest setup could not be read"
+            else:
+                try:
+                    record["target_adoption"] = {"adopted": True, "tip": _wait(
+                        target_holds_setup, timeout=adoption_timeout, interval=2,
+                        what=f"{target_node} to adopt the block holding the honest setup")}
+                except TimeoutError as exc:
+                    not_ready = f"{target_node} did not adopt the honest setup chain: {exc}"
+            if not_ready:
+                record["target_adoption"] = {"adopted": False, "note": not_ready}
+
+            # Forged block body: reg.tx + pplain.tx shapes, never submitted.
+            reg_f = plain_tx("reg-f", "reg_f", cert=stake["f"]["cert"], action=None,
+                             skeys=[credential["container_skey"], str(stake["f"]["skey"])])
+            pplain_f = plain_tx("pplain-f", "pplain_f", cert=None, action=actions["f"], skeys=[credential["container_skey"]])
+            reg_desc, pplain_desc = describe_gov_transaction(_signed_bytes(reg_f)), describe_gov_transaction(_signed_bytes(pplain_f))
+            problem = check_setup_pair(reg_desc, pplain_desc, stake_deposit=stake_deposit, deposit=gov_deposit)
+            if problem:
+                raise RuntimeError(f"forged setup pair: {problem}")
+            record["crafted"] = {
+                "reg": {"transaction_id": _transaction_id(cli, reg_f), "file": str(reg_f), "describe": reg_desc},
+                "pplain": {"transaction_id": _transaction_id(cli, pplain_f), "file": str(pplain_f), "describe": pplain_desc},
+            }
+            record["transaction_files"] = [str(reg_f), str(pplain_f)]
+
+            # Subjects.
+            def subject(name: str, build: Callable[[], Path], check: Callable[[dict], str | None]) -> None:
+                destination = subjects_dir / f"{name}.tx"
+                if not_ready:
+                    _write_unbuilt(destination, not_ready)
+                    record["subjects"][name] = {"measured": False, "reason": not_ready}
+                    return
+                try:
+                    signed = build()
+                    desc = describe_gov_transaction(_signed_bytes(signed))
+                    problem = check(desc)
+                    if problem:
+                        raise RuntimeError(problem)
+                    shutil.copyfile(signed, destination)
+                    record["subjects"][name] = {"measured": True, "file": str(destination), "describe": desc,
+                                                "transaction_id": _transaction_id(cli, signed),
+                                                "sha256": digest(destination)}
+                except Exception as exc:  # noqa: BLE001 - recorded, never substituted
+                    reason = f"{name} could not be built on the live chain: {exc}"[:1500]
+                    _write_unbuilt(destination, reason)
+                    record["subjects"][name] = {"measured": False, "reason": reason}
+
+            def build_prop3() -> Path:
+                body, signed = out_dir / "prop3.body", out_dir / "prop3.signed"
+                run(prop3_build_command(cli=cli, socket_path=socket_path, magic=magic, tx_in=outref["prop3"][0],
+                                        collateral=outref["prop3_collateral"][0], scripts=prop3_scripts,
+                                        deposit=gov_deposit, action_file=str(actions["prop3"]),
+                                        change_address=address, out_file=str(body)))
+                run([cli, "conway", "transaction", "sign", "--tx-body-file", str(body), "--signing-key-file",
+                     credential["container_skey"], "--testnet-magic", str(magic), "--out-file", str(signed)])
+                return signed
+
+            def build_vote() -> Path:
+                vote_file, body, signed = out_dir / "vote.file", out_dir / "vote.body", out_dir / "vote.signed"
+                run(vote_create_command(cli=cli, action_tx=pplain_id, cold_vkey=cold_vkey, out_file=str(vote_file)))
+                run(vote_build_command(cli=cli, socket_path=socket_path, magic=magic, tx_in=outref["vote"][0],
+                                       collateral=outref["vote_collateral"][0], script=(str(votes_script), votes_policy),
+                                       vote_file=str(vote_file), change_address=address, out_file=str(body)))
+                run([cli, "conway", "transaction", "sign", "--tx-body-file", str(body), "--signing-key-file",
+                     credential["container_skey"], "--signing-key-file", cold_skey, "--testnet-magic", str(magic),
+                     "--out-file", str(signed)])
+                return signed
+
+            subject("prop3", build_prop3,
+                    lambda d: check_prop3_subject(d, deposit=gov_deposit, return_account=stake["h"]["hash"]))
+            subject("vote", build_vote,
+                    lambda d: check_vote_subject(d, pool=pool_hash, action_tx=pplain_id, policy=votes_policy))
+    finally:
+        for secret in keys_dir.glob("*.skey"):  # ephemeral stake keys never leave the run as evidence
+            secret.unlink(missing_ok=True)
+    return record
+
+
 def write_forge_plan(*, runtime: dict, out_dir: Path, producer_node: str, transaction_files: list[str]) -> dict:
     try:
         from scripts import praos_kes  # noqa: PLC0415

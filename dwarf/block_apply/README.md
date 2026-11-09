@@ -32,13 +32,31 @@ Amaru target and a cardano-node producer/reference:
 Evidence: `outputs/block-apply-bridge/` (bridge-state.json, forge-plan.json, proxy/forge-record.json,
 pots/*.json) and each step's `result.json`.
 
+## Recipe `gov-scriptcontext`
+
+Rebuilds the `antithesis/.../fixture/gov_scriptcontext` sequence (97b0 re-bake UTxOs) on the run's
+own devnet, from the producer (cardano-node) with cardano-cli in its image:
+
+1. Honest setup, submitted and confirmed: a split of the genesis funding that also registers the
+   proposal return credential (reg.tx shape), then a plain Info proposal (pplain.tx shape). The Amaru
+   target must log a `tip.adopt` at or above the producer tip that holds them.
+2. Subjects (`outputs/build-segments/subjects/{prop3,vote}.tx`, built with `transaction build`
+   against that state): prop3 = an Info proposal + the `ctx_proposal_is_info`,
+   `ctx_proposal_deposit` (redeemer = live `govActionDeposit`) and `ctx_num_proposals` MINT
+   observers; vote = the producer pool's StakePool Yes vote on the honest proposal + `ctx_votes`,
+   whose pool literal is replaced in place by that pool's cold key hash. Each is checked against
+   the fixture shape; one that cannot be built gets `<name>.tx.unbuilt.json` (measured false +
+   reason) and `runtime_tx_submit_differential` records it as not measured.
+3. Forged block body (never submitted): a second registration + a plain Info proposal returning to
+   it, in that order (the reg.tx + pplain.tx block of the original scenario).
+
+The scenario submits the subjects (target first, then the cardano-node reference through cardano-cli
+on its own socket) before `serve_crafted_block` forks the target onto the forged chain.
+
 ## Not yet live-supported
 
-- Recipes other than `isvalid-false-donation` (the other block-apply scenarios still name the
-  campaign scripts below and stay `deferred`/legacy).
-- `conway-gov-scriptcontext-proposals-votes-fidelity`: its fixture transactions are now staged into
-  the run dir, but they spend UTxOs of the 97b0 re-bake; a live rebuild of reg/pplain/prop3/vote is
-  needed before its submit differential can say anything about ScriptContext.
+- Recipes other than `isvalid-false-donation` and `gov-scriptcontext` (the other block-apply
+  scenarios still name the campaign scripts below and stay `deferred`/legacy).
 
 ## Legacy campaign scripts (kept for the scenarios that still name them)
 - build_block_segments.py, build_*.py — body builders from the forge-work campaign

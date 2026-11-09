@@ -72,53 +72,33 @@
     },
     {
       "primitive": "build_block_segments",
+      "recipe": "gov-scriptcontext",
+      "reference_node": "node2",
+      "target_node": "node1",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "output_dir": "outputs/build-segments",
-      "tx_file": "fixture/gov_scriptcontext/reg.tx",
       "label": "gov-votes-setup",
-      "extra_tx_files": [
-        "fixture/gov_scriptcontext/pplain.tx"
-      ]
+      "note": "built live from the devnet's own genesis funding (no fixture UTxOs): an honest split that also registers the proposal return credential (reg.tx shape) and an honest plain Info proposal (pplain.tx shape) are submitted to the cardano-node producer and confirmed, and the Amaru target must adopt them; prop3 (Info proposal + the ctx_proposal_is_info / ctx_proposal_deposit / ctx_num_proposals MINT observers reading tx.proposal_procedures) and vote (the producer pool's StakePool Yes vote on that proposal + the ctx_votes MINT observer re-parameterised with that pool) are built against the confirmed state as the submit subjects; a second registration + plain proposal pair, never submitted, is the forged block body. A subject that cannot be built is recorded measured:false with its reason."
     },
     {
       "primitive": "forge_block",
+      "reference_node": "node2",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "output_dir": "outputs/forge-block",
-      "body_segments_path": "outputs/build-segments/body-segments.json",
-      "forced_nonce": "3a5e36011eec01657c4478a9b6f021d8d0eced3232b2796b79f40d0cd0620ebe",
-      "pool_keys_dir": "block_apply/keys-97b0",
-      "slot": 1209,
-      "prev_hash": "181e9b48af913dd4823f9a44a7460c90b61f55e6f51f4a8050fe2c4f0c642d37",
-      "block_height": 214
-    },
-    {
-      "primitive": "assemble_blockjson",
-      "output_dir": "outputs/assemble",
-      "forge_result_path": "outputs/forge-block/forge-result.json"
+      "note": "forged from the devnet producer's own next empty leader block after arming (its slot, VRF and opcert kept; body = the registration + plain proposal pair; KES re-signed with the pool's own key); descendants re-parented"
     }
   ],
   "load": [
-    {
-      "primitive": "serve_crafted_block",
-      "output_dir": "outputs/serve",
-      "block_json_path": "outputs/assemble/block.json",
-      "bind_port": 3001
-    },
-    {
-      "primitive": "block_apply_differential",
-      "output_dir": "outputs/setup-apply",
-      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
-      "target_node": "node1",
-      "expected_outcome": "adopt",
-      "watch_seconds": 120
-    },
     {
       "primitive": "runtime_tx_submit_differential",
       "output_dir": "outputs/obs-proposals",
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
       "reference_node": "node2",
-      "tx_file": "fixture/gov_scriptcontext/prop3.tx",
+      "tx_file": "outputs/build-segments/subjects/prop3.tx",
       "expected_target": "accept",
-      "expected_reference": "accept"
+      "expected_reference": "accept",
+      "note": "prop3 built live; submitted to the Amaru target's submit-API first, then to the cardano-node reference through cardano-cli on its own socket, before the forged block forks the target"
     },
     {
       "primitive": "runtime_tx_submit_differential",
@@ -126,9 +106,26 @@
       "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
       "target_node": "node1",
       "reference_node": "node2",
-      "tx_file": "fixture/gov_scriptcontext/vote.tx",
+      "tx_file": "outputs/build-segments/subjects/vote.tx",
       "expected_target": "accept",
-      "expected_reference": "accept"
+      "expected_reference": "accept",
+      "note": "vote built live; submitted to the Amaru target's submit-API first, then to the cardano-node reference through cardano-cli on its own socket, before the forged block forks the target"
+    },
+    {
+      "primitive": "serve_crafted_block",
+      "output_dir": "outputs/serve",
+      "target_node": "node1",
+      "reference_node": "node2",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json"
+    },
+    {
+      "primitive": "block_apply_differential",
+      "output_dir": "outputs/setup-apply",
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1",
+      "expected_outcome": "adopt",
+      "watch_seconds": 240,
+      "reference_node": "node2"
     },
     {
       "primitive": "runtime_multi_node_observation",

@@ -239,7 +239,8 @@ def run_redeemer_container_differential(
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FIXTURE_PACKAGE = _REPO_ROOT / "antithesis" / "cardano_amaru_adversarial"
-_UNKNOWN_INPUT_MARKERS = ("badinputsutxo", "bad inputs", "unknown input", "inputs not found", "missing input")
+_UNKNOWN_INPUT_MARKERS = ("badinputsutxo", "bad inputs", "unknown input", "inputs not found", "missing input",
+                          "unknown (but required) transaction input")
 
 
 def stage_fixture(run_dir: Path, tx_file: str) -> tuple[Path, dict]:
@@ -273,15 +274,128 @@ def _unknown_inputs(response: dict) -> bool:
     return any(marker in body for marker in _UNKNOWN_INPUT_MARKERS)
 
 
+_CLI_ALREADY_SPENT_MARKERS = ("badinputsutxo", "bad inputs", "already", "all inputs are spent")
+
+
+def resolve_cli_submission(response: dict, *, tx_in_mempool: bool | None, tx_on_chain: bool | None) -> dict:
+    """A cardano-node's own outcome for one ``cardano-cli transaction submit``.
+
+    The target is submitted first and relays what it accepts, so the reference may already hold
+    the exact transaction when the CLI reaches it ("inputs spent"). Its mempool or its chain then
+    holding that transaction id is the reference's own acceptance; otherwise the rejection stands.
+    A submission whose node response was never observed is ``not-measured``.
+    """
+    resolved = dict(response)
+    code = int(response.get("http") or 0)
+    if not response.get("node_response_observed") or code == 0:
+        resolved["outcome"] = "not-measured"
+    elif 200 <= code < 300:
+        resolved["outcome"] = "accept"
+    else:
+        resolved["outcome"] = "reject"
+        body = str(response.get("body") or "").lower()
+        if any(marker in body for marker in _CLI_ALREADY_SPENT_MARKERS) and (tx_in_mempool or tx_on_chain):
+            resolved.update({"outcome": "accept", "accepted_via": "mempool" if tx_in_mempool else "chain"})
+    resolved.setdefault("accepted_via", None)
+    return resolved
+
+
+def _runtime_nodes(meta: dict) -> dict:
+    nodes: dict = {}
+    for key in ("nodes", "haskell_nodes", "amaru_nodes"):
+        raw = meta.get(key) or []
+        entries = raw.values() if isinstance(raw, dict) else raw
+        for node in entries:
+            ident = node.get("id") or node.get("name") if isinstance(node, dict) else None
+            if ident:
+                nodes[ident] = {**nodes.get(ident, {}), **node}
+    return nodes
+
+
+def _query_utxo_by_tx_in(cli: str, socket_path: str, magic: int, tx_in: str, destination: Path) -> dict:
+    import subprocess  # noqa: PLC0415
+
+    result = subprocess.run([cli, "query", "utxo", "--tx-in", tx_in, "--socket-path", socket_path,
+                             "--testnet-magic", str(magic), "--out-file", str(destination)],
+                            capture_output=True, text=True, check=False, timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+    return json.loads(destination.read_text(encoding="utf-8"))
+
+
+def _submit_via_cardano_cli(*, run_dir: Path, runtime_metadata_path: Path, node_id: str, tx_path: Path,
+                            out_dir: Path) -> dict:
+    """Submit to a cardano-node that has no submit-API through cardano-cli on its own socket."""
+    import shutil  # noqa: PLC0415
+
+    try:
+        from scripts.runtime_block_apply_bridge import find_node  # noqa: PLC0415
+        from scripts.runtime_cardano_measurement_calibration import (  # noqa: PLC0415
+            _containerized_cardano_workload, _controller_container, _transaction_id,
+        )
+        from scripts.runtime_redeemer_container_live_controls import (  # noqa: PLC0415
+            _query_reference_mempool, _submit_reference_cli,
+        )
+
+        runtime = json.loads(Path(runtime_metadata_path).read_text(encoding="utf-8"))
+        node = find_node(runtime, node_id)
+        controller = _controller_container()
+        if controller is None:
+            return {"http": 0, "outcome": "not-measured", "via": "cardano-cli",
+                    "note": "no Docker controller to run cardano-cli beside the node"}
+        socket_path, magic = str(node.get("container_socket_path") or ""), int(runtime["network_magic"])
+        staged = out_dir / f"cli-{tx_path.name}"
+        shutil.copyfile(tx_path, staged)
+        with _containerized_cardano_workload(runtime_root=Path(str(runtime["runtime_root"])), runtime=runtime,
+                                             node=node, output_dir=out_dir, controller=controller) as (workload, _n):
+            cli = str(workload["support_binaries"]["cardano-cli"])
+            tx_id = _transaction_id(cli, staged)
+            response = _submit_reference_cli(cli, staged, socket_path=socket_path, network_magic=magic)
+            in_mempool = on_chain = None
+            if any(m in str(response.get("body") or "").lower() for m in _CLI_ALREADY_SPENT_MARKERS):
+                in_mempool = _query_reference_mempool(cli=cli, socket_path=socket_path, network_magic=magic,
+                                                      transaction_id=tx_id)
+                try:
+                    on_chain = bool(_query_utxo_by_tx_in(cli, socket_path, magic, f"{tx_id}#0",
+                                                         out_dir / "cli-tx-on-chain.json"))
+                except Exception:  # noqa: BLE001
+                    on_chain = None
+        resolved = resolve_cli_submission(response, tx_in_mempool=in_mempool, tx_on_chain=on_chain)
+        resolved.update({"via": "cardano-cli", "transaction_id": tx_id, "tx_in_mempool": in_mempool,
+                         "tx_on_chain": on_chain})
+        return resolved
+    except Exception as exc:  # noqa: BLE001 - the node's outcome stays visibly unmeasured
+        return {"http": 0, "outcome": "not-measured", "via": "cardano-cli",
+                "error": f"{type(exc).__name__}: {exc}"[:800]}
+
+
 class RuntimeTxSubmitDifferential(LoadPrimitive):
-    """Submit a fixture tx to the target + reference submit-APIs; record each node's outcome."""
+    """Submit a tx to the target + reference; record each node's outcome.
+
+    Submit-API nodes are posted to over HTTP; a cardano-node without one is submitted to through
+    cardano-cli on its own socket. The target is always submitted first. A transaction the run
+    could not build live (``<tx_file>.unbuilt.json``) is recorded as not measured, with its reason.
+    """
     primitive_name = "runtime_tx_submit_differential"
 
     def run(self, handle, rng):
         rd = _run_dir(handle)
         out = rd / self.params.get("output_dir", f"outputs/{self.primitive_name}")
         out.mkdir(parents=True, exist_ok=True)
-        tx_path, fixture = stage_fixture(rd, str(self.params["tx_file"]))
+        tx_file = str(self.params["tx_file"])
+        unbuilt = rd / (tx_file + ".unbuilt.json")
+        if not Path(tx_file).is_absolute() and not (rd / tx_file).is_file() and unbuilt.is_file():
+            reason = str(json.loads(unbuilt.read_text(encoding="utf-8")).get("reason") or "not built")
+            result = {"primitive": self.primitive_name, "tx_file": str(rd / tx_file), "measured": False,
+                      "reason": reason, "target_node": self.params.get("target_node"),
+                      "reference_node": self.params.get("reference_node"),
+                      "target": {"outcome": "not-measured"}, "reference": {"outcome": "not-measured"},
+                      "divergent": None, "expected_target": self.params.get("expected_target"),
+                      "expected_reference": self.params.get("expected_reference"),
+                      "inputs_unknown_on_live_chain": {"target": False, "reference": False}}
+            (out / "result.json").write_text(json.dumps(result, indent=2))
+            return result
+        tx_path, fixture = stage_fixture(rd, tx_file)
         raw = tx_path.read_bytes()
         # accept either a raw CBOR tx (.cbor) or a cardano-cli text envelope ({"cborHex": ...})
         payload = raw
@@ -299,9 +413,7 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
             if not rmp.is_absolute():
                 rmp = rd / rmp
             try:
-                meta = json.loads(rmp.read_text(encoding="utf-8"))
-                raw = meta.get("nodes") or meta.get("haskell_nodes") or []
-                nodes = {n.get("id") or n.get("name"): n for n in raw} if isinstance(raw, list) else raw
+                nodes = _runtime_nodes(json.loads(rmp.read_text(encoding="utf-8")))
             except Exception:  # noqa: BLE001
                 nodes = {}
 
@@ -312,11 +424,24 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
                 return u if _SUBMIT_PATH in u else u.rstrip("/") + _SUBMIT_PATH
             return _node_submit_url(nodes, self.params.get(f"{role}_node", ""))
 
-        target_url, ref_url = url_for("target"), url_for("reference")
+        def submit(role):
+            url = url_for(role)
+            if url:
+                return {"url": url, **_submit(url, payload)}
+            node_id = str(self.params.get(f"{role}_node") or "")
+            node = nodes.get(node_id) or {}
+            if rmp and node.get("impl") == "cardano-node" and node.get("container_socket_path"):
+                return {"url": None, **_submit_via_cardano_cli(run_dir=rd, runtime_metadata_path=rmp, node_id=node_id,
+                                                               tx_path=tx_path, out_dir=out)}
+            return {"url": None, "outcome": "unknown", "note": f"no {role} submit-api or cardano-cli socket resolved"}
+
+        target_result = submit("target")  # the target first; it relays what it accepts
+        reference_result = submit("reference")
         result = {"primitive": self.primitive_name, "tx_file": str(tx_path),
                   "target_node": self.params.get("target_node"), "reference_node": self.params.get("reference_node"),
-                  "target": {"url": target_url, **(_submit(target_url, payload) if target_url else {"outcome": "unknown", "note": "no target submit-api resolved"})},
-                  "reference": {"url": ref_url, **(_submit(ref_url, payload) if ref_url else {"outcome": "unknown", "note": "no reference submit-api resolved"})}}
+                  "target": target_result, "reference": reference_result}
+        result["measured"] = all(r.get("outcome") in ("accept", "reject", "crash")
+                                 for r in (target_result, reference_result))
         result["divergent"] = result["target"].get("outcome") != result["reference"].get("outcome")
         result["fixture"] = fixture
         result["expected_target"] = self.params.get("expected_target")
@@ -799,6 +924,7 @@ class SubmitOutcomeMatches(AssertionPrimitive):
             rows.append({"result_path": str(path.relative_to(rd)), "tx_file": observed.get("tx_file"),
                          "expected": {"target": exp_t, "reference": exp_r},
                          "observed": {"target": obs_t, "reference": obs_r},
+                         "measured": observed.get("measured"), "reason": observed.get("reason"),
                          "inputs_unknown_on_live_chain": observed.get("inputs_unknown_on_live_chain"),
                          "match": obs_t == exp_t and obs_r == exp_r})
         ok = bool(rows) and all(row["match"] for row in rows)
@@ -814,6 +940,8 @@ class SubmitOutcomeMatches(AssertionPrimitive):
                 "; ".join(f"{row['tx_file']}: expected {row['expected']}, observed {row['observed']}"
                           + (" (inputs unknown on the live chain: stale fixture)"
                              if any((row.get("inputs_unknown_on_live_chain") or {}).values()) else "")
+                          + (f" (not measured: {row['reason']})"
+                             if row.get("measured") is False and row.get("reason") else "")
                           for row in mismatched)),
         }
 
