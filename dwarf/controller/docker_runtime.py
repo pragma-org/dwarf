@@ -5074,6 +5074,15 @@ class DockerRuntime:
             }
         if not isinstance(deployment, dict):
             raise DockerRuntimeError("plan has no complete server-owned deployment")
+        if action == "deploy" and not before and network_before is None and current.exists():
+            # F109: every container and the network are gone but the retained runtime stayed
+            # (removed outside the controller). The dashboard reports it absent, so remove is
+            # refused; archive the runtime like a removal would and deploy afresh.
+            orphaned = parent / f"orphaned-{execution_id}"
+            if orphaned.exists():
+                shutil.rmtree(orphaned)
+            current.rename(orphaned)
+            retained_config = None
         if action == "deploy" and (before or current.exists()):
             raise DockerRuntimeError("topology is not absent; create a repair or redeploy plan")
         if action == "repair":
