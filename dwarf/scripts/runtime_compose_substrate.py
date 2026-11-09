@@ -239,6 +239,37 @@ def _pin_cardano_experimental_protocols(
     }
 
 
+def _pin_cardano_genesis_hashes(*, config_path: Path, cardano_cli: str, run=None) -> dict:
+    """Pin each genesis file's hash in a generated devnet config (F134, decision 2026-11-09 2a).
+
+    Run after every genesis rewrite. Shelley-based hashes are blake2b-256 of the file bytes (what
+    cardano-node verifies); Byron's is the canonical-JSON hash, taken from cardano-cli. A hash that
+    cannot be computed is reported, never guessed.
+    """
+    import hashlib
+
+    run = run or run_command
+    body = json.loads(config_path.read_text(encoding="utf-8"))
+    pinned, unpinned = [], {}
+    for era in ("Byron", "Shelley", "Alonzo", "Conway"):
+        name = body.get(f"{era}GenesisFile")
+        if not name:
+            continue
+        genesis = Path(name) if Path(name).is_absolute() else config_path.parent / name
+        if era == "Byron":
+            result = run([cardano_cli, "byron", "genesis", "print-genesis-hash", "--genesis-json", str(genesis)])
+            digest = (result.stdout or "").strip()
+            if result.returncode != 0 or len(digest) != 64:
+                unpinned[f"{era}GenesisHash"] = (result.stderr or result.stdout or "no output").strip()[:200]
+                continue
+        else:
+            digest = hashlib.blake2b(genesis.read_bytes(), digest_size=32).hexdigest()
+        body[f"{era}GenesisHash"] = digest
+        pinned.append(f"{era}GenesisHash")
+    config_path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    return {"pinned": sorted(pinned), "unpinned": unpinned}
+
+
 def _apply_cardano_config_policies(*, config_path: Path, nodes: list[dict], explicit=None) -> dict:
     """Apply every version-derived cardano-node configuration policy to a generated config.
 
@@ -1680,6 +1711,12 @@ def _compose_substrate_docker(
             override=plan["kes_genesis_override"],
         )
 
+    genesis_hash_pins = None
+    if not public_network and support.get("cardano-cli") and (env_root / "configuration.yaml").is_file():
+        # F134: after every genesis rewrite above (start times, older-node shape, KES, Amaru bootstrap).
+        genesis_hash_pins = _pin_cardano_genesis_hashes(
+            config_path=env_root / "configuration.yaml", cardano_cli=support["cardano-cli"])
+
     compose_body = _docker_compose_body(
         compose_project=docker_project,
         nodes=plan["nodes"],
@@ -1772,6 +1809,7 @@ def _compose_substrate_docker(
         "generated_workload_funding": generated_workload_funding,
         "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,
+        "genesis_hash_pins": genesis_hash_pins,
         "nodes": metadata_nodes,
         "haskell_nodes": [node for node in metadata_nodes if node["impl"] == "cardano-node"],
         "amaru_nodes": [node for node in metadata_nodes if node["impl"] == "amaru"],
@@ -1864,6 +1902,7 @@ def _compose_substrate_docker(
         ),
         "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,
+        "genesis_hash_pins": genesis_hash_pins,
         "cardano_chain_progress_gate": chain_progress_gate,
         "amaru_chain_progress_gate": amaru_progress_gate,
         "public_network_assets": public_assets,
