@@ -7532,6 +7532,7 @@ _No authored scenario example found._
 | `output_dir` | `string` | `yes` | - |
 | `runtime_metadata_path` | `string` | `no` | - |
 | `skew_seconds` | `integer` | `yes` | - |
+| `skew_tolerance_seconds` | `number` | `no` | - |
 | `target_node` | `string` | `yes` | - |
 | `timeout_seconds` | `number` | `no` | - |
 

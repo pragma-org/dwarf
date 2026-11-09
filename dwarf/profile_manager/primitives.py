@@ -6310,6 +6310,8 @@ class RuntimeTimeSkew(LoadPrimitive):
         }
         if "libfaketime_path" in self.params:
             config_body["libfaketime_path"] = str(self.params["libfaketime_path"])
+        if "skew_tolerance_seconds" in self.params:
+            config_body["skew_tolerance_seconds"] = float(self.params["skew_tolerance_seconds"])
         config_path.write_text(json.dumps(config_body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         command = build_runtime_time_skew_command(config_path=config_path)
 
