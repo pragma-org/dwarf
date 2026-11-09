@@ -62,7 +62,9 @@ def test_chainsync_command_uses_the_pallas_client_and_the_given_endpoint(tmp_pat
     seen = {}
     monkeypatch.setattr(rc, "run", lambda args, **kw: seen.setdefault("args", args))
     rc.run_chainsync_fetch(rc.PROFILE_A_CONFIG, 3001, "5.ab", tmp_path, host="10.1.0.5")
-    assert seen["args"][2:] == ["/tools/dwarf-amaru-runtime-chainsync", "10.1.0.5:3001", rc.PROFILE_A_CONFIG.network_magic, "5.ab", str(tmp_path)]
+    # Two headers per point, as Amaru's fetch-chain-headers (BOOTSTRAP_HEADERS_PER_POINT) wrote;
+    # the burst and multi-peer checks count exactly two.
+    assert seen["args"][2:] == ["/tools/dwarf-amaru-runtime-chainsync", "10.1.0.5:3001", rc.PROFILE_A_CONFIG.network_magic, "5.ab", str(tmp_path), "2"]
 
 
 def test_blockfetch_command_defaults_to_loopback_and_accepts_an_endpoint(monkeypatch):

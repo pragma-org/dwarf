@@ -551,8 +551,11 @@ def run_blockfetch(config: RuntimeConfig, peer_port: int, from_point: str, to_po
 
 
 def run_chainsync_fetch(config: RuntimeConfig, peer_port: int, point: str, output_dir: Path, *, timeout_seconds=6,
-                        host: str | None = None):
-    """Fetch headers after ``point`` with the pallas chain-sync client; writes ``header.*.cbor``."""
+                        host: str | None = None, max_headers: int = 2):
+    """Fetch headers after ``point`` with the pallas chain-sync client; writes ``header.*.cbor``.
+
+    ``max_headers`` defaults to two per point, the count Amaru's fetch-chain-headers wrote.
+    """
     endpoint_host, endpoint_port = (host, peer_port) if host else peer_endpoint(config, peer_port)
     return run(
         [
@@ -563,6 +566,7 @@ def run_chainsync_fetch(config: RuntimeConfig, peer_port: int, point: str, outpu
             config.network_magic,
             point,
             str(output_dir),
+            str(int(max_headers)),
         ],
         timeout=timeout_seconds + 5,
     )
