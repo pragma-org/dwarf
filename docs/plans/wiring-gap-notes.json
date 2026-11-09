@@ -233,5 +233,12 @@
   "status": "review",
   "cause": "the scenario ran and an assertion failed; decide whether the node, the scenario or the assertion is wrong",
   "fix": null
- }
+ },
+ "followups": [
+  {
+   "id": "plutus-tap-samples",
+   "priority": "after scenarios work",
+   "note": "The 4 plutus-onchain differentials pass, but their resolved taps recorded zero samples, so the plutus-execution rows in node-measurements-v1.yaml stay missing. Debug the tap/resolver path; do not add taps per scenario (the resolver attaches them)."
+  }
+ ]
 }

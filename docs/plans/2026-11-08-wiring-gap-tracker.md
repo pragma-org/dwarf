@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-08 22:00 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-08 22:10 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,7 +8,7 @@ Generated 2026-11-08 22:00 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 3 |
-| fail | 38 |
+| fail | 41 |
 | pass | 60 |
 | prepare-failed | 13 |
 
@@ -19,10 +19,11 @@ Generated 2026-11-08 22:00 EST from the campaign ledger and the run bundles. Han
 | rerun-pending | bundle-tool fixtures | 1 |
 | rerun-pending | container port faults | 4 |
 | investigate | checkpoint evidence | 1 |
+| investigate | ledger differential controls | 1 |
 | investigate | profile prepare failures | 15 |
 | open | CBOR dataset | 1 |
 | open | LSQ extract scenario | 1 |
-| open | block-apply bridge | 1 |
+| open | block-apply bridge | 3 |
 | open | host-model helpers on container profiles | 3 |
 | review | profile-a behaviour verdicts | 1 |
 | review | review list | 2 |
@@ -71,6 +72,13 @@ Cause: checkpoint wrote 155 entries, but health_after_resume reports every node 
 Fix: check the resume health probe against compose substrates
 
 - `runtime-substrate-checkpoint-resume-recovers-example-smoke` (fail, run 20261109T003404Z-b8acbc59): substrate_checkpoint_recorded_clean: expected runtime_substrate_checkpoint to emit a non-empty checkpoint and restart the substrate cleanly
+
+## investigate: ledger differential controls
+
+Cause: controls included on both nodes, but 'one or more live outcomes are unavailable or inconclusive'; reconciled_control_inclusion_count=0
+Fix: F97d may cover it; re-check after deploy, then read the outcome records
+
+- `ledger-submit-empty-redeemers-container-differential-amaru-cardano-node` (fail, run 20261109T030444Z-3a4b699c): redeemer_container_differential_matches: fresh ledger-control evidence is incomplete or inconclusive
 
 ## investigate: profile prepare failures
 
@@ -137,6 +145,12 @@ Cause: forge_block and serve_crafted_block are "deferred" stubs (external cod-fo
 Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply scenarios are outside the campaign for the same reason
 
 - `conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node` (fail, run 20261109T005441Z-b4582ddd): runtime_tx_submit_differential: [Errno 2] No such file or directory: '/var/dwarf/runs/20261109T005441Z-b4582ddd/fixture/gov_scriptcontext/prop3.tx'
+- `ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node` (fail, run 20261109T025734Z-9b44faec): fail
+  - Cause: same deferred forge/serve bridge
+  - Fix: same as above
+- `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node` (fail, run 20261109T030110Z-b7f049cf): fail
+  - Cause: same deferred forge/serve bridge
+  - Fix: same as above
 
 ## open: host-model helpers on container profiles
 
@@ -214,11 +228,12 @@ Fix: none yet
 - `runtime-substrate-plutus-phase2-exunits-cost-model-string-undercharge-mixed-amaru` (fail, run 20261108T191612Z-0208dcc1): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
 - `runtime-substrate-plutus-phase2-isvalid-mismatch-rejected-example-smoke` (fail, run 20261108T192051Z-ff1c394f): plutus_phase2_isvalid_mismatch_rejected: expected phase-2 IsValid mismatch to be rejected with ValidationTagMismatch
 
+## follow-ups (not scenario failures)
+
+- **plutus-tap-samples** (after scenarios work): The 4 plutus-onchain differentials pass, but their resolved taps recorded zero samples, so the plutus-execution rows in node-measurements-v1.yaml stay missing. Debug the tap/resolver path; do not add taps per scenario (the resolver attaches them).
+
 ## not yet run (no ledger row; usually in the current rerun)
 
-- `ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node`
-- `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node`
-- `ledger-submit-empty-redeemers-container-differential-amaru-cardano-node`
 - `ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node`
 - `ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node`
 - `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node`
