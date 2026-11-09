@@ -4,9 +4,9 @@
   {
    "match": "phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo",
    "group": "version-tied helpers",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "F99 fixed the netns error; runtime_observability_check.py then reads only legacy logging keys (EnableLogging, minSeverity, TraceXxx). The profile-a config uses the new tracing system with \"TraceOptions\": {} (node defaults)",
-   "fix": "F107 35913370: check reads both tracing systems; profile-a sets cardano_observability_traces (user approved 2026-11-08)"
+   "fix": "F99+F107: PASS (run 6a17eb67)"
   },
   {
    "match": "phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo",
@@ -95,16 +95,16 @@
   {
    "match": "runtime-bundle-chain-verify-example-smoke",
    "group": "bundle-tool fixtures",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "runs_dir dwarf/corpora/bundle-runs was passed unresolved; the controller runs helpers from /, so the bundle was \"missing\"",
-   "fix": "F101 d20696c7"
+   "fix": "F101+F101b: PASS (run c5cc4908)"
   },
   {
    "match": "runtime-bundle-diff-example-divergence",
    "group": "bundle-tool fixtures",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "FALSE PASS found: both compared files were absent (missing_in_both) and the diff still counted as a divergence",
-   "fix": "F101 d20696c7: runs_dir resolves; bundle_diff_completed_clean fails when a compared file is absent. Must rerun: the earlier pass is void"
+   "fix": "F101+F101b: PASS on real bundles (run 65216b5f); the earlier void pass is replaced"
   },
   {
    "match": "conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node",
@@ -144,9 +144,9 @@
   {
    "match": "ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "open",
+   "status": "fixed",
    "cause": "same as tag24: cardano-node decode_reject, Amaru accepts, never included",
-   "fix": "same mempool evidence fix"
+   "fix": "F103+F105: PASS on 35913370 (run 6894ce18); divergence recorded"
   },
   {
    "match": "ledger-submit-empty-redeemers-container-differential-amaru-cardano-node",
@@ -158,9 +158,9 @@
   {
    "match": "ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "open",
+   "status": "fixed",
    "cause": "F103 works: cardano-node decode_reject (node-log correlated). Amaru accepts but the tx is never included, because cardano-node, the only block producer, cannot decode it; the rule \"accepted counts only when included\" cannot be met when the divergence is real",
-   "fix": "count an Amaru acceptance as conclusive when Amaru's own mempool holds the tx (LocalTxMonitor), version-agnostic"
+   "fix": "F103+F105: PASS on 35913370 (run 1a7c1eda); the Amaru/cardano-node divergence is recorded in the result"
   },
   {
    "match": "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",

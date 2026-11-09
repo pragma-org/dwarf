@@ -1,70 +1,30 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-08 22:10 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 00:06 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
 
 | Outcome | Scenarios |
 |---|---|
-| error | 3 |
-| fail | 41 |
-| pass | 60 |
-| prepare-failed | 13 |
+| error | 2 |
+| fail | 40 |
+| pass | 72 |
 
 | Status | Group | Count |
 |---|---|---|
-| void-pass | bundle-tool fixtures | 1 |
-| rerun-pending | Rust runtime tools | 1 |
-| rerun-pending | bundle-tool fixtures | 1 |
-| rerun-pending | container port faults | 4 |
 | investigate | checkpoint evidence | 1 |
-| investigate | ledger differential controls | 1 |
-| investigate | profile prepare failures | 15 |
 | open | CBOR dataset | 1 |
 | open | LSQ extract scenario | 1 |
 | open | block-apply bridge | 3 |
-| open | host-model helpers on container profiles | 3 |
+| open | host-model helpers on container profiles | 8 |
+| review | known upstream-fixed Amaru bugs | 1 |
 | review | profile-a behaviour verdicts | 1 |
-| review | review list | 2 |
+| review | review list | 3 |
 | review | smoke-scenario assertion verdicts | 17 |
 | declared-gap | byzantine/amaru tmux relaunch | 1 |
 | declared-gap | superseded | 1 |
 | removed | removed from the repo | 4 |
-
-## void-pass: bundle-tool fixtures
-
-Cause: FALSE PASS found: both compared files were absent (missing_in_both) and the diff still counted as a divergence
-Fix: F101 d20696c7: runs_dir resolves; bundle_diff_completed_clean fails when a compared file is absent. Must rerun: the earlier pass is void
-
-- `runtime-bundle-diff-example-divergence` (pass, run 20261108T134540Z-6ff1865d): pass
-
-## rerun-pending: Rust runtime tools
-
-Cause: new pallas chain-sync tool worked (exit 0) but fetched 5 headers; the check counts exactly 2 (Amaru BOOTSTRAP_HEADERS_PER_POINT = 2)
-Fix: F100 6e6fa76d: wrapper passes max 2
-
-- `m3-runtime-chainsync-historical-point-burst` (fail, run 20261109T014503Z-71ff1722): load_events_are_ok: fail
-
-## rerun-pending: bundle-tool fixtures
-
-Cause: runs_dir dwarf/corpora/bundle-runs was passed unresolved; the controller runs helpers from /, so the bundle was "missing"
-Fix: F101 d20696c7
-
-- `runtime-bundle-chain-verify-example-smoke` (fail, run 20261109T002720Z-b24b5702): bundle_chain_verify_clean: expected runtime_bundle_chain_verify to report an all-verified chain
-
-## rerun-pending: container port faults
-
-Cause: netns helper ran non-root: iptables "Permission denied (you must be root)"
-Fix: F99 d1babd0e
-
-- `m3-runtime-blockfetch-port-drop-isolated-peer` (fail, run 20261109T014118Z-a82d8749): fail
-- `m3-runtime-blockfetch-port-drop-timeout` (fail, run 20261109T014403Z-642208ad): fail
-- `phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo` (fail, run 20261109T020539Z-005d48a4): fail
-  - Cause: netns helper ran non-root: iptables refused
-- `phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo` (fail, run 20261109T014032Z-f24cc8ce): load_events_are_ok: fail
-  - Cause: netns helper ran as the controller image user (non-root): tc failed with RTNETLINK EPERM
-  - Fix: F99 d1babd0e: helper runs as uid 0, --cap-drop ALL --cap-add NET_ADMIN, no-new-privileges; proven live read-only on profile-n
 
 ## investigate: checkpoint evidence
 
@@ -72,58 +32,6 @@ Cause: checkpoint wrote 155 entries, but health_after_resume reports every node 
 Fix: check the resume health probe against compose substrates
 
 - `runtime-substrate-checkpoint-resume-recovers-example-smoke` (fail, run 20261109T003404Z-b8acbc59): substrate_checkpoint_recorded_clean: expected runtime_substrate_checkpoint to emit a non-empty checkpoint and restart the substrate cleanly
-
-## investigate: ledger differential controls
-
-Cause: controls included on both nodes, but 'one or more live outcomes are unavailable or inconclusive'; reconciled_control_inclusion_count=0
-Fix: F97d may cover it; re-check after deploy, then read the outcome records
-
-- `ledger-submit-empty-redeemers-container-differential-amaru-cardano-node` (fail, run 20261109T030444Z-3a4b699c): redeemer_container_differential_matches: fresh ledger-control evidence is incomplete or inconclusive
-
-## investigate: profile prepare failures
-
-Cause: profile-g and profile-v prepare fail in 1 s; the controller redacts the cause ("controller runtime failed"), and the profile cannot be removed ("remove is not allowed by the current topology snapshot")
-Fix: reproduce one prepare after rerun #4 and read the controller log
-
-- `cardano-n2n-handshake-version-table-forward-compat-1112` (prepare-failed, run none): TopologyActionError: controller runtime failed
-- `client-example-cbor-decoding-amaru-portable-20260918` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `client-example-plutus-vm-amaru-portable-20260918` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `consensus-chainhold-upstream-differential` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `m3-runtime-blockfetch-port-delay-bounded-success` (error, run none): preflight_failed
-  - Cause: m3 blockfetch delay/stale scenarios end "preflight_failed" before a run id exists (rerun #3 on F98 343ee0c1)
-  - Fix: read the preflight payload on the next run
-- `m3-runtime-blockfetch-stale-single-point-rejection` (error, run none): preflight_failed
-  - Cause: m3 blockfetch delay/stale scenarios end "preflight_failed" before a run id exists (rerun #3 on F98 343ee0c1)
-  - Fix: read the preflight payload on the next run
-- `m3-runtime-profile-restart-tip-recovery` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (prepare-failed, run none): TopologyActionError: controller runtime failed
-- `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (prepare-failed, run none): TopologyActionError: controller runtime failed
-- `phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `phase3-runtime-profile-a-copied-state-divergence-primitive` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `phase3-runtime-profile-a-pcap-capture-primitive` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `phase3-runtime-profile-a-restart-postrecovery-blockfetch-primitive` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
-- `phase3-runtime-profile-a-syscall-trace-primitive` (prepare-failed, run none): readiness blocked: {}
-  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
-  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
 
 ## open: CBOR dataset
 
@@ -161,9 +69,31 @@ Fix: read connection state from inside the node container (docker exec ss) or fr
 - `phase3-runtime-generated-haskell3-gc-capture-primitive` (fail, run 20261109T020619Z-5f7f0c94): load_events_are_ok: fail
   - Cause: runtime_haskell_gc_capture.py restarts the node through tmux and waits on a host pid (timed out on pid 3810297)
   - Fix: restart through the controller container lifecycle; read GC stats from the container
+- `phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive` (fail, run 20261109T040526Z-fa691ea6): load_events_are_ok: fail
+  - Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
+  - Fix: port the copy/stop steps to the controller container lifecycle
+- `phase3-runtime-profile-a-copied-state-divergence-primitive` (fail, run 20261109T040613Z-db7d59b9): load_events_are_ok: fail
+  - Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
+  - Fix: port the copy/stop steps to the controller container lifecycle
+- `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (error, run none): preflight_failed
+  - Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
+  - Fix: port the copy/stop steps to the controller container lifecycle
 - `phase3-runtime-profile-a-partition-rejoin-capability-demo` (fail, run 20261109T014153Z-ccdfc454): load_events_are_ok: fail
   - Cause: runtime_partition_rejoin_check.py calls sudo (absent in the controller); its chainsync-multi-peer step also hit the header-count bug (F100)
   - Fix: port the helper to container faults (F95/F99 netns path) instead of host sudo
+- `phase3-runtime-profile-a-pcap-capture-primitive` (fail, run 20261109T040714Z-14c6cc22): load_events_are_ok: fail
+  - Cause: runtime_pcap_capture.py calls sudo
+  - Fix: capture in the node netns via the F99 helper pattern (tcpdump with NET_RAW only)
+- `phase3-runtime-profile-a-syscall-trace-primitive` (fail, run 20261109T040826Z-50e6f54c): load_events_are_ok: fail
+  - Cause: runtime_syscall_trace.py calls sudo
+  - Fix: trace from a helper sharing the node pid namespace (SYS_PTRACE only)
+
+## review: known upstream-fixed Amaru bugs
+
+Cause: NOT NOVEL: Amaru 10.11.20260918 (aedfe797, 2026-09-18) aborts with "thread 'ledger' has overflowed its stack" on the Delay^28000 vector; upstream fixed it in d9bb18e7 "fix: decode uplc with smaller stack" (2026-09-19), first in v10.11.20260925. DWARF detects the pre-fix build correctly (evidence: run 90c557db, F104 node log + exit 134)
+Fix: rerun against a post-0925 Amaru to prove the fix; scenario should report "target crashed" as its own outcome
+
+- `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node` (fail, run 20261109T034926Z-90c557db): uplc_deep_delay_stack_safety_matches: UPLC deep-delay evidence is incomplete or inconclusive
 
 ## review: profile-a behaviour verdicts
 
@@ -174,12 +104,16 @@ Fix: decide: is fast recovery a pass, or must the window be tighter
 
 ## review: review list
 
-Cause: node3 design of the smoke scenario questioned
-Fix: none yet
+Cause: regression reproduces the known Amaru coin-overflow DoS on 10.11.20260918: after the i64-max+1 case the Amaru submit API stops answering ("fresh-funded value-overflow security finding observed"). The scenario fails because the bug is still present, not because DWARF is broken
+Fix: none in DWARF; decide whether this regression should report "finding still present" as its own outcome. F104 keeps the Amaru log on the next run
 
+- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru` (fail, run 20261109T035625Z-9592c658): value_coin_overflow_regression_passed: fresh-funded value-overflow security finding observed
 - `runtime-substrate-byzantine-blockfetch-example-smoke` (fail, run 20261109T000948Z-c47ad3c4): peer_eviction_within_seconds: expected honest nodes to evict byzantine peers within the allowed window
+  - Cause: node3 design of the smoke scenario questioned
+  - Fix: none yet
 - `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261109T004340Z-e727b128): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
   - Cause: bootstrap_assumptions_safe verdict needs a human look
+  - Fix: none yet
 
 ## review: smoke-scenario assertion verdicts
 
@@ -230,11 +164,15 @@ Fix: none yet
 
 ## follow-ups (not scenario failures)
 
-- **plutus-tap-samples** (after scenarios work): The 4 plutus-onchain differentials pass, but their resolved taps recorded zero samples, so the plutus-execution rows in node-measurements-v1.yaml stay missing. Debug the tap/resolver path; do not add taps per scenario (the resolver attaches them).
+- **self-compose-taps-missing** (after scenarios work): Corrected 2026-11-08: the runs carry NO measurements/ folder at all. Taps are not attached on self-compose substrates: 0 taps in 18 passing self-compose-cardano, 5 self-compose-amaru, 4 plutus-onchain runs (profile runs do carry them). Also: 9 catalog taps never ran in a passing run (all 5 cardano-patched, 2 coverage-production-paths, amaru-patched-header-validation, cardano-stock-header-validation); cardano-external-restart-readiness ran 21 times, always unavailable.
+- **loopback-probe-audit** (with host-model helpers): runtime_topology_fault.py:169 connect_ex(127.0.0.1, port) may have the same unreachable-loopback problem as F106; check it when porting host-model helpers.
 
 ## not yet run (no ledger row; usually in the current rerun)
 
-- `ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node`
-- `ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node`
-- `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node`
-- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru`
+- `cardano-n2n-handshake-version-table-forward-compat-1112`
+- `client-example-cbor-decoding-amaru-portable-20260918`
+- `client-example-plutus-vm-amaru-portable-20260918`
+- `consensus-chainhold-upstream-differential`
+- `phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo`
+- `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo`
+- `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo`
