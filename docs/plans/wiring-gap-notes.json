@@ -3,31 +3,52 @@
  "rules": [
   {
    "match": "phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo",
-   "group": "container port faults",
-   "status": "rerun-pending",
-   "cause": "netns helper ran as the controller image user (non-root): tc failed with RTNETLINK EPERM",
-   "fix": "F99 d1babd0e: helper runs as uid 0, --cap-drop ALL --cap-add NET_ADMIN, no-new-privileges; proven live read-only on profile-n"
-  },
-  {
-   "match": "m3-runtime-blockfetch-port-drop-",
-   "group": "container port faults",
-   "status": "rerun-pending",
-   "cause": "netns helper ran non-root: iptables \"Permission denied (you must be root)\"",
-   "fix": "F99 d1babd0e"
+   "group": "version-tied helpers",
+   "status": "open",
+   "cause": "F99 fixed the netns error; runtime_observability_check.py then reads only legacy logging keys (EnableLogging, minSeverity, TraceXxx). The profile-a config uses the new tracing system with \"TraceOptions\": {} (node defaults)",
+   "fix": "read both tracing systems; profile-a must enable Debug for the peer-selection/connection-manager namespaces (shared profile change: needs a decision)"
   },
   {
    "match": "phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo",
    "group": "container port faults",
    "status": "rerun-pending",
-   "cause": "netns helper ran non-root: iptables refused",
-   "fix": "F99 d1babd0e"
+   "cause": "F99 fixed the netns error; the check then probed 127.0.0.1:<published port>, unreachable from the controller; the blocked-node half was a FALSE PASS",
+   "fix": "F106 5968eedd: probe container_ip:<container port>"
+  },
+  {
+   "match": "phase3-runtime-profile-a-copied-state-",
+   "group": "host-model helpers on container profiles",
+   "status": "open",
+   "cause": "runtime_profile_recovery_check.py copied-state modes: \"stale source node1 is not behind node2: 3119 >= 3119\"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes",
+   "fix": "port the copy/stop steps to the controller container lifecycle"
+  },
+  {
+   "match": "phase3-runtime-profile-a-pcap-capture-primitive",
+   "group": "host-model helpers on container profiles",
+   "status": "open",
+   "cause": "runtime_pcap_capture.py calls sudo",
+   "fix": "capture in the node netns via the F99 helper pattern (tcpdump with NET_RAW only)"
+  },
+  {
+   "match": "phase3-runtime-profile-a-syscall-trace-primitive",
+   "group": "host-model helpers on container profiles",
+   "status": "open",
+   "cause": "runtime_syscall_trace.py calls sudo",
+   "fix": "trace from a helper sharing the node pid namespace (SYS_PTRACE only)"
+  },
+  {
+   "match": "m3-runtime-blockfetch-port-drop-",
+   "group": "container port faults",
+   "status": "fixed",
+   "cause": "netns helper ran non-root: iptables \"Permission denied (you must be root)\"",
+   "fix": "F99 d1babd0e; PASS on 39834874 (rerun #5)"
   },
   {
    "match": "m3-runtime-chainsync-historical-point-burst",
    "group": "Rust runtime tools",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "new pallas chain-sync tool worked (exit 0) but fetched 5 headers; the check counts exactly 2 (Amaru BOOTSTRAP_HEADERS_PER_POINT = 2)",
-   "fix": "F100 6e6fa76d: wrapper passes max 2"
+   "fix": "F100 6e6fa76d: wrapper passes max 2; PASS on 39834874 (rerun #5)"
   },
   {
    "match": "phase3-runtime-profile-a-partition-rejoin-capability-demo",
@@ -239,6 +260,11 @@
    "id": "plutus-tap-samples",
    "priority": "after scenarios work",
    "note": "The 4 plutus-onchain differentials pass, but their resolved taps recorded zero samples, so the plutus-execution rows in node-measurements-v1.yaml stay missing. Debug the tap/resolver path; do not add taps per scenario (the resolver attaches them)."
+  },
+  {
+   "id": "loopback-probe-audit",
+   "priority": "with host-model helpers",
+   "note": "runtime_topology_fault.py:169 connect_ex(127.0.0.1, port) may have the same unreachable-loopback problem as F106; check it when porting host-model helpers."
   }
  ]
 }
