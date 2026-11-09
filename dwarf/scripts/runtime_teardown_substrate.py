@@ -11,6 +11,36 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from runtime_substrate_common import run_command, write_json
 
+# F104: the last lines of each node log, kept before compose down removes the container.
+NODE_LOG_TAIL_LINES = 5000
+_STATE_KEYS = ("Status", "Running", "ExitCode", "OOMKilled", "Error", "StartedAt", "FinishedAt", "Health")
+
+
+def _capture_node_evidence(node: dict, output_dir: Path, runner) -> dict:
+    """Container state and log tail of one node; evidence capture never blocks teardown."""
+    name = str(node.get("container_name") or "")
+    if not name:
+        return {}
+    evidence: dict = {}
+    try:
+        inspect = runner(["docker", "inspect", name])
+        if inspect.returncode == 0:
+            body = (json.loads(inspect.stdout or "[]") or [{}])[0]
+            state = body.get("State") or {}
+            evidence["state_before_teardown"] = {
+                **{key: state[key] for key in _STATE_KEYS if key in state},
+                "RestartCount": body.get("RestartCount"),
+            }
+        logs = runner(["docker", "logs", "--tail", str(NODE_LOG_TAIL_LINES), "--timestamps", name])
+        text = (logs.stdout or "") + (("\n--- stderr ---\n" + logs.stderr) if logs.stderr else "")
+        log_dir = output_dir / "node-logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / f"{node.get('id') or name}.log").write_text(text, encoding="utf-8")
+        evidence["log_path"] = f"node-logs/{node.get('id') or name}.log"
+    except (OSError, ValueError, IndexError, AttributeError) as exc:
+        evidence["evidence_error"] = str(exc)[:300]
+    return evidence
+
 
 def _ssh_base_command(host: dict) -> list[str]:
     command = ["ssh", "-n", "-o", "BatchMode=yes"]
@@ -87,6 +117,10 @@ def teardown_substrate(*, runtime_metadata_path: Path, output_dir: Path, runner=
         if isinstance(attachment, dict) and attachment.get("network") and attachment.get("container"):
             detached = runner(["docker", "network", "disconnect", str(attachment["network"]), str(attachment["container"])])
             controller_detached = detached.returncode == 0 or "is not connected" in (detached.stderr or "")
+        node_evidence = {
+            str(node.get("id") or ""): _capture_node_evidence(node, output_dir, runner)
+            for node in list(metadata.get("nodes") or [])
+        }
         result = runner(
             ["docker", "compose", "--project-name", compose_project, "down", "--volumes", "--remove-orphans"],
             cwd=runtime_root,
@@ -107,6 +141,7 @@ def teardown_substrate(*, runtime_metadata_path: Path, output_dir: Path, runner=
                     "kind": "container",
                     "stopped": result.returncode == 0,
                     "stderr": result.stderr.strip(),
+                    **node_evidence.get(str(node.get("id") or ""), {}),
                 }
                 for node in list(metadata.get("nodes") or [])
             ],

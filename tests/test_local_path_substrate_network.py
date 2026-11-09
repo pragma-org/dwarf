@@ -82,5 +82,34 @@ def test_teardown_disconnects_the_controller_before_compose_down(tmp_path):
     calls = []
     report = teardown.teardown_substrate(runtime_metadata_path=metadata, output_dir=tmp_path / "out", runner=_runner(calls))
     assert calls[0] == ["docker", "network", "disconnect", "dwarf-substrate-run1-net", "485be25a27dc"]
-    assert calls[1][:5] == ["docker", "compose", "--project-name", "dwarf-substrate-run1", "down"]
+    assert calls[-1][:5] == ["docker", "compose", "--project-name", "dwarf-substrate-run1", "down"]
     assert report["controller_detached"] is True
+
+
+def test_teardown_keeps_each_node_state_and_log_tail_before_removal(tmp_path):
+    """F104: a node that stopped answering left no evidence once compose down removed it."""
+    metadata = tmp_path / "runtime.json"
+    metadata.write_text(json.dumps({
+        "compose_mode": "docker", "compose_project": "dwarf-substrate-run1", "runtime_root": str(tmp_path),
+        "nodes": [{"id": "node1", "container_name": "dwarf-substrate-run1-node1-1"}],
+    }), encoding="utf-8")
+    calls = []
+    state = {"Status": "running", "Running": True, "ExitCode": 0, "OOMKilled": False, "StartedAt": "t0", "FinishedAt": ""}
+
+    def run(command, **kwargs):
+        calls.append(list(command))
+        if command[:2] == ["docker", "inspect"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps([{"State": state, "RestartCount": 2}]), "")
+        if command[:2] == ["docker", "logs"]:
+            return subprocess.CompletedProcess(command, 0, "stdout line\n", "thread 'main' has overflowed its stack\n")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    report = teardown.teardown_substrate(runtime_metadata_path=metadata, output_dir=tmp_path / "out", runner=run)
+    down = next(i for i, c in enumerate(calls) if c[:2] == ["docker", "compose"] and "down" in c)
+    assert max(i for i, c in enumerate(calls) if c[:2] in (["docker", "inspect"], ["docker", "logs"])) < down
+    node = report["nodes"][0]
+    assert node["state_before_teardown"] == {**state, "RestartCount": 2}
+    log = (tmp_path / "out" / node["log_path"]).read_text()
+    assert "has overflowed its stack" in log and "stdout line" in log
+    assert ["--tail", str(teardown.NODE_LOG_TAIL_LINES)] == calls[[c[:2] for c in calls].index(["docker", "logs"])][2:4]
+
