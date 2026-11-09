@@ -150,8 +150,32 @@ def stop_session(config: RuntimeConfig) -> None:
         raise RuntimeError("profile processes did not stop within 20 seconds")
 
 
+def _profile_node_containers(config: RuntimeConfig) -> list[str]:
+    """Node container names when the profile runs as containers (F121), else empty."""
+    try:
+        body = json.loads((config.runtime_root / "runtime.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    entries = [*(body.get("nodes") or []), *(body.get("haskell_nodes") or []), *(body.get("amaru_nodes") or [])]
+    names = []
+    for entry in entries:
+        name = isinstance(entry, dict) and entry.get("container_name")
+        if name and name not in names:
+            names.append(str(name))
+    return names
+
+
 def stop_session_with_details(config: RuntimeConfig) -> dict:
     started_at = time.monotonic()
+    containers = _profile_node_containers(config)
+    if containers:
+        # F121: a container profile is stopped through its node containers, not a tmux session
+        result = subprocess.run(["docker", "stop", "-t", "30", *containers], check=False, text=True, capture_output=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"docker stop failed: {(result.stderr or result.stdout).strip()[-300:]}")
+        return {"mechanism": "container", "session_existed": True, "stopped_containers": containers,
+                "killed_pids": [], "forced_kills": [], "remaining_pids": [],
+                "duration_seconds": round(time.monotonic() - started_at, 6)}
     details = {
         "session_existed": session_exists(config),
         "killed_pids": [],
@@ -207,6 +231,13 @@ def start_session(config: RuntimeConfig) -> None:
 
 def start_session_with_details(config: RuntimeConfig) -> dict:
     started_at = time.monotonic()
+    containers = _profile_node_containers(config)
+    if containers:
+        result = subprocess.run(["docker", "start", *containers], check=False, text=True, capture_output=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"docker start failed: {(result.stderr or result.stdout).strip()[-300:]}")
+        return {"mechanism": "container", "already_running": False, "started": True,
+                "started_containers": containers, "duration_seconds": round(time.monotonic() - started_at, 6)}
     details = {"already_running": session_exists(config)}
     if session_exists(config):
         details["duration_seconds"] = round(time.monotonic() - started_at, 6)

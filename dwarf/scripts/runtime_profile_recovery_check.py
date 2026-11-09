@@ -507,23 +507,24 @@ def run_copied_state_recovery_fetch() -> int:
     source_tip = baseline[STALE_STATE_SOURCE_NODE]
     from_point, to_point = derive_range(PROFILE_A_CONFIG)
     _emit_point_metrics("copied_state_fetch_range", from_point=from_point, to_point=to_point)
-    if source_tip["slot"] >= baseline_tip["slot"]:
-        raise RuntimeError(
-            f"stale source {STALE_STATE_SOURCE_NODE} is not behind {COPIED_STATE_NODE}: "
-            f"{source_tip['slot']} >= {baseline_tip['slot']}"
-        )
     source_db = ENV_ROOT / "node-data" / STALE_STATE_SOURCE_NODE / "db"
     target_db = ENV_ROOT / "node-data" / COPIED_STATE_NODE / "db"
     remediation_db = ENV_ROOT / "node-data" / REMEDIATION_SOURCE_NODE / "db"
     with tempfile.TemporaryDirectory(prefix="dwarf-stale-db-snapshot-") as tmp:
         snapshot_db = Path(tmp) / "stale-db"
+        # F121: create the stale snapshot (copy now, let the other nodes move ahead) instead of
+        # requiring node1 to be behind already, as run_copied_state_recovery does
+        baseline, baseline_tip, source_tip = _prepare_stale_snapshot_for_recovery(
+            label="copied_state_fetch", baseline=baseline, source_db=source_db, snapshot_db=snapshot_db,
+        )
         source_db_bytes = _emit_db_metrics("copied_state_fetch", node=STALE_STATE_SOURCE_NODE, path=source_db, role="source")
         target_db_bytes = _emit_db_metrics("copied_state_fetch", node=COPIED_STATE_NODE, path=target_db, role="target")
         remediation_db_bytes = _emit_db_metrics("copied_state_fetch", node=REMEDIATION_SOURCE_NODE, path=remediation_db, role="remediation")
         _emit_db_delta("copied_state_fetch_source_vs_target", node=COPIED_STATE_NODE, left_role="source", left_bytes=source_db_bytes, right_role="target", right_bytes=target_db_bytes)
         _emit_db_delta("copied_state_fetch_remediation_vs_target", node=COPIED_STATE_NODE, left_role="remediation", left_bytes=remediation_db_bytes, right_role="target", right_bytes=target_db_bytes)
         _emit_operation_details("copied_state_fetch_stop", stop_session_with_details(PROFILE_A_CONFIG))
-        shutil.copytree(source_db, snapshot_db)
+        if not snapshot_db.exists():
+            shutil.copytree(source_db, snapshot_db)
         snapshot_db_bytes = _emit_db_metrics("copied_state_fetch", node=STALE_STATE_SOURCE_NODE, path=snapshot_db, role="snapshot")
         _emit_db_delta("copied_state_fetch_snapshot_vs_source", node=COPIED_STATE_NODE, left_role="source", left_bytes=source_db_bytes, right_role="snapshot", right_bytes=snapshot_db_bytes)
         replace_node_db(PROFILE_A_CONFIG, COPIED_STATE_NODE, snapshot_db)
@@ -613,23 +614,24 @@ def run_copied_state_bounded_divergence() -> int:
     source_tip = baseline[STALE_STATE_SOURCE_NODE]
     from_point, to_point = derive_range(PROFILE_A_CONFIG)
     _emit_point_metrics("copied_state_divergence_range", from_point=from_point, to_point=to_point)
-    if source_tip["slot"] >= baseline_tip["slot"]:
-        raise RuntimeError(
-            f"stale source {STALE_STATE_SOURCE_NODE} is not behind {COPIED_STATE_NODE}: "
-            f"{source_tip['slot']} >= {baseline_tip['slot']}"
-        )
     source_db = ENV_ROOT / "node-data" / STALE_STATE_SOURCE_NODE / "db"
     target_db = ENV_ROOT / "node-data" / COPIED_STATE_NODE / "db"
     remediation_db = ENV_ROOT / "node-data" / REMEDIATION_SOURCE_NODE / "db"
     with tempfile.TemporaryDirectory(prefix="dwarf-stale-db-snapshot-") as tmp:
         snapshot_db = Path(tmp) / "stale-db"
+        # F121: create the stale snapshot (copy now, let the other nodes move ahead) instead of
+        # requiring node1 to be behind already, as run_copied_state_recovery does
+        baseline, baseline_tip, source_tip = _prepare_stale_snapshot_for_recovery(
+            label="copied_state_divergence", baseline=baseline, source_db=source_db, snapshot_db=snapshot_db,
+        )
         source_db_bytes = _emit_db_metrics("copied_state_divergence", node=STALE_STATE_SOURCE_NODE, path=source_db, role="source")
         target_db_bytes = _emit_db_metrics("copied_state_divergence", node=COPIED_STATE_NODE, path=target_db, role="target")
         remediation_db_bytes = _emit_db_metrics("copied_state_divergence", node=REMEDIATION_SOURCE_NODE, path=remediation_db, role="remediation")
         _emit_db_delta("copied_state_divergence_source_vs_target", node=COPIED_STATE_NODE, left_role="source", left_bytes=source_db_bytes, right_role="target", right_bytes=target_db_bytes)
         _emit_db_delta("copied_state_divergence_remediation_vs_target", node=COPIED_STATE_NODE, left_role="remediation", left_bytes=remediation_db_bytes, right_role="target", right_bytes=target_db_bytes)
         _emit_operation_details("copied_state_divergence_stop", stop_session_with_details(PROFILE_A_CONFIG))
-        shutil.copytree(source_db, snapshot_db)
+        if not snapshot_db.exists():
+            shutil.copytree(source_db, snapshot_db)
         snapshot_db_bytes = _emit_db_metrics("copied_state_divergence", node=STALE_STATE_SOURCE_NODE, path=snapshot_db, role="snapshot")
         _emit_db_delta("copied_state_divergence_snapshot_vs_source", node=COPIED_STATE_NODE, left_role="source", left_bytes=source_db_bytes, right_role="snapshot", right_bytes=snapshot_db_bytes)
         replace_node_db(PROFILE_A_CONFIG, COPIED_STATE_NODE, snapshot_db)
