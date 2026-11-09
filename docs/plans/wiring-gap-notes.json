@@ -39,9 +39,9 @@
   {
    "match": "runtime-substrate-blockfetch-invalid-block-cbor-example-smoke",
    "group": "weak proxy fault modes",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
-   "fix": "F130 (e7a9218b): only MsgBlock corrupted; rejection = target drops the connection; rerun pending"
+   "fix": "F130: real pass (runs 5b45ab96, 20e88328): target dropped the corrupting connection ~1.04 s after a corrupted MsgBlock"
   },
   {
    "match": "runtime-substrate-chainsync-parent-discontinuity-example-smoke",

@@ -14,7 +14,7 @@ Generated 2026-11-09 07:30 EST from the campaign ledger and the run bundles. Han
 
 | Status | Group | Count |
 |---|---|---|
-| void-pass | weak proxy fault modes | 7 |
+| void-pass | weak proxy fault modes | 6 |
 | rerun-pending | CBOR dataset | 1 |
 | open | block-apply bridge | 3 |
 | open | duplex hard limit | 1 |
@@ -34,8 +34,6 @@ Cause: VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the las
 Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection
 
 - `runtime-substrate-blockfetch-continuity-failure-example-smoke` (pass, run 20261108T190424Z-49954d02): pass
-- `runtime-substrate-blockfetch-invalid-block-cbor-example-smoke` (pass, run 20261109T113615Z-5b45ab96): pass
-  - Fix: F130 (e7a9218b): only MsgBlock corrupted; rejection = target drops the connection; rerun pending
 - `runtime-substrate-blockfetch-invalid-range-example-smoke` (pass, run 20261108T190555Z-1ba0e315): pass
 - `runtime-substrate-blockfetch-range-mismatch-example-smoke` (pass, run 20261108T190640Z-9d2f3cdb): pass
 - `runtime-substrate-chainsync-nonincrementing-height-example-smoke` (pass, run 20261108T190853Z-27f8174e): pass
