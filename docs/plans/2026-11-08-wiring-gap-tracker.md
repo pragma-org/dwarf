@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 00:06 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 02:11 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -9,15 +9,19 @@ Generated 2026-11-09 00:06 EST from the campaign ledger and the run bundles. Han
 |---|---|
 | error | 2 |
 | fail | 40 |
-| pass | 72 |
+| pass | 76 |
+| prepare-failed | 3 |
 
 | Status | Group | Count |
 |---|---|---|
+| rerun-pending | profile prepare failures | 1 |
 | investigate | checkpoint evidence | 1 |
 | open | CBOR dataset | 1 |
 | open | LSQ extract scenario | 1 |
 | open | block-apply bridge | 3 |
-| open | host-model helpers on container profiles | 8 |
+| open | external topology | 1 |
+| open | host-model helpers on container profiles | 7 |
+| open | profile prepare failures | 2 |
 | review | known upstream-fixed Amaru bugs | 1 |
 | review | profile-a behaviour verdicts | 1 |
 | review | review list | 3 |
@@ -25,6 +29,13 @@ Generated 2026-11-09 00:06 EST from the campaign ledger and the run bundles. Han
 | declared-gap | byzantine/amaru tmux relaunch | 1 |
 | declared-gap | superseded | 1 |
 | removed | removed from the repo | 4 |
+
+## rerun-pending: profile prepare failures
+
+Cause: adapters built (Amaru + cardano-node Plutus); the run then failed two completeness checks because the workload double-spend probes (rejected, no lock tx) were counted as spends
+Fix: F111 e03e8a8d
+
+- `client-example-plutus-vm-amaru-portable-20260918` (fail, run 20261109T062732Z-f0c5c32f): plutus_live_outcomes_observed: Live Plutus outcomes were incomplete
 
 ## investigate: checkpoint evidence
 
@@ -60,6 +71,13 @@ Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply
   - Cause: same deferred forge/serve bridge
   - Fix: same as above
 
+## open: external topology
+
+Cause: attaches (runtime_attach_topology) to an outside topology "cardano_amaru" (the Antithesis mixed devnet) that does not run on the box; readiness semantic_health_not_ready, health {}
+Fix: give it a self-composed mixed testnet_42 substrate, or declare it Antithesis-only
+
+- `consensus-chainhold-upstream-differential` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
+
 ## open: host-model helpers on container profiles
 
 Cause: runtime_connection_state.py needs lsof/ss and host pids; the controller has neither the tools nor the node pid namespace
@@ -78,15 +96,20 @@ Fix: read connection state from inside the node container (docker exec ss) or fr
 - `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (error, run none): preflight_failed
   - Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
   - Fix: port the copy/stop steps to the controller container lifecycle
-- `phase3-runtime-profile-a-partition-rejoin-capability-demo` (fail, run 20261109T014153Z-ccdfc454): load_events_are_ok: fail
-  - Cause: runtime_partition_rejoin_check.py calls sudo (absent in the controller); its chainsync-multi-peer step also hit the header-count bug (F100)
-  - Fix: port the helper to container faults (F95/F99 netns path) instead of host sudo
 - `phase3-runtime-profile-a-pcap-capture-primitive` (fail, run 20261109T040714Z-14c6cc22): load_events_are_ok: fail
   - Cause: runtime_pcap_capture.py calls sudo
   - Fix: capture in the node netns via the F99 helper pattern (tcpdump with NET_RAW only)
 - `phase3-runtime-profile-a-syscall-trace-primitive` (fail, run 20261109T040826Z-50e6f54c): load_events_are_ok: fail
   - Cause: runtime_syscall_trace.py calls sudo
   - Fix: trace from a helper sharing the node pid namespace (SYS_PTRACE only)
+
+## open: profile prepare failures
+
+Cause: F109 works: profile-g now deploys. But profile-g ("haskell-preview2-proof") runs on the PUBLIC preview network, so readiness stays semantic_health_not_ready (cold nodes cannot sync): same class F96 fixed for scenarios
+Fix: move profile-g to a private devnet (as F96) or keep it as a declared preview-only profile
+
+- `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
+- `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
 
 ## review: known upstream-fixed Amaru bugs
 
@@ -166,13 +189,4 @@ Fix: none yet
 
 - **self-compose-taps-missing** (after scenarios work): Corrected 2026-11-08: the runs carry NO measurements/ folder at all. Taps are not attached on self-compose substrates: 0 taps in 18 passing self-compose-cardano, 5 self-compose-amaru, 4 plutus-onchain runs (profile runs do carry them). Also: 9 catalog taps never ran in a passing run (all 5 cardano-patched, 2 coverage-production-paths, amaru-patched-header-validation, cardano-stock-header-validation); cardano-external-restart-readiness ran 21 times, always unavailable.
 - **loopback-probe-audit** (with host-model helpers): runtime_topology_fault.py:169 connect_ex(127.0.0.1, port) may have the same unreachable-loopback problem as F106; check it when porting host-model helpers.
-
-## not yet run (no ledger row; usually in the current rerun)
-
-- `cardano-n2n-handshake-version-table-forward-compat-1112`
-- `client-example-cbor-decoding-amaru-portable-20260918`
-- `client-example-plutus-vm-amaru-portable-20260918`
-- `consensus-chainhold-upstream-differential`
-- `phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo`
-- `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo`
-- `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo`
+- **prepare-availability-before-deploy** (with profile prepare failures): run/prepare deploys a profile (~15 min) and only then reports availability requires-build; the availability check should run before the deploy.
