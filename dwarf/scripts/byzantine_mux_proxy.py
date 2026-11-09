@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import selectors
 import signal
@@ -108,6 +109,59 @@ def classify_segment_message(*, protocol: int, payload: bytes) -> str | None:
     return mapping.get((length, key))
 
 
+def _cbor():
+    try:
+        import cbor2  # noqa: PLC0415 - available in the controller/framework image
+        return cbor2
+    except ImportError:  # pragma: no cover
+        return None
+
+
+def _unwrap_tag24(value):
+    cbor2 = _cbor()
+    if cbor2 is not None and isinstance(value, cbor2.CBORTag) and value.tag == 24:
+        return value.value
+    return value
+
+
+def decode_roll_forward(payload: bytes) -> dict | None:
+    """slot, block number, parent and header hash of a ChainSync MsgRollForward (F142).
+
+    N2N headers are [era, #6.24(header bytes)]; header = [header_body, signature] and
+    header_body starts [block_number, slot, prev_hash, ...]. None when it does not decode.
+    """
+    cbor2 = _cbor()
+    if cbor2 is None:
+        return None
+    try:
+        msg = cbor2.loads(payload)
+        wrapped = msg[1]
+        header_bytes = _unwrap_tag24(wrapped[1] if isinstance(wrapped, list) else wrapped)
+        if not isinstance(header_bytes, (bytes, bytearray)):
+            return None
+        body = cbor2.loads(header_bytes)[0]
+        prev = body[2]
+        return {"block_no": int(body[0]), "slot": int(body[1]),
+                "prev_hash": prev.hex() if isinstance(prev, (bytes, bytearray)) else None,
+                "header_hash": hashlib.blake2b(bytes(header_bytes), digest_size=32).hexdigest()}
+    except Exception:  # noqa: BLE001 - a non-decodable message is reported as None
+        return None
+
+
+def decode_block_digest(payload: bytes) -> str | None:
+    """blake2b-256 of a BlockFetch MsgBlock body, to tell two served blocks apart (F142)."""
+    cbor2 = _cbor()
+    if cbor2 is None:
+        return None
+    try:
+        msg = cbor2.loads(payload)
+        body = _unwrap_tag24(msg[1])
+        raw = body if isinstance(body, (bytes, bytearray)) else cbor2.dumps(body)
+        return hashlib.blake2b(bytes(raw), digest_size=32).hexdigest()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class ProxyState:
     def __init__(
         self,
@@ -123,6 +177,8 @@ class ProxyState:
     ) -> None:
         self.mutation_message = mutation_message or None
         self._connection_counter = 0
+        self._replay_store: list[bytes] = []
+        self._replay_done = False
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port
         self.output_dir = output_dir
@@ -152,6 +208,7 @@ class ProxyState:
             "mutate_after_segments": mutate_after_segments,
             "mutation_message": mutation_message or None,
             "connections": [],
+            "replays": [],
         }
         self.events_path = output_dir / "proxy-events.ndjson"
         self.stats_path = output_dir / "proxy-stats.json"
@@ -330,7 +387,41 @@ class ProxyState:
         os.replace(tmp_path, self.stats_path)
 
 
-def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str) -> tuple[bytes, bool]:
+def _rebuild_segment(segment: bytes, payload: bytes) -> bytes:
+    return segment[:6] + len(payload).to_bytes(2, "big") + payload
+
+
+def _replay_earlier(state: ProxyState, *, segment: bytes, header: dict, message_kind: str | None) -> tuple[bytes, dict | None]:
+    """Store genuine messages of the selected kind; once enough are stored, replace the next one with
+    the oldest (F142). The replay is measured: slot / height deltas and the parent mismatch."""
+    payload = segment[HEADER_LENGTH:]
+    with state.lock:
+        if state._replay_done or len(state._replay_store) < max(1, state.mutate_after_segments):
+            state._replay_store.append(bytes(payload))
+            del state._replay_store[:-16]
+            return segment, None
+        replayed = state._replay_store[0]
+        if replayed == payload:
+            return segment, None
+        state._replay_done = True
+        previous = state._replay_store[-1]
+    info = {"message_kind": message_kind, "protocol": header["protocol"]}
+    if message_kind == "roll_forward":
+        old, prev_sent, current = decode_roll_forward(replayed), decode_roll_forward(previous), decode_roll_forward(payload)
+        info.update({"replayed": old, "previous": prev_sent, "displaced": current})
+        if old and prev_sent:
+            info["slot_delta"] = old["slot"] - prev_sent["slot"]
+            info["height_delta"] = old["block_no"] - prev_sent["block_no"]
+            info["parent_mismatch"] = old["prev_hash"] != prev_sent["header_hash"]
+    elif message_kind == "block":
+        info.update({"replayed_digest": decode_block_digest(replayed), "displaced_digest": decode_block_digest(payload)})
+        info["block_mismatch"] = info["replayed_digest"] != info["displaced_digest"]
+    with state.lock:
+        state.stats["replays"].append(info)
+    return _rebuild_segment(segment, replayed), info
+
+
+def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str, record: dict | None = None) -> tuple[bytes, bool]:
     header = parse_mux_segment_header(segment[:HEADER_LENGTH])
     original_payload = segment[HEADER_LENGTH:]
     original_message_kind = classify_segment_message(protocol=header["protocol"], payload=original_payload)
@@ -339,8 +430,23 @@ def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str) -> tup
         protocol=header["protocol"],
         message_kind=original_message_kind,
     )
+    # F142: what the upstream answered to a corrupted range request on this connection.
+    if (record is not None and record.get("range_request_corrupted") and direction == "inbound"
+            and _normalize_protocol_id(header["protocol"]) == BLOCKFETCH_PROTOCOL_ID):
+        if record.get("range_response") is None and original_message_kind in {"no_blocks", "start_batch"}:
+            record["range_response"] = original_message_kind
+        elif original_message_kind == "block" and record.get("range_response") == "start_batch" and not record.get("range_batch_done"):
+            record["blocks_after_bad_range"] = int(record.get("blocks_after_bad_range", 0)) + 1
+        elif original_message_kind == "batch_done":
+            record["range_batch_done"] = True
     mutated = False
-    if (
+    if state.mutation_mode == "replay_earlier":
+        if (state.mutation_direction in {direction, "both"}
+                and (state.mutation_protocol == "any" or int(state.mutation_protocol) == header["protocol"])
+                and (state.mutation_message is None or original_message_kind == state.mutation_message)):
+            segment, info = _replay_earlier(state, segment=segment, header=header, message_kind=original_message_kind)
+            mutated = info is not None
+    elif (
         state.should_mutate(
             direction=direction,
             protocol=header["protocol"],
@@ -352,11 +458,16 @@ def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str) -> tup
         payload[-1] ^= 0x01
         segment = segment[:HEADER_LENGTH] + bytes(payload)
         mutated = True
+        if record is not None and original_message_kind == "request_range":
+            record["range_request_corrupted"] = True
+            record.setdefault("blocks_after_bad_range", 0)
+    if mutated:
+        state.note_mutation(record)
     message_kind = classify_segment_message(protocol=header["protocol"], payload=segment[HEADER_LENGTH:])
     state.note_segment_message(
         direction=direction,
         protocol=header["protocol"],
-        payload_length=header["payload_length"],
+        payload_length=parse_mux_segment_header(segment[:HEADER_LENGTH])["payload_length"],
         mutated=mutated,
         message_kind=message_kind,
         original_message_kind=original_message_kind,
@@ -383,9 +494,7 @@ def _relay_segments(source: socket.socket, target: socket.socket, *, state: Prox
                 break
             segment = bytes(buffer[:total_length])
             del buffer[:total_length]
-            segment, mutated = _mutate_segment(segment, state=state, direction=direction)
-            if mutated:
-                state.note_mutation(record)
+            segment, mutated = _mutate_segment(segment, state=state, direction=direction, record=record)
             target.sendall(segment)
     if buffer:
         target.sendall(bytes(buffer))

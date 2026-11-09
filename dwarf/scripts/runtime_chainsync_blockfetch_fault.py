@@ -28,22 +28,28 @@ from runtime_substrate_common import run_command, wait_for_nodes_healthy, write_
 
 MODE_DEFAULTS: dict[str, dict[str, object]] = {
     "chainsync_parent_discontinuity": {
-        "mutation_mode": "flip_payload_byte",
+        # F142: replay an earlier genuinely signed header: slot back, height not up, parent mismatch.
+        "mutation_mode": "replay_earlier",
         "mutation_direction": "inbound",
-        "mutation_protocol": "any",
-        "mutate_after_segments": 1,
+        "mutation_protocol": "2",
+        "mutation_message": "roll_forward",
+        "mutate_after_segments": 3,
     },
     "chainsync_nonincrementing_height": {
-        "mutation_mode": "flip_payload_byte",
+        # F142: replay an earlier genuinely signed header: slot back, height not up, parent mismatch.
+        "mutation_mode": "replay_earlier",
         "mutation_direction": "inbound",
-        "mutation_protocol": "any",
-        "mutate_after_segments": 1,
+        "mutation_protocol": "2",
+        "mutation_message": "roll_forward",
+        "mutate_after_segments": 3,
     },
     "chainsync_nonmonotonic_slot": {
-        "mutation_mode": "flip_payload_byte",
+        # F142: replay an earlier genuinely signed header: slot back, height not up, parent mismatch.
+        "mutation_mode": "replay_earlier",
         "mutation_direction": "inbound",
-        "mutation_protocol": "any",
-        "mutate_after_segments": 1,
+        "mutation_protocol": "2",
+        "mutation_message": "roll_forward",
+        "mutate_after_segments": 3,
     },
     "chainsync_responder_fork_switch": {
         "mutation_mode": "chainsync_fork_switch_once",
@@ -52,9 +58,11 @@ MODE_DEFAULTS: dict[str, dict[str, object]] = {
         "mutate_after_segments": 2,
     },
     "blockfetch_invalid_range": {
+        # F142: corrupt the point inside the outgoing MsgRequestRange; measure what the upstream serves.
         "mutation_mode": "flip_payload_byte",
         "mutation_direction": "outbound",
-        "mutation_protocol": "any",
+        "mutation_protocol": "3",
+        "mutation_message": "request_range",
         "mutate_after_segments": 1,
     },
     "blockfetch_range_pressure": {
@@ -72,16 +80,20 @@ MODE_DEFAULTS: dict[str, dict[str, object]] = {
         "mutate_after_segments": 1,
     },
     "blockfetch_range_mismatch": {
-        "mutation_mode": "flip_payload_byte",
+        # F142: serve an earlier genuine block in place of the requested one.
+        "mutation_mode": "replay_earlier",
         "mutation_direction": "inbound",
-        "mutation_protocol": "any",
-        "mutate_after_segments": 1,
+        "mutation_protocol": "3",
+        "mutation_message": "block",
+        "mutate_after_segments": 2,
     },
     "blockfetch_continuity_failure": {
-        "mutation_mode": "flip_payload_byte",
+        # F142: serve an earlier genuine block in place of the requested one.
+        "mutation_mode": "replay_earlier",
         "mutation_direction": "inbound",
-        "mutation_protocol": "any",
-        "mutate_after_segments": 1,
+        "mutation_protocol": "3",
+        "mutation_message": "block",
+        "mutate_after_segments": 2,
     },
 }
 
@@ -258,6 +270,14 @@ def peer_addresses_with_proxy(peer_addresses: list[str], *, selected_upstream: s
     return [*kept, replacement]
 
 
+REPLAY_MODES = ("chainsync_parent_discontinuity", "chainsync_nonincrementing_height", "chainsync_nonmonotonic_slot",
+                "blockfetch_range_mismatch", "blockfetch_continuity_failure")
+
+
+def _first_replay(stats: dict, kind: str) -> dict | None:
+    return next((r for r in (stats.get("replays") or []) if r.get("message_kind") == kind), None)
+
+
 def peer_drop_evidence(stats: dict) -> dict:
     """Did the target node drop a connection that carried an injected message? (F130)
 
@@ -281,6 +301,13 @@ def peer_drop_evidence(stats: dict) -> dict:
 def proxy_activity_ready(*, mode: str, stats: dict) -> bool:
     if mode == "chainsync_responder_fork_switch":
         return int(stats.get("chainsync_messages_observed", 0) or 0) >= 3
+    if mode in REPLAY_MODES:
+        # F142: ready once the replay happened and its connection was closed.
+        return bool(stats.get("replays")) and any(
+            int(c.get("mutated_segments", 0) or 0) >= 1 and c.get("closed_by") for c in (stats.get("connections") or []))
+    if mode == "blockfetch_invalid_range":
+        return any(c.get("range_request_corrupted") and (c.get("range_response") or c.get("closed_by"))
+                   for c in (stats.get("connections") or []))
     if mode == "blockfetch_invalid_block_cbor":
         # F130: the measurement is a corrupting connection being closed, not the first segment.
         return any(int(c.get("mutated_segments", 0) or 0) >= 1 and c.get("closed_by")
@@ -337,6 +364,23 @@ def summarize_proxy_events(path: Path) -> dict:
     return summary
 
 
+def _chainsync_replay_result(stats: dict, target_healthy: bool) -> dict:
+    """F142: one replayed earlier header realises all three ChainSync violations; values are measured."""
+    replay, evidence = _first_replay(stats, "roll_forward"), peer_drop_evidence(stats)
+    dropped = bool(replay) and evidence["dropped_by_target"]
+    return {
+        "rejected": bool(target_healthy and dropped),
+        "observed_slot_delta": (replay or {}).get("slot_delta"),
+        "observed_height_delta": (replay or {}).get("height_delta"),
+        "parent_mismatch": (replay or {}).get("parent_mismatch"),
+        "candidate_chain_advanced": (False if dropped else None),
+        **evidence,
+        "replay": replay,
+        "violation_crafted": replay is not None,
+        "mutation": "replay_earlier_signed_header",
+    }
+
+
 def build_result_body(
     *,
     mode: str,
@@ -355,23 +399,11 @@ def build_result_body(
     block_range_requests_observed = int(stats.get("block_range_requests_observed", 0) or 0)
     activity = max(intercepted, connections)
     if mode == "chainsync_parent_discontinuity":
-        return {
-            "rejected": bool(target_healthy and activity >= 1),
-            "candidate_chain_advanced": False,
-            "rejection_reason": "simulated_parent_discontinuity_via_mux_proxy",
-        }
+        return _chainsync_replay_result(stats, target_healthy)
     if mode == "chainsync_nonincrementing_height":
-        return {
-            "rejected": bool(target_healthy and activity >= 1),
-            "observed_height_delta": 0,
-            "candidate_chain_advanced": False,
-        }
+        return _chainsync_replay_result(stats, target_healthy)
     if mode == "chainsync_nonmonotonic_slot":
-        return {
-            "rejected": bool(target_healthy and activity >= 1),
-            "observed_slot_delta": -1,
-            "candidate_chain_advanced": False,
-        }
+        return _chainsync_replay_result(stats, target_healthy)
     if mode == "chainsync_responder_fork_switch":
         return {
             "rollback_then_forward_sequence_observed": bool(target_healthy and rollback_then_forward_count >= 1),
@@ -382,9 +414,15 @@ def build_result_body(
             "chainsync_roll_forward_count": chainsync_roll_forward_count,
         }
     if mode == "blockfetch_invalid_range":
+        conn = next((c for c in (stats.get("connections") or []) if c.get("range_request_corrupted")), None)
+        answer = (conn or {}).get("range_response") or ((conn or {}).get("closed_by") and "closed")
+        served = int((conn or {}).get("blocks_after_bad_range", 0) or 0) if conn else None
         return {
-            "invalid_range_rejected": bool(target_healthy and activity >= 1),
-            "served_blocks": 0,
+            "invalid_range_rejected": bool(target_healthy and conn and answer in ("no_blocks", "closed") and not served),
+            "served_blocks": served,
+            "upstream_answer": answer,
+            "violation_crafted": conn is not None,
+            "mutation": "flip_last_byte_of_range_request",
         }
     if mode == "blockfetch_range_pressure":
         return {
@@ -404,14 +442,18 @@ def build_result_body(
             "decode_path": "corrupted_msgblock_from_upstream",
         }
     if mode == "blockfetch_range_mismatch":
+        replay, evidence = _first_replay(stats, "block"), peer_drop_evidence(stats)
         return {
-            "range_mismatch_rejected": bool(target_healthy and activity >= 1),
-            "accepted_mismatched_range": False,
+            "range_mismatch_rejected": bool(target_healthy and replay and evidence["dropped_by_target"]),
+            "accepted_mismatched_range": (not evidence["dropped_by_target"]) if replay else None,
+            **evidence, "replay": replay, "violation_crafted": replay is not None, "mutation": "replay_earlier_block",
         }
     if mode == "blockfetch_continuity_failure":
+        replay, evidence = _first_replay(stats, "block"), peer_drop_evidence(stats)
         return {
-            "continuity_failure_rejected": bool(target_healthy and activity >= 1),
-            "downstream_state_advanced": False,
+            "continuity_failure_rejected": bool(target_healthy and replay and evidence["dropped_by_target"]),
+            "downstream_state_advanced": (not evidence["dropped_by_target"]) if replay else None,
+            **evidence, "replay": replay, "violation_crafted": replay is not None, "mutation": "replay_earlier_block",
         }
     raise ValueError(f"unsupported mode: {mode}")
 
