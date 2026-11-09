@@ -54,8 +54,8 @@
    "match": "phase3-runtime-profile-a-copied-state-",
    "group": "host-model helpers on container profiles",
    "status": "open",
-   "cause": "runtime_profile_recovery_check.py copied-state modes: \"stale source node1 is not behind node2: 3119 >= 3119\"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes",
-   "fix": "port the copy/stop steps to the controller container lifecycle"
+   "cause": "runtime_profile_recovery_check.py stops/starts the whole devnet through tmux, copies node db directories on the host (env/node-data/<node>/db) and expects node1 to be behind node2 at baseline (a host-devnet accident). Container profiles keep each db in a controller-owned Docker volume",
+   "fix": "needs a controller lifecycle action: stop node, snapshot/copy its volume, start; the controller already snapshots volumes for apply rollback, and the snapshot capture/restore smoke scenarios need the same action \u2014 design once for both"
   },
   {
    "match": "phase3-runtime-profile-a-pcap-capture-primitive",
@@ -116,16 +116,16 @@
   {
    "match": "cardano-lsq-extract-debug-epoch-state",
    "group": "LSQ extract scenario",
-   "status": "open",
+   "status": "rerun-pending",
    "cause": "extractor (F98 record) starts, but the scenario has no substrate and hard-codes /tmp/ada2-testnet42-socket/node1.sock from the old host setup",
-   "fix": "give the scenario a testnet_42 substrate and take the socket from runtime metadata (runtime_metadata_path + target_node)"
+   "fix": "F116 b2e271c6: own testnet_42 substrate (resolved-plan release), socket from runtime metadata"
   },
   {
    "match": "cardano-amaru-cbor-dataset-",
    "group": "CBOR dataset",
-   "status": "open",
+   "status": "rerun-pending",
    "cause": "dataset is mounted, but the reference verifier image cardano-cbor-dataset:a7561cd is absent on the box",
-   "fix": "build it once on the box from ~/cardano-cbor-dataset (dwarf/docs/cardano-cbor-dataset-integration.md, pinned a7561cd); after the campaign so the build does not load the box"
+   "fix": "building cardano-cbor-dataset:a7561cd on the box from Dockerfile.dwarf (snapshot apt fix, pins unchanged), 2026-11-09"
   },
   {
    "match": "runtime-bundle-chain-verify-example-smoke",
