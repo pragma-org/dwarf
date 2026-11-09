@@ -3,17 +3,24 @@
  "rules": [
   {
    "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
-   "group": "review",
-   "status": "review",
-   "cause": "panic path now contained (F126); bootstrap_assumptions_safe fails on DWARF devnet config: genesis hashes not pinned, unsafe defaults detected, version-negotiation downgrade seen",
-   "fix": "decide: pin genesis hashes in the generated devnet config, or scope the check to public networks"
+   "group": "decision 2a applied",
+   "status": "rerun-pending",
+   "cause": "DWARF devnet config pinned no genesis hashes; Test*HardForkAtEpoch + ExperimentalProtocolsEnabled are needed for the devnet (reported, not hidden)",
+   "fix": "F134: genesis hashes pinned after every genesis rewrite; canary rerun first"
+  },
+  {
+   "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
+   "group": "byzantine block-fetch",
+   "status": "rerun-pending",
+   "cause": "eviction real (each honest node drops the corrupting peer ~1.0 s); quorum failed: each fault step restarts its target, honest nodes forked and had 10 s to re-converge",
+   "fix": "F131 + F132b: observe 60 s, honest quorum tolerance 20 slots; rerun #26"
   },
   {
    "match": "consensus-threshold-delay-probe",
-   "group": "review",
-   "status": "review",
-   "cause": "real now (F128): with network delay the 2 nodes show 2 tip groups at the sample instant (0.1 s slots)",
-   "fix": "decide: compare tips with a slot tolerance / converge after the delay window"
+   "group": "decision 1a applied",
+   "status": "rerun-pending",
+   "cause": "node1 stalled at 1005 (fork-switch proxy replaced all of node1 peers: fixed by F131); tips at one instant differ on 0.1 s slots",
+   "fix": "F131 + F132 (tolerance_slots 20 on final tips; stalled node still fails); rerun #26"
   },
   {
    "match": "runtime-substrate-duplex-promotion-pressure-example-smoke",
@@ -21,13 +28,6 @@
    "status": "open",
    "cause": "real now (F126): node accepted 24 duplex bearers vs hard_limit 8, but 8 exists only in the probe; the node runs the default AcceptedConnectionsLimit (hard 512)",
    "fix": "add a substrate setting that writes AcceptedConnectionsLimit into the node config; the probe reads the node limit"
-  },
-  {
-   "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
-   "group": "byzantine block-fetch",
-   "status": "rerun-pending",
-   "cause": "design fixed (option a)",
-   "fix": "F130: node3 serves corrupted blocks via the proxy to node1/node2; per-node drop within 10 s; rerun pending"
   },
   {
    "match": "runtime-substrate-blockfetch-range-pressure-example-smoke",
@@ -434,6 +434,16 @@
    "id": "epoch-and-ledger-producers",
    "priority": "after the easier groups",
    "note": "13 unwired assertions in 5 scenarios (3 epoch-boundary compound smokes, eclipse-topology ledger peers, local-query chain switch). runtime_epoch_boundary_probe.py measures Amaru (snapshot / pots.dump log lines) but returns observation_overrides unchanged and uses other keys than the assertions read; it has no cardano-node path. Plan: one producer contract writing the assertion keys (epoch_boundary, stake_snapshot, reward_calculation, leadership_schedule) with source + per-node results; cardano-node via its own image cardano-cli LSQ (tip+genesis epochLength, stake-snapshot hashes, ADA conservation from ledger-state, leadership-schedule twice); Amaru via its log lines mapped to the same keys; Amaru leadership = adopted blocks came from elected leaders (header-validation VRF, already tapped); boundaries are observed naturally on testnet_42 (short epochs). Then switch the 5 scenarios to resolved-plan."
+  },
+  {
+   "id": "byzantine-isolation-primitive",
+   "priority": "user decision",
+   "note": "byzantine_isolation_observed has no scenario since F130 (its 'no link either way' expectation does not hold for cardano-node: inbound accepted, local roots retried); test_every_builtin_primitive_has_a_source_backed_scenario_reference fails until it is retired or given a correct use."
+  },
+  {
+   "id": "F133-override-audit",
+   "priority": "in progress",
+   "note": "F133: observation overrides can no longer replace or supply measurement keys. 14 passing scenarios that use override-writing scripts are re-run (#26) to confirm their passes are real."
   }
  ]
 }
