@@ -2,6 +2,125 @@
  "_about": "Hand-kept causes and statuses for the wiring-campaign gap tracker. Rules are matched in order; the first match wins. 'match' is a scenario-id prefix or an exact id. Statuses: rerun-pending (fix deployed, not re-run yet), open (cause known, no fix yet), investigate (cause not yet known), review (verdict needs a human look), declared-gap (accepted limitation), removed.",
  "rules": [
   {
+   "match": "phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo",
+   "group": "container port faults",
+   "status": "rerun-pending",
+   "cause": "netns helper ran as the controller image user (non-root): tc failed with RTNETLINK EPERM",
+   "fix": "F99 d1babd0e: helper runs as uid 0, --cap-drop ALL --cap-add NET_ADMIN, no-new-privileges; proven live read-only on profile-n"
+  },
+  {
+   "match": "m3-runtime-blockfetch-port-drop-",
+   "group": "container port faults",
+   "status": "rerun-pending",
+   "cause": "netns helper ran non-root: iptables \"Permission denied (you must be root)\"",
+   "fix": "F99 d1babd0e"
+  },
+  {
+   "match": "phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo",
+   "group": "container port faults",
+   "status": "rerun-pending",
+   "cause": "netns helper ran non-root: iptables refused",
+   "fix": "F99 d1babd0e"
+  },
+  {
+   "match": "m3-runtime-chainsync-historical-point-burst",
+   "group": "Rust runtime tools",
+   "status": "rerun-pending",
+   "cause": "new pallas chain-sync tool worked (exit 0) but fetched 5 headers; the check counts exactly 2 (Amaru BOOTSTRAP_HEADERS_PER_POINT = 2)",
+   "fix": "F100 6e6fa76d: wrapper passes max 2"
+  },
+  {
+   "match": "phase3-runtime-profile-a-partition-rejoin-capability-demo",
+   "group": "host-model helpers on container profiles",
+   "status": "open",
+   "cause": "runtime_partition_rejoin_check.py calls sudo (absent in the controller); its chainsync-multi-peer step also hit the header-count bug (F100)",
+   "fix": "port the helper to container faults (F95/F99 netns path) instead of host sudo"
+  },
+  {
+   "match": "phase3-runtime-generated-haskell3-connection-state-freeze-rollup-capability-demo",
+   "group": "host-model helpers on container profiles",
+   "status": "open",
+   "cause": "runtime_connection_state.py needs lsof/ss and host pids; the controller has neither the tools nor the node pid namespace",
+   "fix": "read connection state from inside the node container (docker exec ss) or from the taps"
+  },
+  {
+   "match": "phase3-runtime-generated-haskell3-gc-capture-primitive",
+   "group": "host-model helpers on container profiles",
+   "status": "open",
+   "cause": "runtime_haskell_gc_capture.py restarts the node through tmux and waits on a host pid (timed out on pid 3810297)",
+   "fix": "restart through the controller container lifecycle; read GC stats from the container"
+  },
+  {
+   "match": "m3-runtime-node2-copied-state-recovery",
+   "group": "profile-a behaviour verdicts",
+   "status": "review",
+   "cause": "helper raised \"node2 unexpectedly recovered to slot 4826 within the bounded window\": the node recovered faster than the scenario expects",
+   "fix": "decide: is fast recovery a pass, or must the window be tighter"
+  },
+  {
+   "match": "cardano-lsq-extract-debug-epoch-state",
+   "group": "LSQ extract scenario",
+   "status": "open",
+   "cause": "extractor (F98 record) starts, but the scenario has no substrate and hard-codes /tmp/ada2-testnet42-socket/node1.sock from the old host setup",
+   "fix": "give the scenario a testnet_42 substrate and take the socket from runtime metadata (runtime_metadata_path + target_node)"
+  },
+  {
+   "match": "cardano-amaru-cbor-dataset-",
+   "group": "CBOR dataset",
+   "status": "open",
+   "cause": "dataset is mounted, but the reference verifier image cardano-cbor-dataset:a7561cd is absent on the box",
+   "fix": "build it once on the box from ~/cardano-cbor-dataset (dwarf/docs/cardano-cbor-dataset-integration.md, pinned a7561cd); after the campaign so the build does not load the box"
+  },
+  {
+   "match": "runtime-bundle-chain-verify-example-smoke",
+   "group": "bundle-tool fixtures",
+   "status": "rerun-pending",
+   "cause": "runs_dir dwarf/corpora/bundle-runs was passed unresolved; the controller runs helpers from /, so the bundle was \"missing\"",
+   "fix": "F101 d20696c7"
+  },
+  {
+   "match": "runtime-bundle-diff-example-divergence",
+   "group": "bundle-tool fixtures",
+   "status": "void-pass",
+   "cause": "FALSE PASS found: both compared files were absent (missing_in_both) and the diff still counted as a divergence",
+   "fix": "F101 d20696c7: runs_dir resolves; bundle_diff_completed_clean fails when a compared file is absent. Must rerun: the earlier pass is void"
+  },
+  {
+   "match": "conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node",
+   "group": "block-apply bridge",
+   "status": "open",
+   "cause": "forge_block and serve_crafted_block are \"deferred\" stubs (external cod-forge and wire tools); fixtures are not staged into the run dir (prop3.tx not found)",
+   "fix": "port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply scenarios are outside the campaign for the same reason"
+  },
+  {
+   "match": "ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node",
+   "group": "block-apply bridge",
+   "status": "open",
+   "cause": "same deferred forge/serve bridge",
+   "fix": "same as above"
+  },
+  {
+   "match": "ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node",
+   "group": "block-apply bridge",
+   "status": "open",
+   "cause": "same deferred forge/serve bridge",
+   "fix": "same as above"
+  },
+  {
+   "match": "runtime-substrate-checkpoint-resume-recovers-example-smoke",
+   "group": "checkpoint evidence",
+   "status": "investigate",
+   "cause": "checkpoint wrote 155 entries, but health_after_resume reports every node unhealthy with probed_endpoint null (multihost-docker probe)",
+   "fix": "check the resume health probe against compose substrates"
+  },
+  {
+   "match": "governance-zero-denominator-admission-differential-amaru-cardano-node",
+   "group": "ledger differential controls",
+   "status": "fixed",
+   "cause": "init-delay race (transaction absent after 3 reference blocks)",
+   "fix": "F97d: PASS on 7da80c77 (run c39286dd)"
+  },
+  {
    "match": "ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node",
    "group": "ledger differential controls",
    "status": "rerun-pending",
@@ -30,48 +149,6 @@
    "fix": "re-check after F97d deploy; then read the role outcome assembly"
   },
   {
-   "match": "cardano-lsq-extract-debug-epoch-state",
-   "group": "Rust runtime tools",
-   "status": "rerun-pending",
-   "cause": "controller had no cargo",
-   "fix": "F98 host-built extractor (deploy 2ef565b8)"
-  },
-  {
-   "match": "m3-runtime-",
-   "group": "profile-a helper family",
-   "status": "rerun-pending",
-   "cause": "missing Rust tools, removed fetch-chain-headers, host-loopback endpoints, 125-byte socket path",
-   "fix": "F94 short socket path + F98 tools and container endpoints (deploys 2ef565b8+)"
-  },
-  {
-   "match": "phase3-runtime-profile-a-",
-   "group": "profile-a helper family",
-   "status": "rerun-pending",
-   "cause": "as m3-runtime-*",
-   "fix": "F94 + F98"
-  },
-  {
-   "match": "phase3-runtime-generated-haskell3-",
-   "group": "profile-a helper family",
-   "status": "rerun-pending",
-   "cause": "as m3-runtime-*; port faults were host-model",
-   "fix": "F94 + F95 netns port faults + F98"
-  },
-  {
-   "match": "cardano-amaru-cbor-dataset-",
-   "group": "CBOR dataset",
-   "status": "rerun-pending",
-   "cause": "dataset not mounted into the controller",
-   "fix": "DWARF_CBOR_DATASET_DIR mount (deploy 2ef565b8)"
-  },
-  {
-   "match": "governance-zero-denominator-admission-differential-amaru-cardano-node",
-   "group": "install defaults",
-   "status": "rerun-pending",
-   "cause": "raw LocalTxSubmission helper image not pulled",
-   "fix": "F89c pre-pull (deployed after rerun #2)"
-  },
-  {
    "match": "runtime-bundle-",
    "group": "bundle-tool fixtures",
    "status": "rerun-pending",
@@ -84,13 +161,6 @@
    "status": "rerun-pending",
    "cause": "April demo runs not shipped",
    "fix": "f56f9ecc fixtures"
-  },
-  {
-   "match": "runtime-substrate-checkpoint-resume-recovers-example-smoke",
-   "group": "checkpoint evidence",
-   "status": "rerun-pending",
-   "cause": "checkpoint health reported only as a boolean",
-   "fix": "F93 per-node health (deployed after rerun #2)"
   },
   {
    "match": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru",
@@ -140,22 +210,22 @@
    "contains": "TopologyActionError: controller runtime failed",
    "group": "profile prepare failures",
    "status": "investigate",
-   "cause": "topology apply failed in the controller",
-   "fix": null
+   "cause": "profile-g and profile-v prepare fail in 1 s; the controller redacts the cause (\"controller runtime failed\"), and the profile cannot be removed (\"remove is not allowed by the current topology snapshot\")",
+   "fix": "reproduce one prepare after rerun #4 and read the controller log"
   },
   {
    "contains": "readiness blocked",
    "group": "profile prepare failures",
    "status": "investigate",
-   "cause": "readiness blocked with an empty payload",
-   "fix": null
+   "cause": "readiness \"blocked\" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload",
+   "fix": "driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code"
   },
   {
    "contains": "preflight_failed",
    "group": "profile prepare failures",
    "status": "investigate",
-   "cause": "run preflight refused",
-   "fix": null
+   "cause": "m3 blockfetch delay/stale scenarios end \"preflight_failed\" before a run id exists (rerun #3 on F98 343ee0c1)",
+   "fix": "read the preflight payload on the next run"
   }
  ],
  "default": {

@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-08 19:09 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-08 22:00 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,155 +8,187 @@ Generated 2026-11-08 19:09 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 3 |
-| fail | 60 |
-| pass | 52 |
-| prepare-failed | 6 |
+| fail | 38 |
+| pass | 60 |
+| prepare-failed | 13 |
 
 | Status | Group | Count |
 |---|---|---|
-| rerun-pending | CBOR dataset | 1 |
+| void-pass | bundle-tool fixtures | 1 |
 | rerun-pending | Rust runtime tools | 1 |
-| rerun-pending | bundle-tool fixtures | 3 |
-| rerun-pending | checkpoint evidence | 1 |
-| rerun-pending | install defaults | 1 |
-| rerun-pending | profile-a helper family | 20 |
-| investigate | Amaru mixed compose startup gate | 6 |
-| investigate | ledger differential controls | 4 |
-| investigate | profile prepare failures | 6 |
-| review | review list | 3 |
+| rerun-pending | bundle-tool fixtures | 1 |
+| rerun-pending | container port faults | 4 |
+| investigate | checkpoint evidence | 1 |
+| investigate | profile prepare failures | 15 |
+| open | CBOR dataset | 1 |
+| open | LSQ extract scenario | 1 |
+| open | block-apply bridge | 1 |
+| open | host-model helpers on container profiles | 3 |
+| review | profile-a behaviour verdicts | 1 |
+| review | review list | 2 |
 | review | smoke-scenario assertion verdicts | 17 |
 | declared-gap | byzantine/amaru tmux relaunch | 1 |
 | declared-gap | superseded | 1 |
 | removed | removed from the repo | 4 |
 
-## rerun-pending: CBOR dataset
+## void-pass: bundle-tool fixtures
 
-Cause: dataset not mounted into the controller
-Fix: DWARF_CBOR_DATASET_DIR mount (deploy 2ef565b8)
+Cause: FALSE PASS found: both compared files were absent (missing_in_both) and the diff still counted as a divergence
+Fix: F101 d20696c7: runs_dir resolves; bundle_diff_completed_clean fails when a compared file is absent. Must rerun: the earlier pass is void
 
-- `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261108T185159Z-83ade908): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
+- `runtime-bundle-diff-example-divergence` (pass, run 20261108T134540Z-6ff1865d): pass
 
 ## rerun-pending: Rust runtime tools
 
-Cause: controller had no cargo
-Fix: F98 host-built extractor (deploy 2ef565b8)
+Cause: new pallas chain-sync tool worked (exit 0) but fetched 5 headers; the check counts exactly 2 (Amaru BOOTSTRAP_HEADERS_PER_POINT = 2)
+Fix: F100 6e6fa76d: wrapper passes max 2
 
-- `cardano-lsq-extract-debug-epoch-state` (fail, run 20261108T185226Z-4592aee8): runtime_cardano_lsq_extract: [Errno 2] No such file or directory: 'cargo'
+- `m3-runtime-chainsync-historical-point-burst` (fail, run 20261109T014503Z-71ff1722): load_events_are_ok: fail
 
 ## rerun-pending: bundle-tool fixtures
 
-Cause: April demo runs not shipped
-Fix: f56f9ecc fixtures
+Cause: runs_dir dwarf/corpora/bundle-runs was passed unresolved; the controller runs helpers from /, so the bundle was "missing"
+Fix: F101 d20696c7
 
-- `runtime-bundle-chain-verify-example-smoke` (fail, run 20261108T185206Z-831e6d83): bundle_chain_verify_clean: expected runtime_bundle_chain_verify to report an all-verified chain
-- `runtime-bundle-summary-compose-example-smoke` (fail, run 20261108T185213Z-57fc4abe): bundle_summary_compose_completed_clean: expected runtime_bundle_summary_compose to emit a non-empty summary bundle
-- `runtime-forensic-snapshot-example-smoke` (fail, run 20261108T185220Z-5234aa74): forensic_snapshot_emitted_clean: expected runtime_forensic_snapshot to emit a non-empty snapshot bundle
+- `runtime-bundle-chain-verify-example-smoke` (fail, run 20261109T002720Z-b24b5702): bundle_chain_verify_clean: expected runtime_bundle_chain_verify to report an all-verified chain
 
-## rerun-pending: checkpoint evidence
+## rerun-pending: container port faults
 
-Cause: checkpoint health reported only as a boolean
-Fix: F93 per-node health (deployed after rerun #2)
+Cause: netns helper ran non-root: iptables "Permission denied (you must be root)"
+Fix: F99 d1babd0e
 
-- `runtime-substrate-checkpoint-resume-recovers-example-smoke` (fail, run 20261108T185736Z-cf01522f): substrate_checkpoint_recorded_clean: expected runtime_substrate_checkpoint to emit a non-empty checkpoint and restart the substrate cleanly
+- `m3-runtime-blockfetch-port-drop-isolated-peer` (fail, run 20261109T014118Z-a82d8749): fail
+- `m3-runtime-blockfetch-port-drop-timeout` (fail, run 20261109T014403Z-642208ad): fail
+- `phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo` (fail, run 20261109T020539Z-005d48a4): fail
+  - Cause: netns helper ran non-root: iptables refused
+- `phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo` (fail, run 20261109T014032Z-f24cc8ce): load_events_are_ok: fail
+  - Cause: netns helper ran as the controller image user (non-root): tc failed with RTNETLINK EPERM
+  - Fix: F99 d1babd0e: helper runs as uid 0, --cap-drop ALL --cap-add NET_ADMIN, no-new-privileges; proven live read-only on profile-n
 
-## rerun-pending: install defaults
+## investigate: checkpoint evidence
 
-Cause: raw LocalTxSubmission helper image not pulled
-Fix: F89c pre-pull (deployed after rerun #2)
+Cause: checkpoint wrote 155 entries, but health_after_resume reports every node unhealthy with probed_endpoint null (multihost-docker probe)
+Fix: check the resume health probe against compose substrates
 
-- `governance-zero-denominator-admission-differential-amaru-cardano-node` (fail, run 20261108T194020Z-b01f3652): runtime_governance_zero_denominator_admission: raw LocalTxSubmission helper image inspection failed
-
-## rerun-pending: profile-a helper family
-
-Cause: missing Rust tools, removed fetch-chain-headers, host-loopback endpoints, 125-byte socket path
-Fix: F94 short socket path + F98 tools and container endpoints (deploys 2ef565b8+)
-
-- `m3-runtime-blockfetch-historical-range-burst` (fail, run 20261108T202135Z-2d2aad18): load_events_are_ok: fail
-- `m3-runtime-blockfetch-multi-peer-historical-range` (fail, run 20261108T202208Z-9537720a): load_events_are_ok: fail
-- `m3-runtime-blockfetch-port-delay-bounded-success` (fail, run 20261108T202242Z-8ea1eac8): fail
-- `m3-runtime-blockfetch-port-drop-isolated-peer` (fail, run 20261108T201827Z-0181185b): fail
-- `m3-runtime-blockfetch-port-drop-timeout` (fail, run 20261108T202315Z-43ff4c04): fail
-- `m3-runtime-blockfetch-stale-single-point-rejection` (fail, run 20261108T202348Z-722fcd02): load_events_are_ok: fail
-- `m3-runtime-chainsync-historical-point-burst` (fail, run 20261108T202422Z-c3f4f1f1): load_events_are_ok: fail
-- `m3-runtime-node2-copied-state-recovery` (fail, run 20261108T202455Z-7957b149): load_events_are_ok: fail
-- `m3-runtime-profile-restart-tip-recovery` (error, run none): preflight_failed
-- `phase3-runtime-generated-haskell3-connection-state-freeze-rollup-capability-demo` (fail, run 20261108T203749Z-ca1d21cd): load_events_are_ok: fail
-- `phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo` (fail, run 20261108T203826Z-10a57844): fail
-- `phase3-runtime-generated-haskell3-gc-capture-primitive` (fail, run 20261108T203904Z-c33b1d49): load_events_are_ok: fail
-- `phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive` (fail, run 20261108T202723Z-75e8774a): load_events_are_ok: fail
-- `phase3-runtime-profile-a-copied-state-divergence-primitive` (fail, run 20261108T202926Z-33f3a15d): load_events_are_ok: fail
-- `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (fail, run 20261108T203130Z-b888d17b): load_events_are_ok: fail
-- `phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo` (error, run none): preflight_failed
-- `phase3-runtime-profile-a-partition-rejoin-capability-demo` (fail, run 20261108T201901Z-fd85695c): load_events_are_ok: fail
-- `phase3-runtime-profile-a-pcap-capture-primitive` (fail, run 20261108T203333Z-962b1677): load_events_are_ok: fail
-- `phase3-runtime-profile-a-restart-postrecovery-blockfetch-primitive` (fail, run 20261108T203406Z-f44de3a3): load_events_are_ok: fail
-- `phase3-runtime-profile-a-syscall-trace-primitive` (fail, run 20261108T203609Z-3197a9ed): load_events_are_ok: fail
-
-## investigate: Amaru mixed compose startup gate
-
-Cause: Amaru+cardano mixed compose: ready_node_count=0 at the startup gate on 42fdc8f0; the later plutus-onchain runs on the same shape pass on 343ee0c1
-Fix: re-run on 343ee0c1 first; read failed-substrate-logs.txt if it repeats
-
-- `cbor-strictness-witness-arity-vkey-noncurve-differential-amaru-cardano-node` (fail, run 20261108T192654Z-16a203a3): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-- `conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node` (fail, run 20261108T192216Z-29c38dbd): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-- `conway-phase1-validation-rules-differential-amaru-cardano-node` (fail, run 20261108T193126Z-372813fd): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-- `ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node` (fail, run 20261108T194334Z-465490e0): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-- `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node` (fail, run 20261108T194821Z-bd5ce162): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-- `runtime-substrate-txsubmission-unexpected-body-mixed-amaru` (fail, run 20261108T184729Z-9998652d): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-
-## investigate: ledger differential controls
-
-Cause: the control did not complete (likely the same tx-submission init-delay race as F97c)
-Fix: apply the F97c propagation wait to these runners
-
-- `ledger-submit-empty-redeemers-container-differential-amaru-cardano-node` (fail, run 20261108T195249Z-ebc2f523): redeemer_container_differential_matches: fresh ledger-control evidence is incomplete or inconclusive
-- `ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node` (fail, run 20261108T195705Z-323703b1): inline_datum_tag24_boundary_matches: inline-datum boundary evidence is incomplete or inconclusive
-- `ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node` (fail, run 20261108T200039Z-127add6f): runtime_multiasset_compact_boundary: compact-boundary controls are incomplete; boundary case was not submitted
-- `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node` (fail, run 20261108T200555Z-a281e253): uplc_deep_delay_stack_safety_matches: UPLC deep-delay evidence is incomplete or inconclusive
+- `runtime-substrate-checkpoint-resume-recovers-example-smoke` (fail, run 20261109T003404Z-b8acbc59): substrate_checkpoint_recorded_clean: expected runtime_substrate_checkpoint to emit a non-empty checkpoint and restart the substrate cleanly
 
 ## investigate: profile prepare failures
 
-Cause: topology apply failed in the controller
-Fix: none yet
+Cause: profile-g and profile-v prepare fail in 1 s; the controller redacts the cause ("controller runtime failed"), and the profile cannot be removed ("remove is not allowed by the current topology snapshot")
+Fix: reproduce one prepare after rerun #4 and read the controller log
 
 - `cardano-n2n-handshake-version-table-forward-compat-1112` (prepare-failed, run none): TopologyActionError: controller runtime failed
 - `client-example-cbor-decoding-amaru-portable-20260918` (prepare-failed, run none): readiness blocked: {}
-- `client-example-plutus-vm-amaru-portable-20260918` (prepare-failed, run none): TopologyActionError: controller runtime failed
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+- `client-example-plutus-vm-amaru-portable-20260918` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
 - `consensus-chainhold-upstream-differential` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+- `m3-runtime-blockfetch-port-delay-bounded-success` (error, run none): preflight_failed
+  - Cause: m3 blockfetch delay/stale scenarios end "preflight_failed" before a run id exists (rerun #3 on F98 343ee0c1)
+  - Fix: read the preflight payload on the next run
+- `m3-runtime-blockfetch-stale-single-point-rejection` (error, run none): preflight_failed
+  - Cause: m3 blockfetch delay/stale scenarios end "preflight_failed" before a run id exists (rerun #3 on F98 343ee0c1)
+  - Fix: read the preflight payload on the next run
+- `m3-runtime-profile-restart-tip-recovery` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
 - `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (prepare-failed, run none): TopologyActionError: controller runtime failed
 - `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (prepare-failed, run none): TopologyActionError: controller runtime failed
+- `phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+- `phase3-runtime-profile-a-copied-state-divergence-primitive` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+- `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+- `phase3-runtime-profile-a-pcap-capture-primitive` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+- `phase3-runtime-profile-a-restart-postrecovery-blockfetch-primitive` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+- `phase3-runtime-profile-a-syscall-trace-primitive` (prepare-failed, run none): readiness blocked: {}
+  - Cause: readiness "blocked" after ~2 min per scenario (profile-a x8 after one fault scenario, za/z Amaru 0918 profiles after ~16 min, chainhold self-compose at once); the driver logged an empty payload
+  - Fix: driver now saves the full readiness payload (scratchpad prepare-blocked/); rerun to read reason_code
+
+## open: CBOR dataset
+
+Cause: dataset is mounted, but the reference verifier image cardano-cbor-dataset:a7561cd is absent on the box
+Fix: build it once on the box from ~/cardano-cbor-dataset (dwarf/docs/cardano-cbor-dataset-integration.md, pinned a7561cd); after the campaign so the build does not load the box
+
+- `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261109T002711Z-d2fd42ac): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
+
+## open: LSQ extract scenario
+
+Cause: extractor (F98 record) starts, but the scenario has no substrate and hard-codes /tmp/ada2-testnet42-socket/node1.sock from the old host setup
+Fix: give the scenario a testnet_42 substrate and take the socket from runtime metadata (runtime_metadata_path + target_node)
+
+- `cardano-lsq-extract-debug-epoch-state` (fail, run 20261109T002747Z-eac8e61b): load_events_are_ok: fail
+
+## open: block-apply bridge
+
+Cause: forge_block and serve_crafted_block are "deferred" stubs (external cod-forge and wire tools); fixtures are not staged into the run dir (prop3.tx not found)
+Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply scenarios are outside the campaign for the same reason
+
+- `conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node` (fail, run 20261109T005441Z-b4582ddd): runtime_tx_submit_differential: [Errno 2] No such file or directory: '/var/dwarf/runs/20261109T005441Z-b4582ddd/fixture/gov_scriptcontext/prop3.tx'
+
+## open: host-model helpers on container profiles
+
+Cause: runtime_connection_state.py needs lsof/ss and host pids; the controller has neither the tools nor the node pid namespace
+Fix: read connection state from inside the node container (docker exec ss) or from the taps
+
+- `phase3-runtime-generated-haskell3-connection-state-freeze-rollup-capability-demo` (fail, run 20261109T020449Z-e57722f2): load_events_are_ok: fail
+- `phase3-runtime-generated-haskell3-gc-capture-primitive` (fail, run 20261109T020619Z-5f7f0c94): load_events_are_ok: fail
+  - Cause: runtime_haskell_gc_capture.py restarts the node through tmux and waits on a host pid (timed out on pid 3810297)
+  - Fix: restart through the controller container lifecycle; read GC stats from the container
+- `phase3-runtime-profile-a-partition-rejoin-capability-demo` (fail, run 20261109T014153Z-ccdfc454): load_events_are_ok: fail
+  - Cause: runtime_partition_rejoin_check.py calls sudo (absent in the controller); its chainsync-multi-peer step also hit the header-count bug (F100)
+  - Fix: port the helper to container faults (F95/F99 netns path) instead of host sudo
+
+## review: profile-a behaviour verdicts
+
+Cause: helper raised "node2 unexpectedly recovered to slot 4826 within the bounded window": the node recovered faster than the scenario expects
+Fix: decide: is fast recovery a pass, or must the window be tighter
+
+- `m3-runtime-node2-copied-state-recovery` (fail, run 20261109T014538Z-e25ae015): load_events_are_ok: fail
 
 ## review: review list
 
-Cause: the assertion fails because the known coin-overflow finding reproduces; verdict wording needs a decision (regression scenario reports the finding as failure)
+Cause: node3 design of the smoke scenario questioned
 Fix: none yet
 
-- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru` (fail, run 20261108T201358Z-e68e548e): value_coin_overflow_regression_passed: fresh-funded value-overflow security finding observed
-- `runtime-substrate-byzantine-blockfetch-example-smoke` (fail, run 20261108T183548Z-c3e5ddf0): peer_eviction_within_seconds: expected honest nodes to evict byzantine peers within the allowed window
-- `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261108T190255Z-c268b791): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
+- `runtime-substrate-byzantine-blockfetch-example-smoke` (fail, run 20261109T000948Z-c47ad3c4): peer_eviction_within_seconds: expected honest nodes to evict byzantine peers within the allowed window
+- `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261109T004340Z-e727b128): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
+  - Cause: bootstrap_assumptions_safe verdict needs a human look
 
 ## review: smoke-scenario assertion verdicts
 
 Cause: the scenario ran and an assertion failed; decide whether the node, the scenario or the assertion is wrong
 Fix: none yet
 
-- `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261108T190726Z-b45cd0db): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
-- `runtime-substrate-bootstrap-topology-concentration-example-smoke` (fail, run 20261108T190819Z-e64504c2): topology_bootstrap_diversity_preserved: expected bootstrap topology to preserve the minimum honest peer diversity floor
-- `runtime-substrate-compound-eclipse-recovery-example-smoke` (fail, run 20261108T185326Z-203ba281): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
-- `runtime-substrate-compound-eclipse-txsubmission-example-smoke` (fail, run 20261108T183639Z-d1a27369): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
-- `runtime-substrate-compound-keepalive-topology-capture-example-smoke` (fail, run 20261108T191108Z-464b3a75): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
-- `runtime-substrate-compound-local-query-recovery-example-smoke` (fail, run 20261108T185512Z-397f51e0): k_bound_rollback_recovered: expected a within-k rollback to recover consistently with non-trivial connectivity and observed slot transitions
-- `runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke` (fail, run 20261108T191158Z-68480dc6): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
-- `runtime-substrate-compound-parser-overlay-forging-example-smoke` (fail, run 20261108T190328Z-50c0f3df): parser_bounds_enforced: expected parser and deserialization bounds to be enforced before unbounded work
-- `runtime-substrate-compound-snapshot-pause-txsubmission-example-smoke` (fail, run 20261108T183718Z-b6b14213): snapshot_captured_clean: expected runtime_snapshot_capture to emit a non-empty snapshot and restart the node cleanly
-- `runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke` (fail, run 20261108T185233Z-84fca154): stake_snapshot_freeze_consistent: expected stake snapshot to remain byte-stable across the freeze window
-- `runtime-substrate-compound-time-skew-epoch-boundary-example-smoke` (fail, run 20261108T191529Z-1582b313): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
-- `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261108T191234Z-e24ec912): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
-- `runtime-substrate-eclipse-topology-example-smoke` (fail, run 20261108T185641Z-cc3f279c): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
-- `runtime-substrate-local-submit-stress-example-smoke` (fail, run 20261108T191307Z-1ae0a9ca): local_submit_availability_preserved: expected local-submit stress to preserve node availability and queue limits
-- `runtime-substrate-mux-ingress-overrun-example-smoke` (fail, run 20261108T191352Z-5b700816): mux_ingress_overrun_scoped: expected mux ingress overrun to be scoped to the offending bearer
-- `runtime-substrate-resource-sync-bandwidth-throttle-example-smoke` (fail, run 20261108T192122Z-49c9e9b6): substrate_quorum_observed: expected quorum_fraction >= 1.0 with real non-zero tip evidence
-- `runtime-substrate-snapshot-mid-run-corrupt-recovery-example-smoke` (fail, run 20261108T184223Z-192b55cb): txsubmission_window_enforced: expected negotiated txid window to reject overflow cleanly
+- `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261109T004532Z-3cec42fb): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
+- `runtime-substrate-bootstrap-topology-concentration-example-smoke` (fail, run 20261109T004650Z-8302e1c9): topology_bootstrap_diversity_preserved: expected bootstrap topology to preserve the minimum honest peer diversity floor
+- `runtime-substrate-compound-eclipse-recovery-example-smoke` (fail, run 20261109T002903Z-2f996774): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
+- `runtime-substrate-compound-eclipse-txsubmission-example-smoke` (fail, run 20261109T001036Z-fdf1447c): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
+- `runtime-substrate-compound-keepalive-topology-capture-example-smoke` (fail, run 20261109T004740Z-6db5acf6): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
+- `runtime-substrate-compound-local-query-recovery-example-smoke` (fail, run 20261109T003112Z-310d139c): k_bound_rollback_recovered: expected a within-k rollback to recover consistently with non-trivial connectivity and observed slot transitions
+- `runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke` (fail, run 20261109T004846Z-627ca532): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
+- `runtime-substrate-compound-parser-overlay-forging-example-smoke` (fail, run 20261109T004430Z-0229c50c): parser_bounds_enforced: expected parser and deserialization bounds to be enforced before unbounded work
+- `runtime-substrate-compound-snapshot-pause-txsubmission-example-smoke` (fail, run 20261109T001131Z-ddd743d5): snapshot_captured_clean: expected runtime_snapshot_capture to emit a non-empty snapshot and restart the node cleanly
+- `runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke` (fail, run 20261109T002755Z-f717fb32): stake_snapshot_freeze_consistent: expected stake snapshot to remain byte-stable across the freeze window
+- `runtime-substrate-compound-time-skew-epoch-boundary-example-smoke` (fail, run 20261109T005228Z-8bf30a31): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
+- `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261109T004938Z-c2f6ebb1): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
+- `runtime-substrate-eclipse-topology-example-smoke` (fail, run 20261109T003254Z-e66cb942): honest_peer_set_uncompromised: expected each honest node to retain the minimum honest-peer count without capture and with real non-zero tip evidence
+- `runtime-substrate-local-submit-stress-example-smoke` (fail, run 20261109T005030Z-3669ad1d): local_submit_availability_preserved: expected local-submit stress to preserve node availability and queue limits
+- `runtime-substrate-mux-ingress-overrun-example-smoke` (fail, run 20261109T005139Z-a89c84af): mux_ingress_overrun_scoped: expected mux ingress overrun to be scoped to the offending bearer
+- `runtime-substrate-resource-sync-bandwidth-throttle-example-smoke` (fail, run 20261109T005330Z-3fef1ccb): substrate_quorum_observed: expected quorum_fraction >= 1.0 with real non-zero tip evidence
+- `runtime-substrate-snapshot-mid-run-corrupt-recovery-example-smoke` (fail, run 20261109T001659Z-b2ee8cf6): txsubmission_window_enforced: expected negotiated txid window to reject overflow cleanly
 
 ## declared-gap: byzantine/amaru tmux relaunch
 
@@ -181,3 +213,13 @@ Fix: none yet
 - `runtime-substrate-plutus-phase2-donointervene-retry-clean-example-smoke` (fail, run 20261108T191424Z-fc2fc36c): plutus_phase2_donotintervene_retry_clean: expected DoNotIntervene retry behavior to remain within the configured budget
 - `runtime-substrate-plutus-phase2-exunits-cost-model-string-undercharge-mixed-amaru` (fail, run 20261108T191612Z-0208dcc1): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
 - `runtime-substrate-plutus-phase2-isvalid-mismatch-rejected-example-smoke` (fail, run 20261108T192051Z-ff1c394f): plutus_phase2_isvalid_mismatch_rejected: expected phase-2 IsValid mismatch to be rejected with ValidationTagMismatch
+
+## not yet run (no ledger row; usually in the current rerun)
+
+- `ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node`
+- `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node`
+- `ledger-submit-empty-redeemers-container-differential-amaru-cardano-node`
+- `ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node`
+- `ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node`
+- `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node`
+- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru`
