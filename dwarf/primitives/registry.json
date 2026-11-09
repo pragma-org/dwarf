@@ -300,6 +300,8 @@
         "cardano-node",
         "amaru"
       ],
+      "lifecycle": "retired",
+      "retired_reason": "Expects no link in either direction between honest and byzantine nodes; cardano-node accepts inbound connections and always retries local roots, so this never holds. Use peer_eviction_within_seconds (proxy-drop evidence) instead. Retired 2026-11-09.",
       "version": "0.1.0"
     },
     "canonical_chain_progress_complete": {

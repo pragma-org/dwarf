@@ -175,6 +175,8 @@ def _record(
         "referencing_scenarios": scenario_ids,
         "relationships": relationships,
         "referencing_scenario_count": len(scenario_ids),
+        "lifecycle": raw_entry.get("lifecycle", "active"),
+        "retired_reason": raw_entry.get("retired_reason"),
         "errors": errors,
         "status": status,
         "summary": (

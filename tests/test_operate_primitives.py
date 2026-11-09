@@ -91,7 +91,9 @@ def test_every_builtin_primitive_has_a_source_backed_scenario_reference():
     )
 
     assert rows
-    assert all(row["referencing_scenario_count"] > 0 for row in rows)
+    # Retired primitives stay listed for history; only active ones need a referencing scenario.
+    assert all(row["referencing_scenario_count"] > 0 for row in rows if row.get("lifecycle", "active") == "active")
+    assert {row["id"] for row in rows if row.get("lifecycle") == "retired"} >= {"byzantine_isolation_observed"}
 
 
 def test_static_plugin_metadata_is_catalogued_without_executing_entrypoint(tmp_path):

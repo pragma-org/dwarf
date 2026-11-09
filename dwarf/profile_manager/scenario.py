@@ -2797,6 +2797,9 @@ def _semantic_validate_scenario_object(scenario, *, registry_path: Path | None =
             errors.append(f"{item['section']}.{ref.primitive} is not present in the primitive registry")
             continue
         entry = registry[ref.primitive]
+        if getattr(entry, "lifecycle", "active") == "retired":
+            errors.append(f"{item['section']}.{ref.primitive} is retired: {entry.retired_reason or 'no reason recorded'}")
+            continue
         if entry.family != family:
             message = f"{item['section']}.{ref.primitive} is registered as family {entry.family!r}, expected {family!r}"
             if ref.primitive in LEGACY_SEMANTIC_WARNING_PRIMITIVES:

@@ -38,6 +38,7 @@ from profile_manager.run_ledger import atomic_write_bytes
 
 FAMILIES = frozenset({"setup", "load", "probe", "assertion", "fault", "teardown"})
 RUNTIMES = frozenset({"library", "single-node", "devnet"})
+LIFECYCLES = frozenset({"active", "retired"})
 DWARF_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -51,6 +52,8 @@ class RegistryEntry:
     supports: List[str]
     runtimes: List[str]
     params_schema: Optional[str]
+    lifecycle: str = "active"
+    retired_reason: Optional[str] = None
 
 
 def _entries_from_map(primitives_map):
@@ -63,7 +66,12 @@ def _entries_from_map(primitives_map):
         unknown = [r for r in runtimes if r not in RUNTIMES]
         if unknown:
             raise ValueError(f"primitive {name}: unknown runtime(s) {unknown}")
+        lifecycle = entry.get("lifecycle", "active")
+        if lifecycle not in LIFECYCLES:
+            raise ValueError(f"primitive {name}: unknown lifecycle {lifecycle!r}; expected one of {sorted(LIFECYCLES)}")
         registry[name] = RegistryEntry(
+            lifecycle=lifecycle,
+            retired_reason=entry.get("retired_reason"),
             name=name,
             module=entry["module"],
             class_name=entry["class"],
