@@ -400,3 +400,27 @@ def test_drop_primitive_exports_the_resolved_root_to_the_helper(tmp_path, monkey
     primitive.run(_Handle(run_dir, prepared=root / "runtime.json"), None)
     assert seen["env"]["ADA2_DWARF_PREVIEW_CARDANO_NODE_ROOT"] == str(root)
     assert seen["env"]["ADA2_DWARF_PREVIEW_AMARU_ROOT"] == "~/cardano-profiles/profile-f-amaru-preview2-proof"
+
+
+def test_live_implementation_baseline_uses_the_prepared_container_root(tmp_path, monkeypatch):
+    """F145: phase1 parity baseline declared ~/cardano-profiles/profile-c-...; the runner died
+    before creating a run (live launch-93d1f631: run_adapter_identity_missing)."""
+    import subprocess
+    from types import SimpleNamespace
+    from profile_manager import primitives
+    import profile_manager.profiles as profiles
+    monkeypatch.setattr(profiles, "runtime_root", lambda pid: Path("/nonexistent/cardano-profiles") / pid)
+    root = _container_runtime(tmp_path / "topology-runtimes" / "profile-c-mixed-haskell-amaru-minimal" / "current")
+    handle = _Handle(tmp_path / "run", prepared=root / "runtime.json")
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = argv
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    prim = primitives.RuntimeLiveImplementationBaseline(params={
+        "runtime_root": "~/cardano-profiles/profile-c-mixed-haskell-amaru-minimal", "timeout_seconds": 5})
+    import random
+    prim.run(handle, random.Random(0))
+    assert str(root) in seen["argv"]

@@ -13851,7 +13851,8 @@ class RuntimeLiveImplementationBaseline(LoadPrimitive):
 
         helper_script = str(_resolve_runtime_path(self.params.get("helper_script", self._DEFAULT_HELPER)))
         python_bin = str(self.params.get("python_bin", "python3"))
-        runtime_root = str(_resolve_runtime_path(self.params["runtime_root"]))
+        # F145: host-era ~/cardano-profiles/<id> maps to the prepared container runtime of that profile.
+        runtime_root = _preview_runtime_root(handle, self.params["runtime_root"])
         timeout_seconds = float(self.params.get("timeout_seconds", 60))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
         mode = "baseline"
