@@ -437,8 +437,8 @@
   },
   {
    "id": "byzantine-isolation-primitive",
-   "priority": "user decision",
-   "note": "byzantine_isolation_observed has no scenario since F130 (its 'no link either way' expectation does not hold for cardano-node: inbound accepted, local roots retried); test_every_builtin_primitive_has_a_source_backed_scenario_reference fails until it is retired or given a correct use."
+   "priority": "done",
+   "note": "byzantine_isolation_observed has no scenario since F130 (its 'no link either way' expectation does not hold for cardano-node: inbound accepted, local roots retried); test_every_builtin_primitive_has_a_source_backed_scenario_reference fails until it is retired or given a correct use. DONE: retired (F135), user decision 2026-11-09."
   },
   {
    "id": "F133-override-audit",
