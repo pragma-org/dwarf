@@ -165,9 +165,9 @@
   {
    "match": "runtime-substrate-checkpoint-resume-recovers-example-smoke",
    "group": "checkpoint evidence",
-   "status": "investigate",
-   "cause": "checkpoint wrote 155 entries, but health_after_resume reports every node unhealthy with probed_endpoint null (multihost-docker probe)",
-   "fix": "check the resume health probe against compose substrates"
+   "status": "fixed",
+   "cause": "health probe after restart took the multi-host ssh path for host_id \"local\"; tmux check; stale container IP",
+   "fix": "F120: PASS (run ef2bde26)"
   },
   {
    "match": "governance-zero-denominator-admission-differential-amaru-cardano-node",

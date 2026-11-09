@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 04:26 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 04:38 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,14 +8,13 @@ Generated 2026-11-09 04:26 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 2 |
-| fail | 33 |
-| pass | 83 |
+| fail | 32 |
+| pass | 84 |
 | prepare-failed | 3 |
 
 | Status | Group | Count |
 |---|---|---|
 | rerun-pending | CBOR dataset | 1 |
-| investigate | checkpoint evidence | 1 |
 | open | block-apply bridge | 3 |
 | open | external topology | 1 |
 | open | host-model helpers on container profiles | 3 |
@@ -34,13 +33,6 @@ Cause: dataset is mounted, but the reference verifier image cardano-cbor-dataset
 Fix: building cardano-cbor-dataset:a7561cd on the box from Dockerfile.dwarf (snapshot apt fix, pins unchanged), 2026-11-09
 
 - `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261109T082945Z-88c52cd5): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
-
-## investigate: checkpoint evidence
-
-Cause: checkpoint wrote 155 entries, but health_after_resume reports every node unhealthy with probed_endpoint null (multihost-docker probe)
-Fix: check the resume health probe against compose substrates
-
-- `runtime-substrate-checkpoint-resume-recovers-example-smoke` (fail, run 20261109T003404Z-b8acbc59): substrate_checkpoint_recorded_clean: expected runtime_substrate_checkpoint to emit a non-empty checkpoint and restart the substrate cleanly
 
 ## open: block-apply bridge
 
@@ -118,7 +110,7 @@ Fix: none yet
 - `runtime-substrate-compound-local-query-recovery-example-smoke` (fail, run 20261109T003112Z-310d139c): k_bound_rollback_recovered: expected a within-k rollback to recover consistently with non-trivial connectivity and observed slot transitions
 - `runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke` (fail, run 20261109T004846Z-627ca532): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
 - `runtime-substrate-compound-parser-overlay-forging-example-smoke` (fail, run 20261109T004430Z-0229c50c): parser_bounds_enforced: expected parser and deserialization bounds to be enforced before unbounded work
-- `runtime-substrate-compound-snapshot-pause-txsubmission-example-smoke` (fail, run 20261109T091345Z-d5eb22eb): snapshot_captured_clean: expected runtime_snapshot_capture to emit a non-empty snapshot and restart the node cleanly
+- `runtime-substrate-compound-snapshot-pause-txsubmission-example-smoke` (fail, run 20261109T093152Z-09d933cc): txsubmission_window_enforced: expected negotiated txid window to reject overflow cleanly
 - `runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke` (fail, run 20261109T002755Z-f717fb32): stake_snapshot_freeze_consistent: expected stake snapshot to remain byte-stable across the freeze window
 - `runtime-substrate-compound-time-skew-epoch-boundary-example-smoke` (fail, run 20261109T005228Z-8bf30a31): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
 - `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261109T004938Z-c2f6ebb1): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
@@ -126,7 +118,7 @@ Fix: none yet
 - `runtime-substrate-local-submit-stress-example-smoke` (fail, run 20261109T005030Z-3669ad1d): local_submit_availability_preserved: expected local-submit stress to preserve node availability and queue limits
 - `runtime-substrate-mux-ingress-overrun-example-smoke` (fail, run 20261109T005139Z-a89c84af): mux_ingress_overrun_scoped: expected mux ingress overrun to be scoped to the offending bearer
 - `runtime-substrate-resource-sync-bandwidth-throttle-example-smoke` (fail, run 20261109T005330Z-3fef1ccb): substrate_quorum_observed: expected quorum_fraction >= 1.0 with real non-zero tip evidence
-- `runtime-substrate-snapshot-mid-run-corrupt-recovery-example-smoke` (fail, run 20261109T091901Z-b742717a): txsubmission_window_enforced: expected negotiated txid window to reject overflow cleanly
+- `runtime-substrate-snapshot-mid-run-corrupt-recovery-example-smoke` (fail, run 20261109T093415Z-71ccedde): txsubmission_window_enforced: expected negotiated txid window to reject overflow cleanly
 
 ## declared-gap: byzantine/amaru tmux relaunch
 
