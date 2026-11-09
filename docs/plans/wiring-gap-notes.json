@@ -150,10 +150,10 @@
   },
   {
    "match": "phase3-runtime-haskell-preview2-baseline-",
-   "group": "profile prepare failures",
+   "group": "profile-g / profile-f preview",
    "status": "open",
-   "cause": "F109 works: profile-g now deploys. But profile-g (\"haskell-preview2-proof\") runs on the PUBLIC preview network, so readiness stays semantic_health_not_ready (cold nodes cannot sync): same class F96 fixed for scenarios",
-   "fix": "Option A (kept as a public-preview profile; moving it to a private devnet would remove its purpose): profile-g stays deployed between runs (campaign KEEP_PROFILES) and syncs the public preview chain; its 2 scenarios rerun once the node reports semantic health. 2026-11-09 10:29: syncing, slot 1.47M, epoch 18"
+   "cause": "profile-g synced (preview tip) and now prepares; runs fail with \"missing runtime metadata: ~/cardano-profiles/<id>/runtime.json\": the scenarios hard-code host-era profile paths (45 scenarios use ~/cardano-profiles/...), and phases 1-2 also drive profile-f (Amaru on public preview), which is not deployed",
+   "fix": "map ~/cardano-profiles/<id> to the container profile runtime root (runtime_common.resolve_profile_config) in the preview primitives; deploy + sync profile-f"
   },
   {
    "match": "client-example-plutus-vm-amaru-portable-20260918",
