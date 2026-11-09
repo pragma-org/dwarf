@@ -49,6 +49,7 @@ from qualify_node_versions import (  # noqa: E402
     transform_compose_model,
 )
 from runtime_substrate_common import apply_log_rotation  # noqa: E402
+import local_reward_window  # noqa: E402
 from redeploy_cardano_amaru_topology import (  # noqa: E402
     fresh_readiness_proven,
     remember_bootstrap_evidence,
@@ -94,19 +95,9 @@ HARDENING_EXCEPTION_SERVICES = {
     "plutus-v2-activate",
 }
 HARDENING_EXCEPTION = "proven-relay-bootstrap-writable-rootfs"
-LOCAL_REWARD_WINDOW_EPOCH_FACTOR = 10
-LOCAL_REWARD_WINDOW_CONTRACT = {
-    "active_slot_coeff": Fraction(1, 5),
-    "active_slot_coeff_inverse": 5,
-    "epoch_length": 400,
-    "epoch_length_scale_factor": 10,
-    "randomness_stabilisation_window": 160,
-    "reward_pulsing_window": 240,
-    "security_parameter": 8,
-    "slot_length_ms": 500,
-    "stability_window": 120,
-}
-
+# One contract for profile-c and the self-composed devnets that opt in (local_reward_window).
+LOCAL_REWARD_WINDOW_EPOCH_FACTOR = local_reward_window.LOCAL_REWARD_WINDOW_EPOCH_FACTOR
+LOCAL_REWARD_WINDOW_CONTRACT = local_reward_window.LOCAL_REWARD_WINDOW_CONTRACT
 
 class RuntimeControlError(RuntimeError):
     """The retained live-control deployment cannot safely continue."""
@@ -683,26 +674,17 @@ def _read_json_object(path: Path, *, label: str) -> dict[str, Any]:
 
 
 def _exact_integer(value: Any, *, label: str) -> int:
-    if isinstance(value, bool):
-        raise RuntimeControlError(
-            f"local reward-window contract requires exact integer {label}"
-        )
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value):
-        return int(value)
-    raise RuntimeControlError(
-        f"local reward-window contract requires exact integer {label}"
-    )
+    try:
+        return local_reward_window.exact_integer(value, label=label)
+    except local_reward_window.LocalRewardWindowError as error:
+        raise RuntimeControlError(str(error)) from error
 
 
 def _exact_milliseconds(value: Any, *, label: str) -> int:
-    ratio = Fraction(str(value)) * 1000
-    if ratio.denominator != 1:
-        raise RuntimeControlError(
-            f"local reward-window contract requires exact integer {label} milliseconds"
-        )
-    return _exact_integer(ratio.numerator, label=f"{label} milliseconds")
+    try:
+        return local_reward_window.exact_milliseconds(value, label=label)
+    except local_reward_window.LocalRewardWindowError as error:
+        raise RuntimeControlError(str(error)) from error
 
 
 def _validate_local_reward_window_contract(
@@ -713,10 +695,8 @@ def _validate_local_reward_window_contract(
 ) -> dict[str, Any]:
     """Prove the generated local Cardano and Amaru timing inputs are identical.
 
-    Cardano starts reward pulsing after ``4k/f`` slots.  The local controller
-    profile follows the standard ``epochLength = 10k/f`` relation so the pulse
-    has a non-empty completion window.  Amaru models that same relation as
-    ``inverse(f) * epoch_length_scale_factor * k``.
+    The proof itself is shared (``local_reward_window.prove_timing_identity``) with the
+    self-composed devnets that opt into the same contract.
     """
 
     testnet = _merged_testnet_document(Path(testnet_path))
@@ -725,120 +705,11 @@ def _validate_local_reward_window_contract(
     )
     era_doc = _read_json_object(Path(era_history_path), label="Amaru era history")
     try:
-        epoch_length = _exact_integer(testnet["epochLength"], label="epochLength")
-        coefficient = Fraction(str(testnet["activeSlotsCoeff"]))
-        monetary_expansion = Fraction(str(testnet["protocolParams"]["rho"]))
-        treasury_cut = Fraction(str(testnet["protocolParams"]["tau"]))
-        security_parameter = _exact_integer(
-            testnet["securityParam"], label="securityParam"
+        return local_reward_window.prove_timing_identity(
+            testnet=testnet, globals_doc=globals_doc, era_doc=era_doc
         )
-        protocol_security_parameter = _exact_integer(
-            testnet["protocolConsts"]["k"], label="protocolConsts.k"
-        )
-        amaru_security_parameter = _exact_integer(
-            globals_doc["consensus_security_param"],
-            label="Amaru consensus_security_param",
-        )
-        amaru_coefficient_inverse = _exact_integer(
-            globals_doc["active_slot_coeff_inverse"],
-            label="Amaru active_slot_coeff_inverse",
-        )
-        scale_factor = _exact_integer(
-            globals_doc["epoch_length_scale_factor"],
-            label="Amaru epoch_length_scale_factor",
-        )
-        era_stability_window = _exact_integer(
-            era_doc["stability_window"], label="era stability_window"
-        )
-        eras = era_doc["eras"]
-        if not isinstance(eras, list) or len(eras) != 1:
-            raise RuntimeControlError(
-                "local reward-window contract requires one operative Conway era"
-            )
-        era = eras[0]
-        era_params = era["params"]
-        if era_params["era_name"] != "Conway" or era.get("end") is not None:
-            raise RuntimeControlError(
-                "local reward-window contract requires one operative Conway era"
-            )
-        era_epoch_length = _exact_integer(
-            era_params["epoch_size_slots"], label="era epoch_size_slots"
-        )
-        era_slot_length_ms = _exact_integer(
-            era_params["slot_length"], label="era slot_length"
-        )
-        cardano_slot_length_ms = _exact_milliseconds(
-            testnet["slotLength"], label="slot"
-        )
-    except (KeyError, IndexError, TypeError, ValueError, ZeroDivisionError) as error:
-        raise RuntimeControlError(
-            "local reward-window contract is missing exact generated parameters"
-        ) from error
-    if coefficient <= 0 or coefficient > 1 or coefficient.numerator != 1:
-        raise RuntimeControlError(
-            "local reward-window contract requires activeSlotsCoeff = 1/n"
-        )
-    coefficient_inverse = coefficient.denominator
-    expected_epoch_length = (
-        coefficient_inverse
-        * LOCAL_REWARD_WINDOW_EPOCH_FACTOR
-        * security_parameter
-    )
-    stability_window = 3 * security_parameter * coefficient_inverse
-    randomness_window = 4 * security_parameter * coefficient_inverse
-    reward_pulsing_window = epoch_length - randomness_window
-    consistent = (
-        coefficient == LOCAL_REWARD_WINDOW_CONTRACT["active_slot_coeff"]
-        and coefficient_inverse
-        == LOCAL_REWARD_WINDOW_CONTRACT["active_slot_coeff_inverse"]
-        and security_parameter
-        == LOCAL_REWARD_WINDOW_CONTRACT["security_parameter"]
-        and protocol_security_parameter
-        == LOCAL_REWARD_WINDOW_CONTRACT["security_parameter"]
-        and amaru_security_parameter
-        == LOCAL_REWARD_WINDOW_CONTRACT["security_parameter"]
-        and amaru_coefficient_inverse
-        == LOCAL_REWARD_WINDOW_CONTRACT["active_slot_coeff_inverse"]
-        and scale_factor
-        == LOCAL_REWARD_WINDOW_CONTRACT["epoch_length_scale_factor"]
-        and epoch_length == LOCAL_REWARD_WINDOW_CONTRACT["epoch_length"]
-        and epoch_length == expected_epoch_length
-        and era_epoch_length == LOCAL_REWARD_WINDOW_CONTRACT["epoch_length"]
-        and era_stability_window
-        == LOCAL_REWARD_WINDOW_CONTRACT["stability_window"]
-        and stability_window == LOCAL_REWARD_WINDOW_CONTRACT["stability_window"]
-        and randomness_window
-        == LOCAL_REWARD_WINDOW_CONTRACT["randomness_stabilisation_window"]
-        and reward_pulsing_window
-        == LOCAL_REWARD_WINDOW_CONTRACT["reward_pulsing_window"]
-        and era_slot_length_ms
-        == LOCAL_REWARD_WINDOW_CONTRACT["slot_length_ms"]
-        and cardano_slot_length_ms
-        == LOCAL_REWARD_WINDOW_CONTRACT["slot_length_ms"]
-        and monetary_expansion == Fraction(3, 1000)
-        and treasury_cut == Fraction(1, 5)
-        and reward_pulsing_window > 0
-    )
-    if not consistent:
-        raise RuntimeControlError(
-            "local reward-window contract is incompatible with the approved tuple: "
-            "Cardano and Amaru require epoch=400, f=1/5, k=8, scale=10, "
-            "stability=120, and slotLength=500ms"
-        )
-    return {
-        "active_slot_coeff": f"{coefficient.numerator}/{coefficient.denominator}",
-        "active_slot_coeff_inverse": coefficient_inverse,
-        "epoch_length": epoch_length,
-        "epoch_length_scale_factor": scale_factor,
-        "monetary_expansion": "3/1000",
-        "randomness_stabilisation_window": randomness_window,
-        "reward_pulsing_window": reward_pulsing_window,
-        "security_parameter": security_parameter,
-        "slot_length_ms": cardano_slot_length_ms,
-        "stability_window": stability_window,
-        "treasury_cut": "1/5",
-        "verified": True,
-    }
+    except local_reward_window.LocalRewardWindowError as error:
+        raise RuntimeControlError(str(error)) from error
 
 
 def _replace_unique_line(text: str, pattern: str, replacement: str, *, label: str) -> str:
@@ -923,12 +794,12 @@ def _apply_local_reward_window_contract(asset_root: Path) -> dict[str, Any]:
         label="protocolParams",
     )
     testnet_path.write_text(text, encoding="utf-8")
-    globals_doc["consensus_security_param"] = 8
+    globals_doc["consensus_security_param"] = LOCAL_REWARD_WINDOW_CONTRACT["security_parameter"]
     globals_doc["epoch_length_scale_factor"] = LOCAL_REWARD_WINDOW_EPOCH_FACTOR
     globals_path.write_text(
         json.dumps(globals_doc, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    era_doc["stability_window"] = 120
+    era_doc["stability_window"] = local_reward_window.amaru_era_history()["stability_window"]
     era_path.write_text(
         json.dumps(era_doc, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
