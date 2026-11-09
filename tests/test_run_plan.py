@@ -856,12 +856,22 @@ def test_qualified_local_target_refreshes_dashboard_availability(
 
 
 def test_attached_scenario_requires_only_its_named_topology():
+    # chainhold self-composes its mixed devnet since F122; the epoch-boundary differential still attaches
     plan = resolve_run_plan(
-        RunPlanRequest(scenario_id="consensus-chainhold-upstream-differential")
+        RunPlanRequest(scenario_id="consensus-epoch-boundary-differential")
     )
 
     assert plan["readiness"]["mixed_topology_required"] is True
     assert plan["readiness"]["topology_id"] == "cardano_amaru"
+    assert plan["readiness"]["profile_required"] is False
+
+
+def test_chainhold_self_composes_its_mixed_devnet():
+    plan = resolve_run_plan(
+        RunPlanRequest(scenario_id="consensus-chainhold-upstream-differential")
+    )
+
+    assert plan["readiness"]["mixed_topology_required"] is False
     assert plan["readiness"]["profile_required"] is False
 
 

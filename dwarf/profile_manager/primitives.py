@@ -23202,8 +23202,13 @@ class RuntimeNetworkPartition(FaultPrimitive):
             if node.get("id") == target or node.get("name") == target:
                 container = str(node.get("container_name") or node.get("id") or "")
                 if container:
+                    self._node_network = str(node.get("container_network") or "")
                     return container
         raise ValueError(f"runtime_network_partition: no container for target node {target!r}")
+
+    def _network(self) -> str:
+        """The named network, else the target node's own substrate network (F122)."""
+        return str(self.params.get("network_name") or getattr(self, "_node_network", "") or "cardano-amaru-testnet")
 
     def _docker(self, args: list[str]):
         return subprocess.run(["docker", *args], capture_output=True, text=True, check=False, timeout=60)
@@ -23211,8 +23216,8 @@ class RuntimeNetworkPartition(FaultPrimitive):
     def apply(self, handle):
         import time as _time
 
-        network = str(self.params.get("network_name", "cardano-amaru-testnet"))
         container = self._resolve_container(handle)
+        network = self._network()
         partition_seconds = float(self.params.get("partition_seconds", 90))
         settle_seconds = float(self.params.get("settle_seconds", 70))
         dc = self._docker(["network", "disconnect", network, container])
@@ -23241,11 +23246,11 @@ class RuntimeNetworkPartition(FaultPrimitive):
         _time.sleep(settle_seconds)
 
     def remove(self, handle):
-        network = str(self.params.get("network_name", "cardano-amaru-testnet"))
         try:
             container = self._resolve_container(handle)
         except ValueError:
             return
+        network = self._network()
         # safety reconnect (idempotent — ignore "already connected")
         cc = self._docker(["network", "connect", network, container])
         handle.log(
