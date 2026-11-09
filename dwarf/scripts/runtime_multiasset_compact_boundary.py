@@ -298,6 +298,8 @@ def run_multiasset_compact_boundary(
     )
     from scripts.runtime_redeemer_container_live_controls import (
         reference_reader,
+        submit_reference_readable,
+        _classify_live_response,
         _envelope,
         _query_reference_tip,
         _reference_tx_submission_propagation_gate,
@@ -608,14 +610,17 @@ def run_multiasset_compact_boundary(
             response = (
                 _submit_amaru_container(str(target["container_id"]), built["payload"])
                 if role == "target"
-                else read_reference(_submit_reference_raw(
+                else submit_reference_readable(
+                    submit_raw=lambda: _submit_reference_raw(
                     runtime=runtime,
                     reference=reference,
                     payload=built["payload"],
                     helper_image=helper_image,
-                ), built["payload"])
+                ),
+                    payload=built["payload"], reference=reference, read=read_reference,
+                )
             )
-            classification = _validation_stage(response)
+            classification = _classify_live_response(response)
             included = False
             target_adopted = False
             if classification == "accepted":
@@ -697,18 +702,21 @@ def run_multiasset_compact_boundary(
             cli=cli, socket_path=socket_path, network_magic=network_magic
         )
         responses = {
-            "reference": read_reference(_submit_reference_raw(
+            "reference": submit_reference_readable(
+                    submit_raw=lambda: _submit_reference_raw(
                 runtime=runtime,
                 reference=reference,
                 payload=built["payload"],
                 helper_image=helper_image,
-            ), built["payload"]),
+            ),
+                    payload=built["payload"], reference=reference, read=read_reference,
+                ),
             "target": _submit_amaru_container(
                 str(target["container_id"]), built["payload"]
             ),
         }
         classifications = {
-            role: _validation_stage(response) for role, response in responses.items()
+            role: _classify_live_response(response) for role, response in responses.items()
         }
         included = False
         target_adopted = False

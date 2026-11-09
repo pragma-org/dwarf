@@ -1938,6 +1938,30 @@ def readable_reference_response(
     return {**readable, "classification": readable_class}
 
 
+def submit_reference_readable(
+    *,
+    submit_raw: Callable[[], dict[str, Any]],
+    payload: bytes,
+    reference: dict[str, Any],
+    read: Callable[[dict[str, Any], bytes], dict[str, Any]],
+) -> dict[str, Any]:
+    """One reference submission: node-log decode correlation first, then the cli reader (F102).
+
+    cardano-node drops the LocalTxSubmission connection on a transaction it cannot decode; the
+    appended node log names the decoder failure. A rejection the node returns typed but unreadable
+    is read with the reference image's cardano-cli.
+    """
+
+    def classified() -> dict[str, Any]:
+        response = submit_raw()
+        return {**response, "classification": _classify_live_response(response)}
+
+    response = _submit_reference_with_decoder_log(submit=classified, payload=payload, reference=reference)
+    if response.get("classification") == "decode_reject":
+        return response
+    return read(response, payload)
+
+
 def reference_reader(
     *, cli: str, socket_path: str, network_magic: int, envelope_from: Path, work_dir: Path
 ) -> Callable[[dict[str, Any], bytes], dict[str, Any]]:

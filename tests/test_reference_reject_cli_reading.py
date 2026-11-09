@@ -87,7 +87,8 @@ def test_reference_submissions_go_through_the_cli_reader(module):
     body = source.replace("def readable_reference_response(", "").replace("def reference_reader(", "")
     raw_calls = body.count("_submit_reference_raw(") - body.count("def _submit_reference_raw(")
     read_calls = (body.count("readable_reference_response(") + body.count("read_reference(_submit_reference_raw(")
-                  + body.count("_read_ref(read_reference, _submit_reference_raw("))
+                  + body.count("_read_ref(read_reference, _submit_reference_raw(")
+                  + body.count("submit_raw=lambda: _submit_reference_raw("))
     assert raw_calls >= 1 and read_calls >= raw_calls
 
 
@@ -102,3 +103,30 @@ def test_a_cli_side_read_failure_is_not_taken_as_the_node_reason(tmp_path):
     assert out["body"] == TERM_DUMP
     assert out["reject_reason_source"] == "reference-image-cardano-cli-unattributable"
     assert "DeserialiseFailure" in out["reference_cli_output"]
+
+
+def test_reference_submission_correlates_a_dropped_connection_before_reading(monkeypatch, tmp_path):
+    """cardano-node drops the connection on a transaction it cannot decode; the node-log
+    correlation must run first, and a decode_reject it proves is not resubmitted."""
+    seen = {}
+
+    def correlate(*, submit, payload, reference):
+        seen["first"] = submit()
+        return {**seen["first"], "classification": "decode_reject",
+                "observation_boundary": "node-log-correlated-decode-reject",
+                "reference_decoder_evidence": {"classification": "decode_reject"}}
+
+    monkeypatch.setattr(lc, "_submit_reference_with_decoder_log", correlate)
+    raw = {"http": 0, "body": "", "protocol_receipt": {"outcome": "transport_unavailable"}}
+    out = lc.submit_reference_readable(submit_raw=lambda: raw, payload=b"\x84", reference={"id": "node2"},
+                                       read=lambda response, payload: pytest.fail("decode_reject must not be resubmitted"))
+    assert seen["first"]["classification"] == "unavailable"
+    assert out["classification"] == "decode_reject"
+
+
+@pytest.mark.parametrize("module", ["runtime_inline_datum_tag24_boundary", "runtime_multiasset_compact_boundary",
+                                    "runtime_uplc_deep_delay_stack_safety"])
+def test_boundary_runners_correlate_and_classify_reference_rejections(module):
+    source = (Path(lc.__file__).parent / f"{module}.py").read_text()
+    assert source.count("submit_reference_readable(") >= 2
+    assert "_validation_stage(" not in source.split("def run_", 1)[1]
