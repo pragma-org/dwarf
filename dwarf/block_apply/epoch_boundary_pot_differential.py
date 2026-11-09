@@ -39,12 +39,13 @@ def _delta(before, after, keys):
     return {k: int(after.get(k) or 0) - int(before.get(k) or 0) for k in keys}
 
 
-def transition_diff(amaru_before, amaru_after, cardano_before, cardano_after):
+def transition_diff(amaru_before, amaru_after, cardano_before, cardano_after, comparable=None):
+    comparable = list(comparable or COMPARABLE)
     amaru_delta = _delta(amaru_before, amaru_after, COMPARABLE)
     cardano_delta = _delta(cardano_before, cardano_after, COMPARABLE)
     diffs = {
         k: {"amaru": amaru_delta[k], "cardano": cardano_delta[k]}
-        for k in COMPARABLE
+        for k in comparable
         if amaru_delta[k] != cardano_delta[k]
     }
     verdict = "CONFORMANT" if not diffs else "POT_TRANSITION_DIVERGENCE"

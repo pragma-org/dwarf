@@ -74,8 +74,10 @@ def test_combine_verdicts_crash_wins():
     assert bridge.combine_verdicts({"verdict": "not-observed", "crashed": True}, {"verdict": "adopt"}) == "crash"
 
 
-def _snapshots(amaru_after_treasury, aligned=True):
+def _snapshots(amaru_after_treasury, aligned=True, on_forged_chain=True):
     return {"aligned": aligned,
+            "forged_chain": {"measured": on_forged_chain,
+                             "reasons": [] if on_forged_chain else ["Amaru's stable ledger point is not on the forged chain"]},
             "amaru_before": {"treasury": 100, "donations": 0}, "cardano_before": {"treasury": 100, "donations": 0},
             "amaru_after": {"treasury": amaru_after_treasury, "donations": 0},
             "cardano_after": {"treasury": 130, "donations": 0}}
@@ -97,9 +99,93 @@ def test_repoint_replaces_every_peer_with_the_proxy_only():
                '--peer-address "node3:3001" --listen-address 0.0.0.0:5001')
     rewritten = bridge.repoint_compose_command(command, "10.0.0.9:40000")
     assert rewritten.count("--peer-address") == 1 and '--peer-address "10.0.0.9:40000"' in rewritten
-    assert "node2" not in rewritten and "--listen-address 0.0.0.0:5001" in rewritten
+    assert "node2" not in rewritten and "0.0.0.0:5001" not in rewritten
+    # Run 20261109T231115Z-ddca70a3: node2's topology dials node1, Amaru took that inbound duplex
+    # connection as a second upstream and switched back to the honest chain 6 s after adopting the
+    # forged block. The listener is bound to loopback (container-loopback probes keep working).
+    assert "--listen-address 127.0.0.1:5001" in rewritten
+    quoted = bridge.repoint_compose_command('run --peer-address "a:1" --listen-address "0.0.0.0:5001"', "p:2")
+    assert '--listen-address "127.0.0.1:5001"' in quoted
     with pytest.raises(RuntimeError):
         bridge.repoint_compose_command("exec amaru run", "x:1")
+
+
+# --------------------------------------------------------------------------- #
+# The measured chain (false negative of run 20261109T231115Z-ddca70a3)
+# --------------------------------------------------------------------------- #
+
+ROLLED_BACK = json.loads((FIX / "donation-forged-block-rolled-back-20261109T231115Z-ddca70a3.json").read_text())
+
+
+def _membership(snapshots, fixture=ROLLED_BACK):
+    event = fixture["forged_event"]
+    return bridge.forged_chain_membership(snapshots, forged_hashes=set(fixture["forged_hashes"]),
+                                          forged_block=int(event["block_number"]), forged_slot=int(event["slot"]))
+
+
+def test_amaru_stable_ledger_point_is_read_from_its_boot_log():
+    text = "\n".join(ROLLED_BACK["amaru_log_excerpt"])
+    assert bridge.amaru_ledger_tip(text) == {
+        "slot": 2040, "hash": "06c4514398fad53a22e9ed432bac7d94ae493fd879bbfdb921aac7a76ee50ed7", "block": 412}
+    assert bridge.amaru_ledger_tip("no ledger line") is None
+    snapshot = {"ledger_tip": {"slot": 2040, "hash": "x", "block": 412}, "tip_at_restart": {"block": 415, "slot": 2051},
+                "tips_before_restart": [{"block": 407, "slot": 2012}]}
+    assert bridge.amaru_stable_slot(snapshot, 8) == 2040  # the ledger's own point, not a tip.adopt estimate
+
+
+def test_amaru_inbound_peers_other_than_the_proxy_are_reported():
+    text = "\n".join(ROLLED_BACK["amaru_log_excerpt"])
+    assert bridge.amaru_foreign_peers(text, proxy_address=ROLLED_BACK["proxy_address"]) == ["10.0.0.3:3001"]
+    loopback = 'x manager.peer.handshake_completed peer="127.0.0.1:48254" conn_id=2 full_duplex=true'
+    assert bridge.amaru_foreign_peers(loopback, proxy_address="10.0.0.4:1") == []
+
+
+def test_live_false_negative_is_not_measured_amaru_stable_point_off_the_forged_chain():
+    snaps = dict(ROLLED_BACK["snapshots"])
+    snaps["amaru_before"] = {**snaps["amaru_before"], "ledger_tip": {
+        "slot": 1711, "hash": "d3d9d14265339d0b14b615d4308ec64397f85ad35d053bfc41691be87862f256", "block": 346}}
+    snaps["amaru_after"] = {**snaps["amaru_after"], "ledger_tip": {
+        "slot": 2040, "hash": "06c4514398fad53a22e9ed432bac7d94ae493fd879bbfdb921aac7a76ee50ed7", "block": 412}}
+    membership = _membership(snaps)
+    assert membership["measured"] is False
+    assert any("amaru" in r.lower() and "forged chain" in r for r in membership["reasons"])
+    # the reference consumer DID stay on the forged chain (its after tip ab6bd854... is a forged hash)
+    assert not any(r.lower().startswith("cardano") for r in membership["reasons"])
+    snaps["forged_chain"] = membership
+    verdict = bridge.value_creation_verdict(snaps, donation=5000000)
+    assert verdict["verdict"] == "inconclusive" and verdict["measured"] is False
+    assert "forged chain" in verdict["reason"]
+
+
+def test_forged_chain_membership_measured_only_when_both_stable_points_hold_the_forged_block():
+    forged = sorted(ROLLED_BACK["forged_hashes"])
+    event = ROLLED_BACK["forged_event"]
+    on_chain = next(h for h in forged if h != event["forged_hash"])
+    snaps = {
+        "amaru_before": {"ledger_tip": {"slot": 1711, "hash": "aa" * 32, "block": 346}},
+        "cardano_before": {"slot": 1773, "block": 357, "hash": "bb" * 32},
+        "amaru_after": {"ledger_tip": {"slot": 2040, "hash": on_chain, "block": 412}},
+        "cardano_after": {"slot": 2078, "block": 422, "hash": on_chain},
+    }
+    assert _membership(snaps) == {**_membership(snaps), "measured": True, "reasons": []}
+    # a before snapshot that already holds the forged block cannot show its effect
+    late = {**snaps, "cardano_before": {"slot": 1779, "block": 358, "hash": event["forged_hash"]}}
+    assert _membership(late)["measured"] is False
+    # no stable ledger point reported -> not measured (never assumed)
+    blind = {**snaps, "amaru_after": {"tip_at_restart": {"slot": 2051, "hash": on_chain, "block": 415}}}
+    assert _membership(blind)["measured"] is False
+    # cardano on a forged hash but below the forged block height cannot be (guards a hash-set mixup)
+    low = {**snaps, "cardano_after": {"slot": 1700, "block": 340, "hash": on_chain}}
+    assert _membership(low)["measured"] is False
+
+
+def test_value_creation_needs_a_forged_chain_measurement():
+    missing = _snapshots(130)
+    del missing["forged_chain"]
+    assert bridge.value_creation_verdict(missing, donation=5)["verdict"] == "inconclusive"
+    off = bridge.value_creation_verdict(_snapshots(130, on_forged_chain=False), donation=5)
+    assert off["verdict"] == "inconclusive" and off["measured"] is False
+    assert bridge.value_creation_verdict(_snapshots(135), donation=5)["measured"] is True
 
 
 def test_epoch_of_uses_the_node_reported_anchor():
@@ -232,6 +318,39 @@ def test_epoch_boundary_pot_differential_is_inconclusive_when_not_aligned(tmp_pa
 # --------------------------------------------------------------------------- #
 # Fixture staging + submit assertion (gov scriptcontext run 20261109T153133Z-33835cf1)
 # --------------------------------------------------------------------------- #
+
+def test_epoch_boundary_pot_differential_is_inconclusive_off_the_forged_chain(tmp_path):
+    snaps = _snapshots(135, on_forged_chain=False)
+    for name in ("amaru_before", "cardano_before", "amaru_after", "cardano_after"):
+        snaps[name].update({"reserves": 1000, "fees": 0})
+    _observed_state(tmp_path, snaps)
+    handle = SimpleNamespace(run_dir=tmp_path)
+    report = bap.EpochBoundaryPotDifferential(params={"output_dir": "outputs/ebpd"}).run(handle, None)
+    assert report["verdict"] == "inconclusive" and "forged chain" in report["reason"]
+
+
+def test_epoch_boundary_fee_pot_is_not_compared_across_the_boundary(tmp_path):
+    """Run 20261109T231944Z-8cf541e9 'passed' POT_TRANSITION_DIVERGENCE on fees alone (amaru 0 vs
+    cardano 19000000) with identical treasury deltas: Amaru zeroes its stable fees pot at the epoch
+    start (store/epoch_transition.rs reset_fees_and_donations) while cardano-node's utxosFees keeps the
+    epoch's fees until the reward update, and Amaru's before point is its stable ledger point, not the
+    tip. The fee pots are not the same quantity, so only treasury and reserves are compared."""
+    snaps = {"aligned": True, "forged_chain": {"measured": True, "reasons": []},
+             "amaru_before": {"treasury": 78145453587820, "reserves": 43360786902851410, "fees": 0, "donations": 0},
+             "amaru_after": {"treasury": 104162265929530, "reserves": 43334236760282180, "fees": 0, "donations": 0},
+             "cardano_before": {"treasury": 78145453587820, "reserves": 43360786902851410, "fees": 1000000},
+             "cardano_after": {"treasury": 104162265929530, "reserves": 43334236760282180, "fees": 20000000}}
+    _observed_state(tmp_path, snaps)
+    handle = SimpleNamespace(run_dir=tmp_path)
+    report = bap.EpochBoundaryPotDifferential(params={"output_dir": "outputs/ebpd"}).run(handle, None)
+    assert report["verdict"] == "CONFORMANT" and report["transition_diffs"] == {}
+    assert "fees" in report["not_compared"]
+    snaps["amaru_after"]["treasury"] += 5000000  # the donation realized into Amaru's treasury
+    _observed_state(tmp_path, snaps)
+    report = bap.EpochBoundaryPotDifferential(params={"output_dir": "outputs/ebpd"}).run(handle, None)
+    assert report["verdict"] == "POT_TRANSITION_DIVERGENCE"
+    assert report["transition_diffs"] == {"treasury": {"amaru": 26016817341710, "cardano": 26016812341710}}
+
 
 def test_fixture_paths_are_staged_into_the_run_dir(tmp_path):
     staged, record = sp.stage_fixture(tmp_path, "fixture/gov_scriptcontext/prop3.tx")

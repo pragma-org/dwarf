@@ -39,6 +39,9 @@ ALWAYS_FAILS_SCRIPT = DWARF_ROOT / "block_apply" / "fixtures" / "always-fails-v3
 _AMARU_VALIDATION = re.compile(r'chain\.select_from_block_validation\b.*?\bvalid=(true|false)\b.*?header_hash="([0-9a-f]{64})"')
 _AMARU_ADOPT = re.compile(r'tip\.adopt slot=(\d+) header_hash="([0-9a-f]{64})" block_height=(\d+)')
 _AMARU_POTS = re.compile(r"pots\.dump treasury=(\d+) reserves=(\d+) fees=(\d+) donations=(\d+)")
+_AMARU_LEDGER_OPENED = re.compile(r'build\.ledger_opened tip="\[(\d+), h\'([0-9a-f]{64})\', (\d+)\]"')
+_AMARU_HANDSHAKE = re.compile(r'manager\.peer\.handshake_completed peer="([^"]+)"')
+_LOOPBACK_HOSTS = ("127.0.0.1", "[::1]", "::1", "localhost")
 _AMARU_PANIC = re.compile(r"panicked at|thread '.*' panicked|unreachable code", re.I)
 
 
@@ -157,6 +160,31 @@ def amaru_last_pots(log_text: str) -> dict[str, int] | None:
     return {"treasury": int(t), "reserves": int(r), "fees": int(f), "donations": int(d)}
 
 
+def amaru_ledger_tip(log_text: str) -> dict[str, Any] | None:
+    """The stable ledger point Amaru opened at boot (the point its ``pots.dump`` reads), last one wins."""
+    hits = _AMARU_LEDGER_OPENED.findall(log_text)
+    if not hits:
+        return None
+    slot, block_hash, block = hits[-1]
+    return {"slot": int(slot), "hash": block_hash, "block": int(block)}
+
+
+def amaru_foreign_peers(log_text: str, *, proxy_address: str) -> list[str]:
+    """Peers Amaru completed a handshake with other than the forging proxy (loopback probes excluded).
+
+    Any such peer can hand the target the honest chain and roll the forged block back
+    (run 20261109T231115Z-ddca70a3: the producer dialled Amaru's listener; Amaru used that inbound
+    duplex connection as a second upstream and switched forks 6 s after adopting the forged block).
+    """
+    seen: list[str] = []
+    for peer in _AMARU_HANDSHAKE.findall(log_text):
+        host = peer.rsplit(":", 1)[0]
+        if peer == proxy_address or host in _LOOPBACK_HOSTS or peer in seen:
+            continue
+        seen.append(peer)
+    return seen
+
+
 def amaru_crashed(log_text: str) -> bool:
     return bool(_AMARU_PANIC.search(log_text))
 
@@ -216,6 +244,52 @@ def pot_total(pots: dict | None) -> int | None:
     return int(pots.get("treasury", 0)) + int(pots.get("donations", 0))
 
 
+def forged_chain_membership(snapshots: dict, *, forged_hashes: set[str], forged_block: int,
+                            forged_slot: int) -> dict[str, Any]:
+    """Did each node's pot snapshots bracket the forged block ON THE FORGED CHAIN?
+
+    ``forged_hashes`` holds the forged block and every descendant the proxy re-parented onto it, so a
+    point whose hash is in the set (at or above the forged height) holds the forged block. Amaru is
+    judged by the stable ledger point its pots belong to; cardano-node by the tip its ledger-state
+    query read. The before points must precede the forged block. Anything unproven is a reason;
+    ``measured`` is true only without any.
+    """
+    reasons: list[str] = []
+    amaru_before = (snapshots.get("amaru_before") or {}).get("ledger_tip")
+    amaru_after = (snapshots.get("amaru_after") or {}).get("ledger_tip")
+    cardano_before, cardano_after = snapshots.get("cardano_before") or {}, snapshots.get("cardano_after") or {}
+    if not amaru_before:
+        reasons.append("amaru before-snapshot: no stable ledger point reported (build.ledger_opened)")
+    elif int(amaru_before["slot"]) >= forged_slot or amaru_before["hash"] in forged_hashes:
+        reasons.append(f"amaru before-snapshot stable point {amaru_before} does not precede the forged block "
+                       f"(slot {forged_slot})")
+    if cardano_before.get("slot") is None or int(cardano_before["slot"]) >= forged_slot \
+            or cardano_before.get("hash") in forged_hashes:
+        reasons.append(f"cardano before-snapshot tip (slot {cardano_before.get('slot')}) does not precede the "
+                       f"forged block (slot {forged_slot})")
+    if not amaru_after:
+        reasons.append("amaru after-snapshot: no stable ledger point reported (build.ledger_opened)")
+    elif amaru_after["hash"] not in forged_hashes or int(amaru_after["block"]) < forged_block:
+        reasons.append(f"amaru after-snapshot stable ledger point {amaru_after} is not on the forged chain at or "
+                       f"above forged block {forged_block}: its pots measure another chain")
+    if cardano_after.get("hash") not in forged_hashes or int(cardano_after.get("block") or -1) < forged_block:
+        reasons.append(f"cardano after-snapshot tip (block {cardano_after.get('block')}, "
+                       f"{cardano_after.get('hash')}) is not on the forged chain at or above forged block {forged_block}")
+    return {"measured": not reasons, "reasons": reasons, "forged_block": forged_block, "forged_slot": forged_slot,
+            "amaru_after_stable_point": amaru_after,
+            "cardano_after_tip": {k: cardano_after.get(k) for k in ("slot", "block", "hash")}}
+
+
+def forged_chain_gate(snapshots: dict) -> str | None:
+    """None when both nodes' snapshots measured the forged chain; else why the pots prove nothing."""
+    chain = snapshots.get("forged_chain")
+    if not isinstance(chain, dict):
+        return "forged-chain membership of the snapshots was not measured"
+    if chain.get("measured") is not True:
+        return "snapshots not taken on the forged chain: " + "; ".join(chain.get("reasons") or ["unknown"])
+    return None
+
+
 def value_creation_verdict(snapshots: dict, *, donation: int) -> dict[str, Any]:
     """Classify the is_valid=false donation: value the target created that the reference did not.
 
@@ -224,12 +298,16 @@ def value_creation_verdict(snapshots: dict, *, donation: int) -> dict[str, Any]:
     can then differ only by what each node did with the dropped-body donation.
     """
     if not snapshots.get("aligned"):
-        return {"verdict": "inconclusive", "reason": snapshots.get("alignment_note") or "snapshots not epoch-aligned"}
+        return {"verdict": "inconclusive", "measured": False,
+                "reason": snapshots.get("alignment_note") or "snapshots not epoch-aligned"}
+    off_chain = forged_chain_gate(snapshots)
+    if off_chain:
+        return {"verdict": "inconclusive", "measured": False, "reason": off_chain}
     deltas = {}
     for node in ("amaru", "cardano"):
         before, after = pot_total(snapshots.get(f"{node}_before")), pot_total(snapshots.get(f"{node}_after"))
         if before is None or after is None:
-            return {"verdict": "inconclusive", "reason": f"{node} pots not measured"}
+            return {"verdict": "inconclusive", "measured": False, "reason": f"{node} pots not measured"}
         deltas[node] = after - before
     created = deltas["amaru"] - deltas["cardano"]
     if created == 0:
@@ -242,6 +320,7 @@ def value_creation_verdict(snapshots: dict, *, donation: int) -> dict[str, Any]:
         verdict = "POT_DIVERGENCE_UNEXPLAINED"
     return {
         "verdict": verdict,
+        "measured": True,
         "amaru_leaked": created == donation,
         "cardano_leaked": created == -donation,
         "evidence": {"amaru_treasury_plus_donations_delta": deltas["amaru"],
@@ -255,12 +334,19 @@ def value_creation_verdict(snapshots: dict, *, donation: int) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 _PEER_ARG = re.compile(r'--peer-address\s+("[^"]*"|\S+)')
+_LISTEN_ARG = re.compile(r'--listen-address\s+("?)([^"\s]+):(\d+)("?)')
 
 
 def repoint_compose_command(command: str, proxy_address: str) -> str:
-    """Replace every ``--peer-address`` of an Amaru compose command with the proxy only."""
+    """Replace every ``--peer-address`` of an Amaru compose command with the proxy only, and bind its
+    listener to loopback so no devnet node can dial in: an inbound duplex connection becomes a second
+    upstream serving the honest chain (run 20261109T231115Z-ddca70a3). Container-loopback probes
+    (connection_state) keep reaching the port."""
     if not _PEER_ARG.search(command):
         raise RuntimeError("Amaru compose command has no --peer-address to repoint")
+    if not _LISTEN_ARG.search(command):
+        raise RuntimeError("Amaru compose command has no --listen-address to bind to loopback")
+    command = _LISTEN_ARG.sub(lambda m: f"--listen-address {m.group(1)}127.0.0.1:{m.group(3)}{m.group(4)}", command)
     first = [True]
 
     def swap(_match):
@@ -1064,11 +1150,20 @@ def amaru_restart_pots(*, target: dict, timeout: float = 240) -> dict:
         return amaru_last_pots(_read_text(log_path)[offset:])
 
     pots = _wait(dumped, timeout=timeout, what="amaru pots.dump after restart")
-    return {**pots, "tip_at_restart": tips[-1] if tips else None, "tips_before_restart": tips[-50:]}
+    try:  # the stable point those pots belong to, logged right after the dump
+        ledger_tip = _wait(lambda: amaru_ledger_tip(_read_text(log_path)[offset:]), timeout=60, interval=1,
+                           what="amaru build.ledger_opened after restart")
+    except TimeoutError:
+        ledger_tip = None
+    return {**pots, "ledger_tip": ledger_tip, "tip_at_restart": tips[-1] if tips else None,
+            "tips_before_restart": tips[-50:]}
 
 
 def amaru_stable_slot(snapshot: dict, security_param: int) -> int | None:
-    """Slot of the block ``k`` below Amaru's tip at restart (its stable ledger point)."""
+    """Slot of Amaru's stable ledger point: the one it reported opening, else ``k`` below its last
+    logged tip (an estimate: ``tip.adopt`` lines are rate-limited, so the real tip may be higher)."""
+    if snapshot.get("ledger_tip"):
+        return int(snapshot["ledger_tip"]["slot"])
     tip = snapshot.get("tip_at_restart")
     if not tip:
         return None
@@ -1287,7 +1382,8 @@ def observe(*, run_dir: Path, watch_seconds: float, snapshots: bool) -> dict:
     if snapshots:
         result["snapshots"] = collect_after_snapshots(run_dir=run_dir, state=state, target=target, consumer=consumer,
                                                       magic=magic, genesis=genesis, forged_slot=int(forged_event["slot"]),
-                                                      both_adopted=result["verdict"] == "adopt")
+                                                      both_adopted=result["verdict"] == "adopt",
+                                                      forged_block=int(forged_event["block_number"]))
     _run(["docker", "rm", "-f", consumer], timeout=60)
     state["observe"] = result
     save_state(run_dir, state)
@@ -1295,7 +1391,8 @@ def observe(*, run_dir: Path, watch_seconds: float, snapshots: bool) -> dict:
 
 
 def collect_after_snapshots(*, run_dir: Path, state: dict, target: dict, consumer: str, magic: int, genesis: dict,
-                            forged_slot: int, both_adopted: bool, timeout: float | None = None) -> dict:
+                            forged_slot: int, both_adopted: bool, forged_block: int | None = None,
+                            timeout: float | None = None) -> dict:
     serve = state["serve"]
     if timeout is None:  # up to three epochs of this devnet, never less than ten minutes
         timeout = max(600.0, 3 * int(genesis["epoch_length"]) * float(genesis["slot_length"]))
@@ -1345,6 +1442,18 @@ def collect_after_snapshots(*, run_dir: Path, state: dict, target: dict, consume
                             and epochs["amaru_after"] == epochs["cardano_after"] == forged_epoch + 1)
     if not snapshots["aligned"]:
         snapshots["alignment_note"] = f"snapshot epochs {epochs} are not forged epoch {forged_epoch} / {forged_epoch + 1}"
+    record = _forge_record(run_dir)
+    forged_hashes = {e["forged_hash"] for e in record.get("events", []) if e.get("forged_hash")}
+    if forged_block is None:
+        forged_block = int((record.get("forged_event") or {}).get("block_number") or 10**12)
+    snapshots["forged_chain"] = forged_chain_membership(snapshots, forged_hashes=forged_hashes,
+                                                        forged_block=forged_block, forged_slot=forged_slot)
+    proxy = serve.get("proxy") or {}
+    proxy_address = f"{proxy.get('host')}:{proxy.get('port')}"
+    foreign = amaru_foreign_peers(_read_from(log_path, offset), proxy_address=proxy_address)
+    snapshots["target_isolation"] = {"proxy": proxy_address, "foreign_peers": foreign}
+    if foreign and not snapshots["forged_chain"]["measured"]:
+        snapshots["forged_chain"]["reasons"].append(f"Amaru also synced from {foreign}, not only the forging proxy")
     pots_dir = bridge_dir(run_dir) / "pots"
     pots_dir.mkdir(parents=True, exist_ok=True)
     for name in ("amaru_before", "cardano_before", "amaru_after", "cardano_after"):

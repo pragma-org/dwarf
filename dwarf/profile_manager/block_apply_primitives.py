@@ -300,11 +300,22 @@ class EpochBoundaryPotDifferential(_ScriptLoadPrimitive):
         if not snapshots.get("aligned"):
             result.update({"verdict": "inconclusive", "reason": snapshots.get("alignment_note") or "no snapshots"})
             return _write(self._out(handle), result)
+        off_chain = _bridge().forged_chain_gate(snapshots)
+        if off_chain:
+            result.update({"verdict": "inconclusive", "measured": False, "reason": off_chain,
+                           "forged_chain": snapshots.get("forged_chain")})
+            return _write(self._out(handle), result)
         sys.path.insert(0, str(_SCRIPTS))
         from epoch_boundary_pot_differential import transition_diff  # noqa: PLC0415
 
         result.update(transition_diff(snapshots["amaru_before"], snapshots["amaru_after"],
-                                      snapshots["cardano_before"], snapshots["cardano_after"]))
+                                      snapshots["cardano_before"], snapshots["cardano_after"],
+                                      comparable=("treasury", "reserves")))
+        # Run 20261109T231944Z-8cf541e9: a fees-only "divergence" with identical treasury deltas.
+        result["not_compared"] = {"fees": (
+            "Amaru's pots.dump fees is its STABLE-store pot, zeroed at each epoch start "
+            "(reset_fees_and_donations); cardano-node's utxosFees is the tip's and keeps the closed epoch's "
+            "fees until the reward update. Different quantities across a boundary; deltas recorded, not judged.")}
         result["epochs"] = snapshots.get("epochs")
         return _write(self._out(handle), result)
 
