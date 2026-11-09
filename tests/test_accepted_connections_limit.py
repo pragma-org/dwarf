@@ -42,3 +42,22 @@ def test_probe_uses_the_node_configured_hard_limit(tmp_path):
     empty = tmp_path / "empty.yaml"
     empty.write_text(json.dumps({}))
     assert probe._node_hard_limit({"config_path": str(empty)}, {}) == (None, "not-configured")
+
+
+def test_scenario_loader_keeps_the_cardano_config_overrides():
+    """F140b: the scenario loader rebuilt the substrate from known keys and dropped both
+    cardano_accepted_connections_limit and cardano_experimental_protocols (the F138 override)."""
+    from profile_manager import scenario as scenario_module
+    body = json.loads(open("dwarf/scenarios/runtime-substrate-duplex-promotion-pressure-example-smoke.yaml").read())
+    body["substrate"]["cardano_experimental_protocols"] = True
+    sc = scenario_module.scenario_from_body(json.dumps(body).encode())
+    assert sc.substrate["cardano_accepted_connections_limit"] == LIMIT
+    assert sc.substrate["cardano_experimental_protocols"] is True
+
+
+def test_scenario_loader_rejects_a_bad_limit():
+    from profile_manager import scenario as scenario_module
+    body = json.loads(open("dwarf/scenarios/runtime-substrate-duplex-promotion-pressure-example-smoke.yaml").read())
+    body["substrate"]["cardano_accepted_connections_limit"] = {"hardLimit": 2, "softLimit": 5, "delay": 1}
+    with pytest.raises(scenario_module.ScenarioValidationError, match="softLimit"):
+        scenario_module.scenario_from_body(json.dumps(body).encode())

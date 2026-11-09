@@ -630,6 +630,21 @@ def _validate_substrate(value):
         )
     if guardrails_fixture is not None:
         normalized_substrate["governance_guardrails_fixture"] = guardrails_fixture
+    # F140b: cardano-node config overrides travel with the substrate (they were dropped here).
+    experimental = value.get("cardano_experimental_protocols")
+    if experimental is not None:
+        if not isinstance(experimental, bool):
+            raise ScenarioValidationError("substrate.cardano_experimental_protocols must be a boolean")
+        normalized_substrate["cardano_experimental_protocols"] = experimental
+    if value.get("cardano_accepted_connections_limit") is not None:
+        try:
+            from scripts.runtime_substrate_common import _accepted_connections_limit
+        except ImportError:  # pragma: no cover - controller import path
+            from runtime_substrate_common import _accepted_connections_limit
+        try:
+            normalized_substrate["cardano_accepted_connections_limit"] = _accepted_connections_limit(value)
+        except ValueError as exc:
+            raise ScenarioValidationError(str(exc)) from exc
     return normalized_substrate
 
 
