@@ -6,7 +6,7 @@ machine they ran on. This replaces those host details with neutral values, then 
 sha256 inside the fixtures that named a changed file and re-signs each attestation with the same
 DWARF development key the fixtures were attested with. The attested run id and time are kept.
 
-    python3 dwarf/scripts/scrub_bundle_fixtures.py [--root dwarf/corpora/bundle-runs] [--check]
+    python3 dwarf/scripts/scrub_bundle_fixtures.py [--root DIR] [--host NAME]... [--subnet PREFIX]... [--check]
 
 ``--check`` changes nothing and exits 1 when any host detail remains (usable as a pre-push gate).
 """
@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -32,12 +33,24 @@ except ImportError:  # pragma: no cover - run from the scripts directory
 
 DEFAULT_ROOT = SCRIPT_DIR.parent / "corpora" / "bundle-runs"
 
-# Host detail -> neutral value. 192.0.2.0/24 is the documentation-only range (RFC 5737).
-REPLACEMENTS: tuple[tuple[str, str], ...] = (
-    ("/home/nigel", "/home/dwarf"),
-    ("cardano-box", "dwarf-host"),
-    ("10.15.1.", "192.0.2."),
-)
+# Home directories of any user other than dwarf become /home/dwarf. Host names and private
+# subnets are not written here (that would publish them): pass them with --host / --subnet or
+# DWARF_SCRUB_HOSTS / DWARF_SCRUB_SUBNETS (comma separated). Subnets become the documentation-only
+# range 192.0.2.0/24 (RFC 5737).
+_HOME = re.compile(r"/home/(?!dwarf(?:/|\b))[a-z_][a-z0-9_-]*")
+NEUTRAL_HOST = "dwarf-host"
+NEUTRAL_SUBNET = "192.0.2."
+
+
+def _replacements(hosts=(), subnets=()) -> list[tuple[re.Pattern, str]]:
+    hosts = [h for h in [*hosts, *os.environ.get("DWARF_SCRUB_HOSTS", "").split(",")] if h.strip()]
+    subnets = [n for n in [*subnets, *os.environ.get("DWARF_SCRUB_SUBNETS", "").split(",")] if n.strip()]
+    rules = [(_HOME, "/home/dwarf")]
+    rules += [(re.compile(re.escape(h.strip())), NEUTRAL_HOST) for h in hosts]
+    rules += [(re.compile(re.escape(n.strip().rstrip(".") + ".")), NEUTRAL_SUBNET) for n in subnets]
+    return rules
+
+
 _SHA = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
 _ATTESTATION = Path("outputs") / "attestation" / "attestation.json"
 
@@ -59,12 +72,13 @@ def _text_files(root: Path) -> list[Path]:
     return files
 
 
-def remaining_host_details(root: Path) -> list[str]:
+def remaining_host_details(root: Path, *, hosts=(), subnets=()) -> list[str]:
+    rules = _replacements(hosts, subnets)
     hits = []
     for path in sorted(root.rglob("*")):
         if path.is_file() and not path.is_symlink():
-            data = path.read_bytes()
-            if any(old.encode() in data for old, _ in REPLACEMENTS):
+            text = path.read_bytes().decode("utf-8", errors="replace")
+            if any(pattern.search(text) for pattern, _ in rules):
                 hits.append(str(path.relative_to(root)))
     return hits
 
@@ -120,15 +134,16 @@ def _resign(run_dir: Path) -> bool:
     return path.read_bytes() != before
 
 
-def scrub_tree(root: Path = DEFAULT_ROOT) -> dict:
+def scrub_tree(root: Path = DEFAULT_ROOT, *, hosts=(), subnets=()) -> dict:
     root = Path(root)
+    rules = _replacements(hosts, subnets)
     files = _text_files(root)
     original = {path: path.read_bytes() for path in files}
     changed: set[Path] = set()
     for path in files:
         text = original[path].decode("utf-8")
-        for old, new in REPLACEMENTS:
-            text = text.replace(old, new)
+        for pattern, new in rules:
+            text = pattern.sub(new, text)
         if text.encode("utf-8") != original[path]:
             path.write_bytes(text.encode("utf-8"))
             changed.add(path)
@@ -158,19 +173,21 @@ def scrub_tree(root: Path = DEFAULT_ROOT) -> dict:
             resigned += 1
             changed.add(run_dir / _ATTESTATION)
     return {"files_changed": len(changed), "attestations_resigned": resigned,
-            "remaining": remaining_host_details(root)}
+            "remaining": remaining_host_details(root, hosts=hosts, subnets=subnets)}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
+    parser.add_argument("--host", action="append", default=[], help="host name to neutralise (repeatable)")
+    parser.add_argument("--subnet", action="append", default=[], help="subnet prefix to neutralise, e.g. 10.1.2 (repeatable)")
     parser.add_argument("--check", action="store_true", help="report remaining host details, change nothing")
     args = parser.parse_args(argv)
     if args.check:
-        remaining = remaining_host_details(args.root)
+        remaining = remaining_host_details(args.root, hosts=args.host, subnets=args.subnet)
         print(json.dumps({"remaining": remaining}, indent=2))
         return 1 if remaining else 0
-    report = scrub_tree(args.root)
+    report = scrub_tree(args.root, hosts=args.host, subnets=args.subnet)
     print(json.dumps(report, indent=2))
     return 1 if report["remaining"] else 0
 

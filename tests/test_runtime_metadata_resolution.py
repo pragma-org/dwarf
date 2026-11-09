@@ -137,7 +137,7 @@ def test_endpoint_prefers_the_container_address_over_the_host_loopback_port():
     assert primitives._runtime_node_endpoint(node, {}) == ("10.192.8.2", 3001)
     # The catalog's "127.0.0.1" is the host-era default, not a routing decision.
     assert primitives._runtime_node_endpoint(node, {"target_host": "127.0.0.1"}) == ("10.192.8.2", 3001)
-    assert primitives._runtime_node_endpoint(node, {"target_host": "192.168.30.16"}) == ("192.168.30.16", 1)
+    assert primitives._runtime_node_endpoint(node, {"target_host": "192.0.2.16"}) == ("192.0.2.16", 1)
     assert primitives._runtime_node_endpoint({"port": 34301}, {}) == ("127.0.0.1", 34301)
 
 
