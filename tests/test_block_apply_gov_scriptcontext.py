@@ -356,3 +356,20 @@ def test_craft_leaves_subjects_unmeasured_when_the_target_never_adopts_the_setup
         assert record["subjects"][name]["measured"] is False
         reason = json.loads((out / "subjects" / f"{name}.tx.unbuilt.json").read_text())["reason"]
         assert "did not adopt the honest setup" in reason
+
+
+def test_gov_anchor_is_a_local_file_whose_hash_matches(tmp_path):
+    """Live run 20261109T224307Z: transaction build downloads the proposal anchor to check its hash, and
+    https://dwarf.test/a does not resolve, so prop3 could not be built. The anchor is now a file in the
+    build folder (mounted at /work for cardano-cli) with its real blake2b-256 hash."""
+    import hashlib
+
+    from scripts import runtime_block_apply_bridge as bridge
+
+    url, digest = bridge.write_gov_anchor(tmp_path)
+    path = tmp_path / "gov-anchor.json"
+    assert url == f"file://{path}"
+    assert digest == hashlib.blake2b(path.read_bytes(), digest_size=32).hexdigest()
+    command = bridge.info_action_command(cli="cli", deposit=1, stake_vkey="v", out_file="o", anchor=(url, digest))
+    assert command[command.index("--anchor-url") + 1] == url
+    assert command[command.index("--anchor-data-hash") + 1] == digest

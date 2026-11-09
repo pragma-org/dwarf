@@ -620,10 +620,24 @@ def vote_build_command(*, cli: str, socket_path: str, magic: int, tx_in: str, co
             "--witness-override", "2", "--change-address", change_address, "--out-file", out_file]
 
 
-def info_action_command(*, cli: str, deposit: int, stake_vkey: str, out_file: str) -> list[str]:
+GOV_ANCHOR_DOCUMENT = b'{"title": "DWARF governance ScriptContext fidelity proposal"}\n'
+
+
+def write_gov_anchor(out_dir: Path) -> tuple[str, str]:
+    """A proposal anchor ``transaction build`` can verify offline (F151).
+
+    cardano-cli 11.x downloads the anchor during ``transaction build``; the build folder is mounted
+    for the cardano-cli container, so a file:// URL under it resolves there, with its real hash."""
+    path = Path(out_dir) / "gov-anchor.json"
+    path.write_bytes(GOV_ANCHOR_DOCUMENT)
+    return f"file://{path}", hashlib.blake2b(GOV_ANCHOR_DOCUMENT, digest_size=32).hexdigest()
+
+
+def info_action_command(*, cli: str, deposit: int, stake_vkey: str, out_file: str,
+                        anchor: tuple[str, str] = GOV_ANCHOR) -> list[str]:
     return [cli, "conway", "governance", "action", "create-info", "--testnet",
             "--governance-action-deposit", str(deposit), "--deposit-return-stake-verification-key-file", stake_vkey,
-            "--anchor-url", GOV_ANCHOR[0], "--anchor-data-hash", GOV_ANCHOR[1], "--out-file", out_file]
+            "--anchor-url", anchor[0], "--anchor-data-hash", anchor[1], "--out-file", out_file]
 
 
 def _signed_bytes(path: Path) -> bytes:
@@ -725,10 +739,12 @@ def craft_gov_scriptcontext(*, runtime: dict, out_dir: Path, reference_node: str
                      str(vkey), "--key-reg-deposit-amt", str(stake_deposit), "--out-file", str(cert)])
                 stake[name] = {"vkey": vkey, "skey": skey, "cert": cert, "hash": key_hash_from_vkey(vkey)}
             actions = {}
+            anchor = write_gov_anchor(out_dir)
+            record["proposal_anchor"] = {"url": anchor[0], "data_hash": anchor[1]}
             for label, owner in (("h", "h"), ("prop3", "h"), ("f", "f")):
                 actions[label] = out_dir / f"info-{label}.action"
                 run(info_action_command(cli=cli, deposit=gov_deposit, stake_vkey=str(stake[owner]["vkey"]),
-                                        out_file=str(actions[label])))
+                                        out_file=str(actions[label]), anchor=anchor))
             record["return_credentials"] = {"honest": stake["h"]["hash"], "forged": stake["f"]["hash"]}
 
             utxos = _query_utxo(cli=cli, socket_path=socket_path, network_magic=magic, address=address,

@@ -111,3 +111,19 @@ def test_expected_set_stops_at_the_big_ledger_quota():
                   for k in distribution}
     expected = topology.expected_big_ledger_pools(distribution, pool_state, 0.9)
     assert sorted(expected["distribution"]) == ["aa.relay:1", "bb.relay:1", "cc.relay:1"]
+
+
+def test_stake_distribution_numerator_denominator_objects_count():
+    """cardano-node 11.1.2 query stake-distribution gives {"numerator", "denominator"} per pool
+    (live profile-c); read as None, every pool dropped and pools_with_relays was 0."""
+    from scripts import runtime_topology_fault as rtf
+    from fractions import Fraction
+
+    assert rtf._fraction({"denominator": 837222662755132, "numerator": 74847739852163}) == Fraction(74847739852163, 837222662755132)
+    pool_hex = "6dfe64b89fe768c3f016797badf366c8eb8c06f95171cc8f3f157307"
+    expected = rtf.expected_big_ledger_pools(
+        {"pool1dhlxfwylua5v8uqk09a6mumxer4ccphe29cuerelz4eswvnu6fr": {"denominator": 3, "numerator": 1}},
+        {pool_hex: {"poolParams": {"spsRelays": [{"single host name": {"dnsName": "node1", "port": 3001}}]}}},
+    )
+    assert expected["pools_with_relays"] == 1
+    assert expected["peer_ids"] == ["node1:3001"]

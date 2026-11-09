@@ -713,6 +713,9 @@ def _fraction(value) -> Fraction | None:
     if isinstance(value, (int, float)):
         return Fraction(value).limit_denominator(10**12)
     if isinstance(value, dict):
+        # cardano-node 11.x: {"numerator": n, "denominator": d}
+        if isinstance(value.get("numerator"), int) and isinstance(value.get("denominator"), int):
+            return Fraction(value["numerator"], value["denominator"]) if value["denominator"] else None
         return _fraction(value.get("stake", value.get("relativeStake", value.get("stakeFraction"))))
     try:
         return Fraction(str(value).replace("%", "/").replace(" ", "")).limit_denominator(10**12)
