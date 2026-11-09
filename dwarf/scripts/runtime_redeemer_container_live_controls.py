@@ -472,7 +472,11 @@ def wait_for_target_propagation_eligibility(
     eligible = (gate or {}).get("eligible_at_epoch_seconds")
     if not isinstance(eligible, (int, float)):
         return 0.0
-    cap = float((gate or {}).get("tx_submission_init_delay_seconds") or 60.0) + margin_seconds
+    delay = gate.get("tx_submission_init_delay_seconds")
+    if not isinstance(delay, (int, float)) or isinstance(delay, bool) or delay < 0:
+        # The delay must come from the reference node's own startup log, never a release default.
+        raise ValueError("propagation gate lacks the logged tx_submission_init_delay_seconds")
+    cap = float(delay) + margin_seconds
     wait = min(cap, max(0.0, float(eligible) + margin_seconds - (now or _time.time)()))
     if wait:
         (sleep or _time.sleep)(wait)

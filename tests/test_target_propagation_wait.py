@@ -26,3 +26,9 @@ def test_every_gated_runner_waits_right_after_computing_its_gate(module):
     source = (Path(lc.__file__).parent / f"{module}.py").read_text(encoding="utf-8")
     calls = source.count("_reference_tx_submission_propagation_gate(\n") - source.count("def _reference_tx_submission_propagation_gate(")
     assert calls >= 1 and source.count("wait_for_target_propagation_eligibility(") - source.count("def wait_for_target_propagation_eligibility(") == calls
+
+
+def test_wait_never_assumes_a_default_delay():
+    """The cap comes only from the delay the reference node logged; no release default is assumed."""
+    with pytest.raises(ValueError, match="tx_submission_init_delay_seconds"):
+        lc.wait_for_target_propagation_eligibility({"eligible_at_epoch_seconds": 1000.0}, now=lambda: 0.0, sleep=lambda s: None)
