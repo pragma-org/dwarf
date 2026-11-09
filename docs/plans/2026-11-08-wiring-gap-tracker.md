@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 06:25 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 07:30 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,22 +8,20 @@ Generated 2026-11-09 06:25 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 1 |
-| fail | 23 |
-| pass | 95 |
+| fail | 20 |
+| pass | 98 |
 | prepare-failed | 2 |
 
 | Status | Group | Count |
 |---|---|---|
 | void-pass | weak proxy fault modes | 7 |
 | rerun-pending | CBOR dataset | 1 |
-| rerun-pending | bootstrap trustable count | 1 |
-| rerun-pending | byzantine block-fetch | 1 |
 | open | block-apply bridge | 3 |
 | open | duplex hard limit | 1 |
 | open | profile prepare failures | 2 |
 | open | weak proxy fault modes | 1 |
+| review | decision needed | 1 |
 | review | known upstream-fixed Amaru bugs | 1 |
-| review | review | 2 |
 | review | review list | 1 |
 | review | smoke-scenario assertion verdicts | 6 |
 | declared-gap | byzantine/amaru tmux relaunch | 1 |
@@ -36,7 +34,7 @@ Cause: VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the las
 Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection
 
 - `runtime-substrate-blockfetch-continuity-failure-example-smoke` (pass, run 20261108T190424Z-49954d02): pass
-- `runtime-substrate-blockfetch-invalid-block-cbor-example-smoke` (pass, run 20261108T190510Z-758382b1): pass
+- `runtime-substrate-blockfetch-invalid-block-cbor-example-smoke` (pass, run 20261109T113615Z-5b45ab96): pass
   - Fix: F130 (e7a9218b): only MsgBlock corrupted; rejection = target drops the connection; rerun pending
 - `runtime-substrate-blockfetch-invalid-range-example-smoke` (pass, run 20261108T190555Z-1ba0e315): pass
 - `runtime-substrate-blockfetch-range-mismatch-example-smoke` (pass, run 20261108T190640Z-9d2f3cdb): pass
@@ -50,20 +48,6 @@ Cause: dataset is mounted, but the reference verifier image cardano-cbor-dataset
 Fix: building cardano-cbor-dataset:a7561cd on the box from Dockerfile.dwarf (snapshot apt fix, pins unchanged), 2026-11-09
 
 - `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261109T082945Z-88c52cd5): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
-
-## rerun-pending: bootstrap trustable count
-
-Cause: producer never wrote trustable_peer_count; the assertion read 0 (minimum 2)
-Fix: F129: count trustable localRoots access points + bootstrapPeers from the node topology file; rerun pending
-
-- `runtime-substrate-bootstrap-topology-concentration-example-smoke` (fail, run 20261109T103431Z-6a8c5682): topology_bootstrap_diversity_preserved: expected bootstrap topology to preserve the minimum honest peer diversity floor
-
-## rerun-pending: byzantine block-fetch
-
-Cause: design fixed (option a)
-Fix: F130: node3 serves corrupted blocks via the proxy to node1/node2; per-node drop within 10 s; rerun pending
-
-- `runtime-substrate-byzantine-blockfetch-example-smoke` (fail, run 20261109T103017Z-090eaeec): peer_eviction_within_seconds: expected honest nodes to evict byzantine peers within the allowed window
 
 ## open: block-apply bridge
 
@@ -100,22 +84,19 @@ Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-
 
 - `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261109T111035Z-cde1dc3e): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
 
+## review: decision needed
+
+Cause: after F134/F137 only ExperimentalProtocolsEnabled=true remains (cardano-testnet default on cardano-only devnets; Amaru-bearing devnets already pin false)
+Fix: ask: pin ExperimentalProtocolsEnabled=false on cardano-only devnets too (public-network default)
+
+- `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261109T122756Z-4bd6fd65): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
+
 ## review: known upstream-fixed Amaru bugs
 
 Cause: NOT NOVEL: Amaru 10.11.20260918 (aedfe797, 2026-09-18) aborts with "thread 'ledger' has overflowed its stack" on the Delay^28000 vector; upstream fixed it in d9bb18e7 "fix: decode uplc with smaller stack" (2026-09-19), first in v10.11.20260925. DWARF detects the pre-fix build correctly (evidence: run 90c557db, F104 node log + exit 134)
 Fix: rerun against a post-0925 Amaru to prove the fix; scenario should report "target crashed" as its own outcome
 
 - `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node` (fail, run 20261109T034926Z-90c557db): uplc_deep_delay_stack_safety_matches: UPLC deep-delay evidence is incomplete or inconclusive
-
-## review: review
-
-Cause: real now (F128): with network delay the 2 nodes show 2 tip groups at the sample instant (0.1 s slots)
-Fix: decide: compare tips with a slot tolerance / converge after the delay window
-
-- `consensus-threshold-delay-probe` (fail, run 20261109T110754Z-10828fa2): chain_select_consistent: expected every observed node to chain-select the same tip
-- `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261109T110550Z-45748a3b): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
-  - Cause: panic path now contained (F126); bootstrap_assumptions_safe fails on DWARF devnet config: genesis hashes not pinned, unsafe defaults detected, version-negotiation downgrade seen
-  - Fix: decide: pin genesis hashes in the generated devnet config, or scope the check to public networks
 
 ## review: review list
 
@@ -167,3 +148,5 @@ Fix: none yet
 - **prepare-availability-before-deploy** (with profile prepare failures): run/prepare deploys a profile (~15 min) and only then reports availability requires-build; the availability check should run before the deploy.
 - **txsubmission-window-cardano-node** (after the controller volume action): runtime_txsubmission_probe window_pressure never receives MsgRequestTxIds from a cardano-node target (3 scenarios: eclipse-txsubmission, snapshot-pause-txsubmission, snapshot-mid-run-corrupt), even after the init delay (F119, run 0571a907: waited 47 s, then 2 s timeout). The same mode passes against Amaru, and unexpected_body passes against cardano-node, so the connection works. Next: enable Net.ConnectionManager/InboundGovernor/TxSubmission traces for one run and read the release's ouroboros-network tx-submission inbound logic (unpromoted inbound peer / TxSubmissionLogicV2) before changing the probe.
 - **epoch-and-ledger-producers** (after the easier groups): 13 unwired assertions in 5 scenarios (3 epoch-boundary compound smokes, eclipse-topology ledger peers, local-query chain switch). runtime_epoch_boundary_probe.py measures Amaru (snapshot / pots.dump log lines) but returns observation_overrides unchanged and uses other keys than the assertions read; it has no cardano-node path. Plan: one producer contract writing the assertion keys (epoch_boundary, stake_snapshot, reward_calculation, leadership_schedule) with source + per-node results; cardano-node via its own image cardano-cli LSQ (tip+genesis epochLength, stake-snapshot hashes, ADA conservation from ledger-state, leadership-schedule twice); Amaru via its log lines mapped to the same keys; Amaru leadership = adopted blocks came from elected leaders (header-validation VRF, already tapped); boundaries are observed naturally on testnet_42 (short epochs). Then switch the 5 scenarios to resolved-plan.
+- **byzantine-isolation-primitive** (done): byzantine_isolation_observed has no scenario since F130 (its 'no link either way' expectation does not hold for cardano-node: inbound accepted, local roots retried); test_every_builtin_primitive_has_a_source_backed_scenario_reference fails until it is retired or given a correct use. DONE: retired (F135), user decision 2026-11-09.
+- **F133-override-audit** (in progress): F133: observation overrides can no longer replace or supply measurement keys. 14 passing scenarios that use override-writing scripts are re-run (#26) to confirm their passes are real.

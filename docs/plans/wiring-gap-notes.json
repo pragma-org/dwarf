@@ -3,10 +3,10 @@
  "rules": [
   {
    "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
-   "group": "decision 2a applied",
-   "status": "rerun-pending",
-   "cause": "DWARF devnet config pinned no genesis hashes; Test*HardForkAtEpoch + ExperimentalProtocolsEnabled are needed for the devnet (reported, not hidden)",
-   "fix": "F134: genesis hashes pinned after every genesis rewrite; canary rerun first"
+   "group": "decision needed",
+   "status": "review",
+   "cause": "after F134/F137 only ExperimentalProtocolsEnabled=true remains (cardano-testnet default on cardano-only devnets; Amaru-bearing devnets already pin false)",
+   "fix": "ask: pin ExperimentalProtocolsEnabled=false on cardano-only devnets too (public-network default)"
   },
   {
    "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
