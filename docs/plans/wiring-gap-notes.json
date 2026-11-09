@@ -2,6 +2,41 @@
  "_about": "Hand-kept causes and statuses for the wiring-campaign gap tracker. Rules are matched in order; the first match wins. 'match' is a scenario-id prefix or an exact id. Statuses: rerun-pending (fix deployed, not re-run yet), open (cause known, no fix yet), investigate (cause not yet known), review (verdict needs a human look), declared-gap (accepted limitation), removed.",
  "rules": [
   {
+   "match": "cardano-n2n-handshake-version-table-forward-compat-1112",
+   "group": "profile prepare failures",
+   "status": "rerun-pending",
+   "cause": "profile-v (patched cardano-node fef83fed+1c52fa42): compose adapter refused \"local artifact identity is incomplete\" because the patched node carries executable_digest, also an operator-registration field; controller redacted it (reproduced in the controller)",
+   "fix": "F108 335cc9d0 (also fixes baseline test test_patched_profile_substitutes_only_cardano_images)"
+  },
+  {
+   "match": "phase3-runtime-haskell-preview2-baseline-",
+   "group": "profile prepare failures",
+   "status": "rerun-pending",
+   "cause": "profile-g: retained runtime dir outlived all containers and the network; dashboard said absent (deploy offered, remove refused), controller refused deploy (\"topology is not absent\"); stuck",
+   "fix": "F109 7e38a871: deploy archives an orphaned runtime when nothing runs"
+  },
+  {
+   "match": "client-example-plutus-vm-amaru-portable-20260918",
+   "group": "profile prepare failures",
+   "status": "rerun-pending",
+   "cause": "profile-za deploys healthy, then availability says requires-build: \"qualified Plutus conformance adapter is unavailable for amaru aedfe797 / adapter set a32bbf07\". Prepare deploys for ~15 min before checking this",
+   "fix": "build with DWARF build_amaru_plutus_adapter.py --manifest .../aedfe797/plutus-manifest.json, import via transfer_measurement_target.py (building 2026-11-09); follow-up: check availability before deploying"
+  },
+  {
+   "match": "client-example-cbor-decoding-amaru-portable-20260918",
+   "group": "profile prepare failures",
+   "status": "rerun-pending",
+   "cause": "profile-z: same availability requires-build, CBOR conformance adapter aedfe797 / ebe45e62",
+   "fix": "build_amaru_conformance_adapter.py with the aedfe797 manifest + import (building)"
+  },
+  {
+   "match": "consensus-chainhold-upstream-differential",
+   "group": "external topology",
+   "status": "open",
+   "cause": "attaches (runtime_attach_topology) to an outside topology \"cardano_amaru\" (the Antithesis mixed devnet) that does not run on the box; readiness semantic_health_not_ready, health {}",
+   "fix": "give it a self-composed mixed testnet_42 substrate, or declare it Antithesis-only"
+  },
+  {
    "match": "phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo",
    "group": "version-tied helpers",
    "status": "fixed",
@@ -11,9 +46,9 @@
   {
    "match": "phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo",
    "group": "container port faults",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "F99 fixed the netns error; the check then probed 127.0.0.1:<published port>, unreachable from the controller; the blocked-node half was a FALSE PASS",
-   "fix": "F106 5968eedd: probe container_ip:<container port>"
+   "fix": "F106: PASS on 35913370 (run ab69e934)"
   },
   {
    "match": "phase3-runtime-profile-a-copied-state-",
@@ -265,6 +300,11 @@
    "id": "loopback-probe-audit",
    "priority": "with host-model helpers",
    "note": "runtime_topology_fault.py:169 connect_ex(127.0.0.1, port) may have the same unreachable-loopback problem as F106; check it when porting host-model helpers."
+  },
+  {
+   "id": "prepare-availability-before-deploy",
+   "priority": "with profile prepare failures",
+   "note": "run/prepare deploys a profile (~15 min) and only then reports availability requires-build; the availability check should run before the deploy."
   }
  ]
 }
