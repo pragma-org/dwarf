@@ -20,7 +20,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from runtime_connection_state import resolve_target_process  # noqa: E402
 from runtime_multi_node_observation import _query_tip_once, _resolve_socket_path  # noqa: E402
 from runtime_resource_abuse_fault import apply_network_impairment, _load_stats  # noqa: E402
-from runtime_txsubmission_probe import HANDSHAKE_PROPOSE_HEX, _encode_mux_sdu  # noqa: E402
+from runtime_txsubmission_probe import HANDSHAKE_PROPOSE_HEX, _classify_handshake_reply, _encode_mux_sdu  # noqa: E402
 
 
 TXSUBMISSION_STRESS_PAYLOAD_HEX = "8300f501"
@@ -730,40 +730,15 @@ def _run_handshake_version_negotiation_pressure(*, metadata: dict, config: dict)
             "response_kind": "refuse",
             "node_stayed_up": True,
         }
-    runtime_metadata_path = Path(config["runtime_metadata_path"])
-    target_node = str(config["target_node"])
-    target = resolve_target_process(runtime_metadata_path, target_node)
-    host, target_port = _runtime_wire_endpoint(runtime_metadata_path, target_node, config.get("target_host"), int(target["port"]))
-    target = {**target, "port": target_port}
-    handshake_frame = _encode_mux_sdu(bytes.fromhex(HANDSHAKE_UNSUPPORTED_VERSION_HEX), mini_protocol_num=0)
-    response_kind = "connect-failed"
+    downgrade = _probe_version_downgrade(runtime_metadata_path=config["runtime_metadata_path"],
+                                         target_node=str(config["target_node"]), target_host=config.get("target_host"))
     node_stayed_up = True
     try:
-        with socket.create_connection((host, int(target["port"])), timeout=2.0) as sock:
-            sock.settimeout(2.0)
-            sock.sendall(handshake_frame)
-            try:
-                response = sock.recv(128)
-                response_kind = "refuse" if response else "eof"
-            except ConnectionResetError:
-                response_kind = "reset"
-            except socket.timeout:
-                response_kind = "timeout"
-    except OSError:
-        response_kind = "connect-failed"
-    try:
-        resolve_target_process(runtime_metadata_path, target_node)
+        resolve_target_process(Path(config["runtime_metadata_path"]), str(config["target_node"]))
     except RuntimeError:
         node_stayed_up = False
-    unsupported_version_rejected = response_kind in {"refuse", "reset", "eof"}
-    return {
-        "unsafe_defaults_detected": False,
-        "expected_genesis_hash_verified": True,
-        "version_negotiation_downgrade_seen": False,
-        "unsupported_version_rejected": unsupported_version_rejected,
-        "response_kind": response_kind,
-        "node_stayed_up": node_stayed_up,
-    }
+    # F137: only what this probe measures; no unsafe-defaults / genesis constants.
+    return {**downgrade, "node_stayed_up": node_stayed_up}
 
 
 def _resolve_node_config_path(node: dict):
@@ -845,6 +820,47 @@ def _trustable_peers(node: dict) -> tuple[int | None, str]:
     return count, "topology_file"
 
 
+DEVNET_REQUIRED_FLAG_PREFIXES = ("Test",)  # TestXHardForkAtEpoch: a private devnet starts in a later era with them
+
+
+def _classify_unsafe_flags(flags, *, private_network: bool) -> tuple[list[str], list[str]]:
+    """(unsafe flags, devnet-required flags) (F137). On a private devnet the TestXHardForkAtEpoch
+    settings are how the network reaches its era; on a public network every listed flag is unsafe."""
+    present = sorted(name for name, on in (flags or {}).items() if on)
+    if not private_network:
+        return present, []
+    required = [name for name in present if name.startswith(DEVNET_REQUIRED_FLAG_PREFIXES)]
+    return [name for name in present if name not in required], required
+
+
+def _probe_version_downgrade(*, runtime_metadata_path, target_node: str, target_host) -> dict:
+    """Propose only an unsupported version (F137). MsgAcceptVersion is a downgrade; MsgRefuse or a
+    closed connection is the node rejecting it. The reply is parsed, not merely its presence."""
+    target = resolve_target_process(Path(runtime_metadata_path), target_node)
+    host, port = _runtime_wire_endpoint(Path(runtime_metadata_path), target_node, target_host, int(target["port"]))
+    frame = _encode_mux_sdu(bytes.fromhex(HANDSHAKE_UNSUPPORTED_VERSION_HEX), mini_protocol_num=0)
+    kind = "connect-failed"
+    try:
+        with socket.create_connection((host, int(port)), timeout=2.0) as sock:
+            sock.settimeout(2.0)
+            sock.sendall(frame)
+            try:
+                reply = sock.recv(256)
+                kind = _classify_handshake_reply(reply[8:]) if len(reply) > 8 else "eof"
+            except ConnectionResetError:
+                kind = "reset"
+            except socket.timeout:
+                kind = "timeout"
+    except OSError:
+        kind = "connect-failed"
+    measured = kind not in {"connect-failed", "timeout", "data", "query-reply"}
+    return {
+        "response_kind": kind,
+        "version_negotiation_downgrade_seen": (kind == "accepted") if measured else None,
+        "unsupported_version_rejected": (kind in {"refused", "eof", "reset"}) if measured else None,
+    }
+
+
 def _run_bootstrap_topology_concentration(*, metadata: dict, config: dict) -> dict:
     if "runtime_metadata_path" not in config:
         return {
@@ -922,6 +938,11 @@ def _run_bootstrap_assumption_probe(*, metadata: dict, config: dict) -> dict:
             "amaru pins leader-election nonces in-binary and does not validate from raw genesis "
             "(bootstrap-trust-source): trusts pre-derived params rather than re-deriving from genesis"
         )
+    private_network = str(metadata.get("network") or "") not in {"mainnet", "preprod", "preview"}
+    unsafe_list, required_list = (_classify_unsafe_flags(unsafe_flags, private_network=private_network)
+                                  if isinstance(unsafe_flags, dict) else ([], []))
+    downgrade = _probe_version_downgrade(runtime_metadata_path=config["runtime_metadata_path"], target_node=target_node,
+                                         target_host=config.get("target_host"))
     return {
         "measured": True,
         "target_node": target_node,
@@ -929,9 +950,13 @@ def _run_bootstrap_assumption_probe(*, metadata: dict, config: dict) -> dict:
         "config_path": cfg_path,
         "config_readable": bool(config_text),
         "genesis_hashes_pinned_in_config": genesis_pinned,
-        "expected_genesis_hash_verified": genesis_any,
+        "expected_genesis_hash_verified": (genesis_any if isinstance(genesis_any, bool) else None),
         "unsafe_flags_present": unsafe_flags,
-        "version_negotiation_downgrade_seen": "not-observable-static (requires live handshake probe)",
+        "unsafe_flags": unsafe_list,
+        "devnet_required_flags": required_list,
+        "unsafe_defaults_detected": (bool(unsafe_list) if isinstance(unsafe_flags, dict) else None),
+        **{key: downgrade[key] for key in ("version_negotiation_downgrade_seen", "unsupported_version_rejected")},
+        "downgrade_response_kind": downgrade["response_kind"],
         "amaru_bootstrap_posture": amaru_posture,
         "note": "MEASURED config posture; fields not statically observable are marked not-observable rather than fabricated",
     }

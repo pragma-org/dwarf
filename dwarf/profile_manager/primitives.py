@@ -21702,15 +21702,23 @@ class BootstrapAssumptionsSafe(AssertionPrimitive):
         source_primitive = str(self.params.get("source_primitive") or "runtime_bootstrap_assumption_probe")
         latest, payload = _latest_completed_payload(handle, phase="load", primitive=source_primitive)
         result_body = payload.get("result") or {}
-        unsafe_defaults_detected = bool(result_body.get("unsafe_defaults_detected", True))
-        expected_genesis_hash_verified = bool(result_body.get("expected_genesis_hash_verified", False))
-        version_negotiation_downgrade_seen = bool(result_body.get("version_negotiation_downgrade_seen", True))
+        # F137: each required check must be MEASURED (a real bool); text or a missing field fails.
+        required = set(self.params.get("required_checks") or ("unsafe_defaults", "genesis_hash", "version_negotiation"))
+        raw_unsafe = result_body.get("unsafe_defaults_detected")
+        raw_genesis = result_body.get("expected_genesis_hash_verified")
+        raw_downgrade = result_body.get("version_negotiation_downgrade_seen")
+        unsafe_defaults_detected = raw_unsafe if isinstance(raw_unsafe, bool) else None
+        expected_genesis_hash_verified = raw_genesis if isinstance(raw_genesis, bool) else None
+        version_negotiation_downgrade_seen = raw_downgrade if isinstance(raw_downgrade, bool) else None
+        checks = {
+            "unsafe_defaults": unsafe_defaults_detected is False,
+            "genesis_hash": expected_genesis_hash_verified is True,
+            "version_negotiation": version_negotiation_downgrade_seen is False,
+        }
         enough = (
             latest is not None
             and payload.get("outcome") == "ok"
-            and not unsafe_defaults_detected
-            and expected_genesis_hash_verified
-            and not version_negotiation_downgrade_seen
+            and all(checks[name] for name in required if name in checks)
         )
         result = "pass" if enough else "fail"
         note = None if enough else "expected bootstrap assumptions to remain explicit and downgrade-free"
@@ -21722,6 +21730,9 @@ class BootstrapAssumptionsSafe(AssertionPrimitive):
                 "unsafe_defaults_detected": unsafe_defaults_detected,
                 "expected_genesis_hash_verified": expected_genesis_hash_verified,
                 "version_negotiation_downgrade_seen": version_negotiation_downgrade_seen,
+                "required_checks": sorted(required),
+                "devnet_required_flags": result_body.get("devnet_required_flags"),
+                "unsafe_flags": result_body.get("unsafe_flags"),
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,

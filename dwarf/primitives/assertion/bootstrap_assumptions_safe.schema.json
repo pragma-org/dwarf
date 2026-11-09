@@ -1,8 +1,25 @@
 {
   "type": "object",
-  "required": ["primitive"],
+  "required": [
+    "primitive"
+  ],
   "properties": {
-    "primitive": {"const": "bootstrap_assumptions_safe"}
+    "primitive": {
+      "const": "bootstrap_assumptions_safe"
+    },
+    "required_checks": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "unsafe_defaults",
+          "genesis_hash",
+          "version_negotiation"
+        ]
+      },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Checks that must be measured and safe; default all three."
+    }
   },
   "additionalProperties": true
 }
