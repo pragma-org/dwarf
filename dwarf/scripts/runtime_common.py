@@ -303,6 +303,82 @@ def _runtime_metadata_entry(config: RuntimeConfig, node: str):
     return None
 
 
+def _node_entry(config: RuntimeConfig, node: str) -> dict | None:
+    try:
+        body = json.loads((config.runtime_root / "runtime.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for entry in [*(body.get("haskell_nodes") or []), *(body.get("amaru_nodes") or [])]:
+        if isinstance(entry, dict) and node in (entry.get("name"), entry.get("id")):
+            return entry
+    return None
+
+
+def run_in_node_netns(container: str, script: str, *, runner=subprocess.run):
+    """Run ``script`` in a node container's network namespace (F99 helper settings).
+
+    The helper is the controller's own image; it runs as root with every capability dropped
+    except NET_ADMIN, and rules it installs stay in the node's namespace after it exits.
+    """
+    own = os.environ.get("HOSTNAME") or ""
+    probe = runner(["docker", "inspect", "-f", "{{.Image}}", own], capture_output=True, text=True, timeout=15, check=False)
+    image = (probe.stdout or "").strip() if probe.returncode == 0 else ""
+    if not image:
+        raise RuntimeError("could not resolve the controller image for the netns helper")
+    result = runner(
+        ["docker", "run", "--rm", "--network", f"container:{container}", "--user", "0:0",
+         "--cap-drop", "ALL", "--cap-add", "NET_ADMIN", "--security-opt", "no-new-privileges",
+         "--entrypoint", "sh", image, "-c", script],
+        capture_output=True, text=True, timeout=60, check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"netns helper failed in {container} (exit {result.returncode}): {(result.stderr or '')[-200:]}")
+    return result
+
+
+def _controller_ip_toward(container: str, *, runner=subprocess.run) -> str:
+    """The controller's address on a network it shares with ``container``."""
+    own = os.environ.get("HOSTNAME") or ""
+    template = "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}} {{end}}"
+    node_networks = runner(["docker", "inspect", "-f", template, container], capture_output=True, text=True, timeout=15, check=False)
+    for network in (node_networks.stdout or "").split():
+        address = runner(
+            ["docker", "inspect", "-f", "{{(index .NetworkSettings.Networks \"" + network + "\").IPAddress}}", own],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+        ip = (address.stdout or "").strip()
+        if address.returncode == 0 and ip and ip != "<no value>":
+            return ip
+    raise RuntimeError(f"the controller shares no network with {container}")
+
+
+def observer_partition(config: RuntimeConfig, node: str, *, apply: bool, runner=subprocess.run) -> dict:
+    """Cut (or restore) the traffic between this controller and one node's N2N port (F110).
+
+    Container nodes: rules in the node's own namespace, matching only the controller's address,
+    so peer traffic is untouched. Host nodes keep the legacy loopback rules.
+    """
+    flag = "-I" if apply else "-D"
+    entry = _node_entry(config, node) or {}
+    address = str(entry.get("container_listen_address") or "")
+    if entry.get("container_name") and ":" in address:
+        port = int(address.rsplit(":", 1)[1])
+        controller_ip = _controller_ip_toward(str(entry["container_name"]), runner=runner)
+        rules = [
+            f"iptables -w {flag} INPUT -p tcp -s {controller_ip} --dport {port} -j DROP",
+            f"iptables -w {flag} OUTPUT -p tcp -d {controller_ip} --sport {port} -j DROP",
+        ]
+        run_in_node_netns(str(entry["container_name"]), " && ".join(rules), runner=runner)
+        return {"mechanism": "container-netns", "node": node, "port": port, "observer": controller_ip}
+    port = target_port(config, node)
+    for chain, spec in (("OUTPUT", f"-p tcp -d 127.0.0.1 --dport {port} -j DROP"),
+                        ("INPUT", f"-p tcp -s 127.0.0.1 --sport {port} -j DROP")):
+        result = runner(["sudo", "iptables", "-w", flag, chain, *spec.split()], capture_output=True, text=True, timeout=15, check=False)
+        if apply and result.returncode != 0:
+            raise RuntimeError(f"failed to apply {chain} {spec}")
+    return {"mechanism": "host-loopback", "node": node, "port": port}
+
+
 def _running_process_port(entry: dict) -> int | None:
     pid_file = entry.get("pid_file")
     if not pid_file:

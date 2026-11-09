@@ -12,6 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from runtime_common import (  # noqa: E402
     PROFILE_A_CONFIG,
     derive_range,
+    observer_partition,
     run_blockfetch,
     target_port,
     wait_for_all_tips_with_details,
@@ -44,23 +45,6 @@ def _run(args, *, timeout=60, check=False, text=True, capture_output=True, env=N
         capture_output=capture_output,
         env=env,
     )
-
-
-def _iptables_spec(port: int):
-    return [
-        ("OUTPUT", f"-p tcp -d 127.0.0.1 --dport {port} -j DROP"),
-        ("INPUT", f"-p tcp -s 127.0.0.1 --sport {port} -j DROP"),
-    ]
-
-
-def _remove_rule(chain: str, spec: str) -> None:
-    _run(["sudo", "iptables", "-w", "-D", chain, *spec.split()], timeout=15)
-
-
-def _apply_rule(chain: str, spec: str) -> None:
-    result = _run(["sudo", "iptables", "-w", "-I", chain, *spec.split()], timeout=15)
-    if result.returncode != 0:
-        raise RuntimeError(f"failed to apply {chain} {spec}")
 
 
 def _run_blockfetch(peer_port: int, from_point: str, to_point: str):
@@ -101,15 +85,15 @@ def main() -> int:
     apply_started = time.monotonic()
     try:
         for node in TARGET_NODES:
-            for chain, spec in _iptables_spec(target_port(PROFILE_A_CONFIG, node)):
-                _apply_rule(chain, spec)
-                applied.append((chain, spec))
+            # F110: container nodes are partitioned in their own namespace, host nodes on loopback
+            applied.append(observer_partition(PROFILE_A_CONFIG, node, apply=True))
         emit_target_event(
             primitive="runtime_partition_rejoin_check",
             event="partition_rules_applied",
-            payload={"rule_count": len(applied), "nodes": list(TARGET_NODES)},
+            payload={"rule_count": 2 * len(applied), "nodes": list(TARGET_NODES),
+                     "mechanisms": sorted({item["mechanism"] for item in applied})},
         )
-        emit_runtime_metric("partition_rule_count", value=len(applied), meta={"phase": "partition"})
+        emit_runtime_metric("partition_rule_count", value=2 * len(applied), meta={"phase": "partition"})
         emit_runtime_metric(
             "partition_apply_duration_seconds",
             value=round(time.monotonic() - apply_started, 6),
@@ -148,12 +132,12 @@ def main() -> int:
             )
     finally:
         remove_started = time.monotonic()
-        for chain, spec in reversed(applied):
-            _remove_rule(chain, spec)
+        for item in reversed(applied):
+            observer_partition(PROFILE_A_CONFIG, item["node"], apply=False)
         emit_target_event(
             primitive="runtime_partition_rejoin_check",
             event="partition_rules_removed",
-            payload={"rule_count": len(applied)},
+            payload={"rule_count": 2 * len(applied)},
         )
         emit_runtime_metric(
             "partition_remove_duration_seconds",
