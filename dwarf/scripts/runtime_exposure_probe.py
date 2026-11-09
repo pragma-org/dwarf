@@ -350,6 +350,23 @@ def _run_mux_ingress_overrun(*, metadata: dict, config: dict) -> dict:
                 bearer.close()
 
 
+def _node_hard_limit(node: dict, config: dict) -> tuple[int | None, str]:
+    """The hard limit to compare against (F140): an explicit probe value, else the node's own
+    AcceptedConnectionsLimit.hardLimit from its config; never an assumed default."""
+    if config.get("hard_limit") is not None:
+        return int(config["hard_limit"]), "probe-configured"
+    path = _resolve_node_config_path(node)
+    if path and Path(path).is_file():
+        try:
+            body = json.loads(Path(path).read_text(encoding="utf-8"))
+        except ValueError:
+            body = {}
+        limit = (body.get("AcceptedConnectionsLimit") or {}).get("hardLimit")
+        if isinstance(limit, int) and not isinstance(limit, bool):
+            return limit, "node-config"
+    return None, "not-configured"
+
+
 def _run_duplex_promotion_pressure(*, metadata: dict, config: dict) -> dict:
     hard_limit = int(config.get("hard_limit", 8))
     if "runtime_metadata_path" not in config:
@@ -363,7 +380,9 @@ def _run_duplex_promotion_pressure(*, metadata: dict, config: dict) -> dict:
             "note": "labeled compatibility constants only; no runtime metadata present and no traffic sent",
         }
     target = _resolve_n2n_target(metadata=metadata, config=config)
-    connection_count = min(64, max(hard_limit + 1, int(config.get("connection_count", hard_limit * 3))))
+    hard_limit, hard_limit_basis = _node_hard_limit(_find_node(metadata, str(config["target_node"])), config)
+    probe_limit = hard_limit if hard_limit is not None else 8
+    connection_count = min(64, max(probe_limit + 1, int(config.get("connection_count", probe_limit * 3))))
     hold_seconds = max(0.25, float(config.get("hold_seconds", 2.0)))
     bearers: list[socket.socket] = []
     connection_attempts = 0
@@ -460,9 +479,10 @@ def _run_duplex_promotion_pressure(*, metadata: dict, config: dict) -> dict:
             "accepted_connection_count_final": active_final,
             "connection_resets_observed": len(reset_ids),
             "hard_limit": hard_limit,
-            "hard_limit_exceeded": peak > hard_limit,
+            "hard_limit_source": hard_limit_basis,
+            "hard_limit_exceeded": (peak > hard_limit) if hard_limit is not None else None,
             "inbound_preferred_reset_applied": len(reset_ids) > 0,
-            "hard_limit_measurement_basis": "probe-configured threshold compared with concurrently live negotiated bearers",
+            "hard_limit_measurement_basis": "the node's AcceptedConnectionsLimit.hardLimit (or an explicit probe value) compared with concurrently live negotiated bearers",
             **status,
             "node_crashed": not status["node_stayed_up"],
         }

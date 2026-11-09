@@ -275,6 +275,16 @@ def _pin_cardano_genesis_hashes(*, config_path: Path, cardano_cli: str, run=None
     return {"pinned": sorted(pinned), "unpinned": unpinned}
 
 
+def _pin_cardano_accepted_connections_limit(*, config_path: Path, limit) -> dict:
+    """Write the scenario's AcceptedConnectionsLimit into the cardano config (F140); absent = untouched."""
+    if not limit:
+        return {"pinned": False, "value": None}
+    body = json.loads(config_path.read_text(encoding="utf-8"))
+    body["AcceptedConnectionsLimit"] = dict(limit)
+    config_path.write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
+    return {"pinned": True, "value": dict(limit)}
+
+
 def _apply_cardano_config_policies(*, config_path: Path, nodes: list[dict], explicit=None) -> dict:
     """Apply every version-derived cardano-node configuration policy to a generated config.
 
@@ -1716,6 +1726,11 @@ def _compose_substrate_docker(
             override=plan["kes_genesis_override"],
         )
 
+    accepted_connections_limit = None
+    if (env_root / "configuration.yaml").is_file():
+        # F140: after every config rewrite above, like the genesis pins below.
+        accepted_connections_limit = _pin_cardano_accepted_connections_limit(
+            config_path=env_root / "configuration.yaml", limit=plan.get("cardano_accepted_connections_limit"))
     genesis_hash_pins = None
     if not public_network and support.get("cardano-cli") and (env_root / "configuration.yaml").is_file():
         # F134: after every genesis rewrite above (start times, older-node shape, KES, Amaru bootstrap).
@@ -1815,6 +1830,7 @@ def _compose_substrate_docker(
         "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,
         "genesis_hash_pins": genesis_hash_pins,
+        "accepted_connections_limit": accepted_connections_limit,
         "nodes": metadata_nodes,
         "haskell_nodes": [node for node in metadata_nodes if node["impl"] == "cardano-node"],
         "amaru_nodes": [node for node in metadata_nodes if node["impl"] == "amaru"],
@@ -1908,6 +1924,7 @@ def _compose_substrate_docker(
         "governance_guardrails_fixture": governance_guardrails_fixture_evidence,
         "kes_genesis_override": kes_genesis_override_evidence,
         "genesis_hash_pins": genesis_hash_pins,
+        "accepted_connections_limit": accepted_connections_limit,
         "cardano_chain_progress_gate": chain_progress_gate,
         "amaru_chain_progress_gate": amaru_progress_gate,
         "public_network_assets": public_assets,

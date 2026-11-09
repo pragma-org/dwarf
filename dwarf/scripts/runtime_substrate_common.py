@@ -134,6 +134,24 @@ def run_command(
     return CommandResult(command, proc.returncode, proc.stdout, proc.stderr)
 
 
+def _accepted_connections_limit(substrate: dict) -> dict | None:
+    """substrate.cardano_accepted_connections_limit -> cardano-node AcceptedConnectionsLimit (F140)."""
+    value = substrate.get("cardano_accepted_connections_limit")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("substrate.cardano_accepted_connections_limit must be an object")
+    out = {}
+    for key in ("hardLimit", "softLimit", "delay"):
+        item = value.get(key)
+        if not isinstance(item, int) or isinstance(item, bool) or item < 0 or (key != "delay" and item < 1):
+            raise ValueError(f"substrate.cardano_accepted_connections_limit.{key} must be a non-negative integer")
+        out[key] = item
+    if out["softLimit"] > out["hardLimit"]:
+        raise ValueError("substrate.cardano_accepted_connections_limit: softLimit must not exceed hardLimit")
+    return out
+
+
 def normalize_substrate(substrate: dict) -> dict:
     if not isinstance(substrate, dict):
         raise ValueError("substrate must be a mapping")
@@ -502,6 +520,7 @@ def normalize_substrate(substrate: dict) -> dict:
         "cardano_measurement_traces": cardano_measurement_traces,
         "cardano_observability_traces": cardano_observability_traces,
         "cardano_experimental_protocols": cardano_experimental_protocols,
+        "cardano_accepted_connections_limit": _accepted_connections_limit(substrate),
         "amaru_json_traces": amaru_json_traces,
         "amaru_txsubmission_trace": amaru_txsubmission_trace,
         "controller_ownership": controller_ownership,
@@ -921,6 +940,7 @@ def allocate_node_plan(
         ),
         "cardano_observability_traces": bool(normalized.get("cardano_observability_traces")),
         "cardano_experimental_protocols": normalized.get("cardano_experimental_protocols"),
+        "cardano_accepted_connections_limit": normalized.get("cardano_accepted_connections_limit"),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
         "amaru_txsubmission_trace": bool(
             normalized.get("amaru_txsubmission_trace")

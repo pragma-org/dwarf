@@ -21783,9 +21783,12 @@ class DuplexPromotionSlotLimitEnforced(AssertionPrimitive):
         inbound_preferred_reset_applied = bool(result_body.get("inbound_preferred_reset_applied", False))
         accepted_connection_count_peak = int(result_body.get("accepted_connection_count_peak", 2**31 - 1) or 0)
         hard_limit = int(result_body.get("hard_limit", 0) or 0)
+        # F140: the limit must be the node's measured configuration (or an explicit value), never absent.
+        hard_limit_measured = isinstance(result_body.get("hard_limit"), int) and isinstance(result_body.get("hard_limit_exceeded"), bool)
         enough = (
             latest is not None
             and payload.get("outcome") == "ok"
+            and hard_limit_measured
             and not hard_limit_exceeded
             and inbound_preferred_reset_applied
             and accepted_connection_count_peak <= hard_limit
