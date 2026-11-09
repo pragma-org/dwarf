@@ -2803,9 +2803,22 @@ class RuntimeCardanoLsqExtract(LoadPrimitive):
 
         state = self.bound_state or {}
         compose_report = state.get("substrate_compose_report") or {}
-        socket_path = str(_resolve_output_path(self.params["socket_path"]))
-        if not Path(socket_path).exists():
-            socket_path = str(self.params["socket_path"])
+        if self.params.get("runtime_metadata_path") and self.params.get("target_node"):
+            # F116: the node socket and magic come from the composed substrate, not a host path
+            from scripts.runtime_common import short_socket_path
+
+            metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="runtime_cardano_lsq_extract")
+            body = json.loads(metadata_path.read_text(encoding="utf-8"))
+            node = _runtime_metadata_node(body, str(self.params["target_node"]))
+            if not node or not node.get("socket_path"):
+                raise ValueError(f"runtime metadata has no socket for {self.params['target_node']!r}")
+            socket_path = str(short_socket_path(Path(str(node["socket_path"]))))
+            if body.get("network_magic") is not None:
+                compose_report = {**compose_report, "network_magic": body["network_magic"]}
+        else:
+            socket_path = str(_resolve_output_path(self.params["socket_path"]))
+            if not Path(socket_path).exists():
+                socket_path = str(self.params["socket_path"])
         network_magic = compose_report.get("network_magic")
         if network_magic is None:
             network_magic = int(self.params["network_magic"])

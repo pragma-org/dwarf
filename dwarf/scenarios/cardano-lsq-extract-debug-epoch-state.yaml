@@ -2,27 +2,89 @@
   "spec_version": "v1",
   "id": "cardano-lsq-extract-debug-epoch-state",
   "title": "Extract CBOR DebugEpochState from a live cardano-node socket",
-  "authors": ["dwarf"],
-  "tags": ["cardano-node", "lsq", "debug-epoch-state", "cbor", "candidate"],
-  "target": {"implementation": "cardano-node", "version": "any"},
-  "runtime": "single-node",
+  "authors": [
+    "dwarf"
+  ],
+  "tags": [
+    "cardano-node",
+    "lsq",
+    "debug-epoch-state",
+    "cbor",
+    "candidate"
+  ],
+  "target": {
+    "implementation": "cardano-node",
+    "version": "any"
+  },
+  "runtime": "devnet",
   "seed": "0xA6A30042",
+  "substrate": {
+    "compose_mode": "docker",
+    "network": "testnet_42",
+    "nodes": [
+      {
+        "id": "node1",
+        "impl": "cardano-node",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "honest"
+      },
+      {
+        "id": "node2",
+        "impl": "cardano-node",
+        "version": "resolved-plan",
+        "identity_binding": "resolved-plan",
+        "role": "honest"
+      }
+    ],
+    "topology": {
+      "edges": [
+        {
+          "from": "node1",
+          "to": "node2"
+        },
+        {
+          "from": "node2",
+          "to": "node1"
+        }
+      ]
+    }
+  },
+  "setup": [
+    {
+      "primitive": "runtime_install_version",
+      "output_dir": "outputs/substrate-install"
+    },
+    {
+      "primitive": "runtime_compose_substrate",
+      "output_dir": "outputs/substrate-compose"
+    }
+  ],
   "load": [
     {
       "primitive": "runtime_cardano_lsq_extract",
-      "socket_path": "/tmp/ada2-testnet42-socket/node1.sock",
       "network_magic": 42,
       "era": 6,
       "output_path": "outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor",
       "debug_raw_response_path": "outputs/runtime-cardano-lsq-extract/raw-response.bin",
       "result_json_path": "outputs/runtime-cardano-lsq-extract/result.json",
       "timeout_seconds": 180,
-      "expect_exit": 0
+      "expect_exit": 0,
+      "runtime_metadata_path": "outputs/substrate-compose/runtime.json",
+      "target_node": "node1"
     }
   ],
   "probes": [],
   "assertions": [
-    {"primitive": "load_events_are_ok", "min_completed": 1}
+    {
+      "primitive": "load_events_are_ok",
+      "min_completed": 1
+    }
   ],
-  "teardown": []
+  "teardown": [
+    {
+      "primitive": "runtime_teardown_substrate",
+      "output_dir": "outputs/substrate-teardown"
+    }
+  ]
 }
