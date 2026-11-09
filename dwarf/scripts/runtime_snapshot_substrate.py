@@ -276,6 +276,23 @@ def _node_health_status(node: dict, *, timeout_seconds: float) -> dict:
     """Health of one node after a stop/start, with what was probed (F93 evidence)."""
     observed = dict(node)
     status = {"id": node.get("id") or node.get("name"), "healthy": False, "probed_endpoint": None, "timeout_seconds": timeout_seconds}
+    remote_host = observed.get("host_ssh_target") or (
+        observed.get("host_id") if str(observed.get("host_id") or "") not in ("", "local") else None
+    )
+    if observed.get("container_name") and not remote_host:
+        # F120: a single-host container node is probed locally, at its current address (the IP can
+        # change across docker stop/start), with no tmux session to require.
+        current = run_command(["docker", "inspect", "-f",
+                               "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}", str(observed["container_name"])])
+        addresses = (current.stdout or "").split() if current.returncode == 0 else []
+        if addresses:
+            observed["container_ip"] = addresses[0]
+        observed["health_probe"] = "port-only"
+        health = wait_for_nodes_healthy([observed], timeout_seconds=timeout_seconds)
+        first = health[0] if health else {}
+        status.update({"probed_endpoint": first.get("probed_endpoint"), "listen_address": first.get("listen_address"),
+                       "healthy": bool(first.get("healthy")), "probe": "local-container"})
+        return status
     if observed.get("container_name") and observed.get("host_id"):
         host = {
             "id": observed.get("host_id"),
