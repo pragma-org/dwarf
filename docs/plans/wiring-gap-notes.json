@@ -123,30 +123,30 @@
   {
    "match": "ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "rerun-pending",
-   "cause": "Amaru admitted the compact control before cardano-node's tx-submission init delay elapsed and never re-offered it (same class as F97c)",
-   "fix": "F97d shared wait_for_target_propagation_eligibility in all six gated runners (commit after d6211168; deploy after rerun #3); F102/F103 also apply"
+   "status": "open",
+   "cause": "same as tag24: cardano-node decode_reject, Amaru accepts, never included",
+   "fix": "same mempool evidence fix"
   },
   {
    "match": "ledger-submit-empty-redeemers-container-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "rerun-pending",
-   "cause": "the boundary cases are conclusive (Amaru ledger_reject, cardano-node decode_reject for empty list/map); the missing-redeemer CONTROL read inconclusive: cardano-node returned a term dump and the only decoder was pinned to 11.1.2 (and got no evidence from the helper)",
-   "fix": "F102 49bc89b2: pinned decoder removed; unreadable typed rejections are read with the reference image cardano-cli"
+   "status": "fixed",
+   "cause": "missing-redeemer control unreadable on cardano-node",
+   "fix": "F102: PASS on 39834874 (run a2967e54)"
   },
   {
    "match": "ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "rerun-pending",
-   "cause": "controls pass; on the trailing-bytes boundary case Amaru accepted (not included) and cardano-node dropped the connection, recorded as unavailable: the runner did not correlate the node log decode failure",
-   "fix": "F103 5f5500ea: node-log correlation then cli reader; rerun to see whether the divergence is real"
+   "status": "open",
+   "cause": "F103 works: cardano-node decode_reject (node-log correlated). Amaru accepts but the tx is never included, because cardano-node, the only block producer, cannot decode it; the rule \"accepted counts only when included\" cannot be met when the divergence is real",
+   "fix": "count an Amaru acceptance as conclusive when Amaru's own mempool holds the tx (LocalTxMonitor), version-agnostic"
   },
   {
    "match": "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "investigate",
-   "cause": "run cd2ed13a: cardano-node accepted the 28000-deep delay case; Amaru submit API then stopped answering (container still running at teardown). No node log was kept, so panic / hang / stack overflow is unknown. Possible Amaru finding: do not claim it before the log shows the cause",
-   "fix": "F104 39834874 keeps node state and log tail; rerun #5 on 39834874"
+   "status": "review",
+   "cause": "FINDING CANDIDATE (run 90c557db, F104 evidence): Amaru exited 134 \"thread 'ledger' has overflowed its stack ... fatal runtime error: stack overflow, aborting\" during the deep-delay-28000 case, which cardano-node accepted. Amaru unresponsive on this case in reruns #3, #4 and #5. Not filed anywhere",
+   "fix": "decide reporting; the scenario should name \"target crashed\" as its own outcome instead of \"incomplete\""
   },
   {
    "match": "runtime-bundle-",
