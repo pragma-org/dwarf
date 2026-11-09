@@ -72,3 +72,28 @@ def test_required_checks_narrow_the_assertion():
     event_result = {"version_negotiation_downgrade_seen": False}
     out = _evaluate(event_result, required_checks=["version_negotiation"])
     assert out["result"] == "pass"
+
+
+def test_unsafe_flags_read_values_not_names(tmp_path, monkeypatch):
+    """F139: ExperimentalProtocolsEnabled: false must not count as an unsafe default (F138 pins false)."""
+    config = tmp_path / "configuration.yaml"
+    config.write_text(json.dumps({"ExperimentalProtocolsEnabled": False, "TestShelleyHardForkAtEpoch": 0,
+                                  "ShelleyGenesisHash": "ab" * 32}))
+    monkeypatch.setattr(probe, "_probe_version_downgrade", lambda **k: {"response_kind": "refused",
+                        "version_negotiation_downgrade_seen": False, "unsupported_version_rejected": True})
+    out = probe._run_bootstrap_assumption_probe(
+        metadata={"network": "testnet_42", "nodes": [{"id": "node1", "impl": "cardano-node", "config_path": str(config)}]},
+        config={"runtime_metadata_path": "r", "target_node": "node1"})
+    assert out["unsafe_flags"] == [] and out["devnet_required_flags"] == ["TestShelleyHardForkAtEpoch"]
+    assert out["unsafe_defaults_detected"] is False
+
+
+def test_experimental_true_is_still_unsafe(tmp_path, monkeypatch):
+    config = tmp_path / "configuration.yaml"
+    config.write_text(json.dumps({"ExperimentalProtocolsEnabled": True}))
+    monkeypatch.setattr(probe, "_probe_version_downgrade", lambda **k: {"response_kind": "refused",
+                        "version_negotiation_downgrade_seen": False, "unsupported_version_rejected": True})
+    out = probe._run_bootstrap_assumption_probe(
+        metadata={"network": "testnet_42", "nodes": [{"id": "node1", "impl": "cardano-node", "config_path": str(config)}]},
+        config={"runtime_metadata_path": "r", "target_node": "node1"})
+    assert out["unsafe_flags"] == ["ExperimentalProtocolsEnabled"] and out["unsafe_defaults_detected"] is True

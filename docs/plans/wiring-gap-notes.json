@@ -355,7 +355,7 @@
    "match": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru",
    "group": "review list",
    "status": "review",
-   "cause": "regression reproduces the known Amaru coin-overflow DoS on 10.11.20260918: after the i64-max+1 case the Amaru submit API stops answering (\"fresh-funded value-overflow security finding observed\"). The scenario fails because the bug is still present, not because DWARF is broken",
+   "cause": "regression reproduces the known Amaru coin-overflow DoS on 10.11.20260912 (frozen b159172; earlier note said 0918, corrected 2026-11-09): after the i64-max+1 case the Amaru submit API stops answering (\"fresh-funded value-overflow security finding observed\"). The scenario fails because the bug is still present, not because DWARF is broken",
    "fix": "none in DWARF; decide whether this regression should report \"finding still present\" as its own outcome. F104 keeps the Amaru log on the next run"
   },
   {

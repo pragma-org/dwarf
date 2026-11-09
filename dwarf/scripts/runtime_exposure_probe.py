@@ -926,7 +926,18 @@ def _run_bootstrap_assumption_probe(*, metadata: dict, config: dict) -> dict:
     unsafe_flag_keys = ["ExperimentalProtocolsEnabled", "ExperimentalHardForksEnabled", "TestShelleyHardForkAtEpoch", "TestAllegraHardForkAtEpoch"]
     if config_text:
         genesis_pinned = {k: (k in config_text) for k in genesis_hash_keys}
-        unsafe_flags = {k: True for k in unsafe_flag_keys if k in config_text}
+        # F139: read values, not names. Experimental switches count only when true; the
+        # TestXHardForkAtEpoch settings count when present (any epoch value, including 0).
+        try:
+            config_body = json.loads(config_text)
+        except ValueError:
+            config_body = None
+        if isinstance(config_body, dict):
+            unsafe_flags = {k: True for k in unsafe_flag_keys
+                            if (k.startswith("Test") and k in config_body)
+                            or (not k.startswith("Test") and config_body.get(k) is True)}
+        else:
+            unsafe_flags = {k: True for k in unsafe_flag_keys if k in config_text}
         genesis_any = any(genesis_pinned.values())
     else:
         genesis_pinned = "not-observable"
