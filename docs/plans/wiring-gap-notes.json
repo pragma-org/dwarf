@@ -18,9 +18,9 @@
   {
    "match": "client-example-plutus-vm-amaru-portable-20260918",
    "group": "profile prepare failures",
-   "status": "rerun-pending",
-   "cause": "adapters built (Amaru + cardano-node Plutus); the run then failed two completeness checks because the workload double-spend probes (rejected, no lock tx) were counted as spends",
-   "fix": "F111 e03e8a8d"
+   "status": "fixed",
+   "cause": "double-spend probes counted as spends",
+   "fix": "F111: PASS on c7228e01 (run aaca9353)"
   },
   {
    "match": "client-example-cbor-decoding-amaru-portable-20260918",
@@ -60,16 +60,16 @@
   {
    "match": "phase3-runtime-profile-a-pcap-capture-primitive",
    "group": "host-model helpers on container profiles",
-   "status": "open",
-   "cause": "runtime_pcap_capture.py calls sudo",
-   "fix": "capture in the node netns via the F99 helper pattern (tcpdump with NET_RAW only)"
+   "status": "rerun-pending",
+   "cause": "sudo tcpdump on the controller; host-era ports 33001-33003",
+   "fix": "F113 daa7c868: capture-tools image in the controller namespace, container endpoints from runtime metadata"
   },
   {
    "match": "phase3-runtime-profile-a-syscall-trace-primitive",
    "group": "host-model helpers on container profiles",
-   "status": "open",
-   "cause": "runtime_syscall_trace.py calls sudo",
-   "fix": "trace from a helper sharing the node pid namespace (SYS_PTRACE only)"
+   "status": "rerun-pending",
+   "cause": "sudo strace against a host pid",
+   "fix": "F113: capture-tools image in the node pid namespace, SYS_PTRACE only; trace window emitted"
   },
   {
    "match": "m3-runtime-blockfetch-port-drop-",
@@ -95,16 +95,16 @@
   {
    "match": "phase3-runtime-generated-haskell3-connection-state-freeze-rollup-capability-demo",
    "group": "host-model helpers on container profiles",
-   "status": "open",
-   "cause": "runtime_connection_state.py needs lsof/ss and host pids; the controller has neither the tools nor the node pid namespace",
-   "fix": "read connection state from inside the node container (docker exec ss) or from the taps"
+   "status": "rerun-pending",
+   "cause": "lsof/ss on the controller against a host pid",
+   "fix": "F112 7bbfd464: reuse the in-container ss of runtime_multi_node_observation"
   },
   {
    "match": "phase3-runtime-generated-haskell3-gc-capture-primitive",
    "group": "host-model helpers on container profiles",
-   "status": "open",
-   "cause": "runtime_haskell_gc_capture.py restarts the node through tmux and waits on a host pid (timed out on pid 3810297)",
-   "fix": "restart through the controller container lifecycle; read GC stats from the container"
+   "status": "rerun-pending",
+   "cause": "tmux restart with GHCRTS=-s and a host pid wait",
+   "fix": "F114 666e2b40: live Resources trace counters, no restart (user approved; bytes copied / max pause reported None)"
   },
   {
    "match": "m3-runtime-node2-copied-state-recovery",
