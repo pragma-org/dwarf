@@ -929,7 +929,9 @@ def extract_pots(ledger_state) -> tuple[dict | None, str | None]:
         "rewards": rewards,
         "reward_account_fields": reward_fields,
     }
-    utxo_in_state = utxo_total(utxo_state.get("utxo"))
+    # An empty map means this node version left the UTxO out of ledger-state, not that it is
+    # empty; the caller then measures it with query utxo --whole-utxo.
+    utxo_in_state = utxo_total(utxo_state.get("utxo")) if utxo_state.get("utxo") else None
     if utxo_in_state is not None:
         pots["utxo"] = utxo_in_state
         pots["utxo_source"] = "ledger-state utxoState.utxo"
@@ -994,10 +996,17 @@ def _cardano_reward(samples: list[dict], start_epoch, genesis: dict | None) -> d
         "max_lovelace_supply": supply,
         "total_before": total_before, "total_after": total_after,
         "conserved_before": total_before == supply, "conserved_after": total_after == supply,
+        # Genesis-registered staking records deposits without taking them from the UTxO or
+        # reserves, so the pots can sum above maxLovelaceSupply by a constant; the boundary must
+        # neither create nor destroy value, whatever that constant is.
+        "supply_excess": total_before - supply,
+        "supply_excess_equals_deposits": total_before - supply == before["deposits"],
+        "conserved_across_boundary": total_before == total_after,
         "expected_total_rewards": expected_rewards,
         "observed_total_rewards": observed_rewards,
-        "boundary_invariant_holds": total_before == supply and total_after == supply
-        and expected_rewards == observed_rewards,
+        "boundary_invariant_holds": total_before == total_after and expected_rewards == observed_rewards,
+        "invariant_basis": "value conserved across the boundary and reward accounts grew by exactly what "
+                           "left the other pots; total vs maxLovelaceSupply is reported, not required",
     })
     return body
 

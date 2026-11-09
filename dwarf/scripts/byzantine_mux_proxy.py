@@ -639,6 +639,10 @@ def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str, record
     elif state.mutation_mode == "corrupt_header_signature":
         if direction == "inbound" and header["protocol"] == CHAINSYNC_PROTOCOL_ID and not header["initiator"]:
             segment, mutated = _corrupt_header_signature(state, segment=segment, record=record)
+    elif state.mutation_mode in ("forge_substitute", "chainsync_fork_switch_once"):
+        # These modes rewrite whole messages in their own path (_forge_messages /
+        # ForkSwitchSession); everything else they see is relayed byte for byte (F150).
+        pass
     elif (
         state.should_mutate(
             direction=direction,

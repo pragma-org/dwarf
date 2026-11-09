@@ -179,9 +179,17 @@ def test_reward_boundary_invariant_holds_when_ada_is_conserved(devnet):
 
 
 def test_reward_boundary_invariant_fails_when_ada_leaks(devnet):
-    devnet.leak = 3
+    """3 lovelace appear at the boundary: a constant offset in every epoch would be a genesis
+    excess, value that changes across the boundary is the leak."""
+    original = devnet.ledger_state
+
+    def leaking(epoch):
+        devnet.leak = 3 if epoch >= 1 else 0
+        return original(epoch)
+
+    devnet.ledger_state = leaking
     section = _section("trigger_rupd_pulse", _metadata())
-    assert section["per_node"]["node1"]["conserved_before"] is False
+    assert section["per_node"]["node1"]["conserved_across_boundary"] is False
     assert section["boundary_invariant_holds"] is False
 
 
@@ -356,3 +364,49 @@ def test_a_first_block_beyond_the_clock_skew_is_out_of_bounds():
     samples = [_tip(497, 1049.8, 0), _tip(551, 1053.0, 1)]
     body = probe._cardano_epoch_boundary({}, samples, 0, genesis)
     assert body["within_bounds"] is False
+
+
+def test_an_empty_utxo_map_in_ledger_state_is_not_a_measurement():
+    """cardano-node 11.1.2 leaves utxoState.utxo empty in query ledger-state (live run 20261109T201938Z:
+    utxo 0, supply short by the whole UTxO). The whole-utxo query must be used instead."""
+    from scripts.runtime_epoch_boundary_probe import extract_pots
+
+    state = {"esAccountState": {"reserves": 10, "treasury": 5},
+             "utxoState": {"deposited": 0, "fees": 0, "utxo": {}},
+             "delegationState": {"dstate": {"accounts": {}}}}
+    pots, error = extract_pots(state)
+    assert error is None
+    assert "utxo" not in pots
+
+
+def _pots(**kw):
+    base = {"reserves": 0, "treasury": 0, "utxo": 0, "deposits": 0, "fees": 0, "donations": 0, "rewards": 0}
+    base.update(kw)
+    return base
+
+
+def _reward_samples(before, after):
+    def sample(epoch, slot, pots):
+        return {"epoch": epoch, "slot": slot, "measurement": {"ok": True, "pots": pots}}
+    return [sample(0, 490, before), sample(1, 505, after)]
+
+
+def test_genesis_deposits_above_supply_do_not_break_a_conserved_boundary():
+    """Live profile-c: sum of pots = maxLovelaceSupply + deposits exactly, on a stable tip (genesis
+    staking records deposits without taking them from the UTxO or reserves)."""
+    supply = 1000
+    before = _pots(reserves=600, utxo=400, deposits=6)
+    after = _pots(reserves=580, treasury=5, utxo=400, deposits=6, rewards=15)
+    body = probe._cardano_reward(_reward_samples(before, after), 0, {"max_lovelace_supply": supply})
+    assert body["expected_total_rewards"] == body["observed_total_rewards"] == 15
+    assert body["conserved_across_boundary"] is True
+    assert body["supply_excess"] == 6
+    assert body["boundary_invariant_holds"] is True
+
+
+def test_value_created_across_the_boundary_breaks_the_invariant():
+    before = _pots(reserves=600, utxo=400)
+    after = _pots(reserves=600, utxo=400, rewards=7)
+    body = probe._cardano_reward(_reward_samples(before, after), 0, {"max_lovelace_supply": 1000})
+    assert body["conserved_across_boundary"] is False
+    assert body["boundary_invariant_holds"] is False

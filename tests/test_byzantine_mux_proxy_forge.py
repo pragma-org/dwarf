@@ -117,3 +117,17 @@ def test_forge_mode_leaves_other_protocols_and_the_upstream_client_untouched(tmp
     assert not proxy._forge_rewrites(state, direction="outbound", protocol_word=word_responder)
     assert proxy._forge_rewrites(state, direction="outbound", protocol_word=3)
     assert not proxy._forge_rewrites(state, direction="inbound", protocol_word=8 | proxy.RESPONDER_PROTOCOL_BIT)
+
+
+def test_forge_mode_relays_the_handshake_and_other_protocols_byte_for_byte(tmp_path):
+    """Live run 20261109T202606Z: forge_substitute fell into the generic last-byte flip, so every
+    handshake was corrupted and the producer closed 153 823 connections within ~3 ms each."""
+    a, _b, sk, spk = _chain_of_two()
+    forge = block_forge.ForgeSubstitution(kes_sign_key=sk, slots_per_kes_period=spk, transactions=[CRAFTED], armed_slot=0)
+    state = proxy.ProxyState(upstream_host="x", upstream_port=1, output_dir=tmp_path, mutation_mode="forge_substitute",
+                             mutation_direction="both", mutation_protocol="any", mutate_after_segments=1, forge=forge)
+    proposal = cbor2.dumps([0, {14: [42, False, 0, False]}])          # handshake MsgProposeVersions
+    for word, direction in ((0, "outbound"), (0 | proxy.RESPONDER_PROTOCOL_BIT, "inbound"), (8, "outbound")):
+        segment = b"\x00\x00\x00\x01" + word.to_bytes(2, "big") + len(proposal).to_bytes(2, "big") + proposal
+        out, mutated = proxy._mutate_segment(segment, state=state, direction=direction, record=None)
+        assert out == segment and mutated is False
