@@ -108,6 +108,42 @@ def _scan_for_runtime_process(node: dict) -> dict:
     raise RuntimeError(f"runtime_connection_state could not resolve runtime process for node {name!r}")
 
 
+def _container_snapshot(*, runtime_metadata_path: Path, node: dict, target_node: str, output_dir: Path,
+                        snapshot_name: str, target_host: str, connect_attempts: int) -> dict:
+    """Container nodes: reuse the multi-node observation's in-container ss method (F112).
+
+    The controller has no lsof and its own ss sees only its namespace; every socket inside the
+    node's namespace belongs to the node. lsof needs the node's pid namespace, so it stays 0.
+    """
+    try:  # the scripts package (tests, primitives) or the scripts directory (helper subprocess)
+        from scripts import runtime_multi_node_observation as multi
+    except ImportError:  # pragma: no cover - import path depends on the caller
+        import runtime_multi_node_observation as multi
+
+    observed = multi._observe_connection_state(
+        runtime_metadata_path=runtime_metadata_path, node=node, known_ports={}, known_container_ips={},
+        target_host=target_host, connect_attempts=connect_attempts,
+    )
+    lines = observed.get("ss_lines") or []
+    _write_text(output_dir / "ss.txt", "\n".join(lines) + ("\n" if lines else ""))
+    _write_text(output_dir / "lsof.txt", "")
+    summary = summarize_snapshot(output_dir)
+    summary.update({
+        "snapshot_name": snapshot_name,
+        "target_node": target_node,
+        "pid": observed.get("pid"),
+        "port": int(observed.get("port") or node.get("port") or 0),
+        "container_port": observed.get("container_port"),
+        "connect_successes": int(observed.get("connect_successes") or 0),
+        "connect_failures": int(observed.get("connect_failures") or 0),
+        "mechanism": "container-exec-ss",
+        "socket_observation": observed.get("socket_observation"),
+        "lsof": "unavailable outside the node's pid namespace",
+    })
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return summary
+
+
 def _resolve_docker_target_process(node: dict, *, proc_root: Path) -> dict | None:
     container_name = str(node.get("container_name") or "")
     if not container_name:
@@ -186,6 +222,13 @@ def run_snapshot(
     connect_attempts: int,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
+    node = _load_runtime_node(runtime_metadata_path, target_node)
+    if node.get("container_name"):
+        return _container_snapshot(
+            runtime_metadata_path=runtime_metadata_path, node=node, target_node=target_node,
+            output_dir=output_dir, snapshot_name=snapshot_name, target_host=target_host,
+            connect_attempts=connect_attempts,
+        )
     target = resolve_target_process(runtime_metadata_path, target_node)
 
     connect_successes = 0
