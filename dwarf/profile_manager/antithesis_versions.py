@@ -115,7 +115,7 @@ def select_releases(catalog, policy, selected, targets, *, scenario_default=None
 
     effective_policy = policy
     if policy == 'profile-default':
-        if len(targets) != 1 or not scenario_default or scenario_default in {'any', 'latest', '*'}:
+        if len(targets) != 1 or not scenario_default or scenario_default in {'any', 'latest', '*', 'resolved-plan'}:
             issue('pending-version-default', 'policy',
                   'The scenario or configuration supplies no concrete release to resolve. Its baseline images are retained.')
             return releases, report, issues

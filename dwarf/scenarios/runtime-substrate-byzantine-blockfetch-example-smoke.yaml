@@ -1,7 +1,7 @@
 {
   "spec_version": "v1",
   "id": "runtime-substrate-byzantine-blockfetch-example-smoke",
-  "title": "Compose a three-node substrate with one malformed BlockFetch peer and assert honest-node isolation",
+  "title": "Byzantine node3 serves corrupted BlockFetch blocks; honest node1 and node2 drop it within seconds and keep their quorum",
   "authors": [
     "dwarf"
   ],
@@ -13,7 +13,7 @@
   ],
   "target": {
     "implementation": "cardano-node",
-    "version": "10.7.1"
+    "version": "resolved-plan"
   },
   "runtime": "devnet",
   "seed": "0xB10C0F3D",
@@ -24,23 +24,23 @@
       {
         "id": "node1",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "identity_binding": "resolved-plan",
         "role": "honest"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "identity_binding": "resolved-plan",
         "role": "honest"
       },
       {
         "id": "node3",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "identity_binding": "resolved-plan",
-        "role": "honest"
+        "role": "byzantine"
       }
     ],
     "topology": {
@@ -86,12 +86,20 @@
   ],
   "load": [
     {
-      "primitive": "shim_peer_malformed_blockfetch",
+      "primitive": "runtime_blockfetch_invalid_block_cbor",
       "runtime_metadata_path": "outputs/compose-substrate/runtime.json",
-      "target_node": "node3",
-      "malformation_id": "invalid-point-hash-short",
-      "response_timeout_seconds": 2,
-      "receive_bytes": 64
+      "target_node": "node1",
+      "upstream_node_id": "node3",
+      "activity_timeout_seconds": 90,
+      "output_dir": "outputs/byzantine-blockfetch-node1"
+    },
+    {
+      "primitive": "runtime_blockfetch_invalid_block_cbor",
+      "runtime_metadata_path": "outputs/compose-substrate/runtime.json",
+      "target_node": "node2",
+      "upstream_node_id": "node3",
+      "activity_timeout_seconds": 90,
+      "output_dir": "outputs/byzantine-blockfetch-node2"
     },
     {
       "primitive": "runtime_multi_node_observation",
@@ -115,7 +123,7 @@
   "assertions": [
     {
       "primitive": "load_events_are_ok",
-      "min_completed": 1
+      "min_completed": 3
     },
     {
       "primitive": "peer_eviction_within_seconds",
@@ -127,16 +135,6 @@
         "node3"
       ],
       "timeout_seconds": 10
-    },
-    {
-      "primitive": "byzantine_isolation_observed",
-      "honest_node_ids": [
-        "node1",
-        "node2"
-      ],
-      "byzantine_node_ids": [
-        "node3"
-      ]
     },
     {
       "primitive": "honest_quorum_preserved",

@@ -64,9 +64,11 @@ MODE_DEFAULTS: dict[str, dict[str, object]] = {
         "mutate_after_segments": 999999,
     },
     "blockfetch_invalid_block_cbor": {
+        # F130: corrupt the blocks the upstream serves (MsgBlock only), not the first segment of any protocol.
         "mutation_mode": "flip_payload_byte",
         "mutation_direction": "inbound",
-        "mutation_protocol": "any",
+        "mutation_protocol": "3",
+        "mutation_message": "block",
         "mutate_after_segments": 1,
     },
     "blockfetch_range_mismatch": {
@@ -237,9 +239,33 @@ def _load_proxy_stats(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def peer_drop_evidence(stats: dict) -> dict:
+    """Did the target node drop a connection that carried an injected message? (F130)
+
+    The proxy records each connection: its injected segments and which side closed it.
+    "downstream" is the target node; "upstream" or "proxy" closures are not the target rejecting.
+    """
+    mutated = [c for c in (stats.get("connections") or []) if int(c.get("mutated_segments", 0) or 0) >= 1]
+    closed = [c for c in mutated if c.get("closed_by")]
+    dropped = [c for c in closed if c.get("closed_by") == "downstream"]
+    first = (dropped or closed or mutated or [None])[0]
+    return {
+        "mutated_connection_seen": bool(mutated),
+        "dropped_by_target": bool(dropped),
+        "closed_by": (first or {}).get("closed_by"),
+        "drop_seconds": (dropped[0].get("drop_seconds") if dropped else None),
+        "mutated_segments": int(stats.get("mutated_segments", 0) or 0)
+        or sum(int(c.get("mutated_segments", 0) or 0) for c in mutated),
+    }
+
+
 def proxy_activity_ready(*, mode: str, stats: dict) -> bool:
     if mode == "chainsync_responder_fork_switch":
         return int(stats.get("chainsync_messages_observed", 0) or 0) >= 3
+    if mode == "blockfetch_invalid_block_cbor":
+        # F130: the measurement is a corrupting connection being closed, not the first segment.
+        return any(int(c.get("mutated_segments", 0) or 0) >= 1 and c.get("closed_by")
+                   for c in (stats.get("connections") or []))
     if mode == "blockfetch_range_pressure":
         # F127: the range request alone is not the measurement; wait for a block reply.
         return int(stats.get("blocks_fetched", 0) or 0) >= 1
@@ -350,9 +376,13 @@ def build_result_body(
             "block_range_requests_observed": block_range_requests_observed,
         }
     if mode == "blockfetch_invalid_block_cbor":
+        evidence = peer_drop_evidence(stats)
         return {
-            "invalid_block_rejected": bool(target_healthy and (mutated >= 1 or activity >= 1)),
-            "decode_path": "simulated_via_mutated_mux_payload",
+            "invalid_block_rejected": bool(target_healthy and evidence["dropped_by_target"]),
+            **evidence,
+            "mutation": "flip_last_payload_byte",
+            "mutated_message": "block",
+            "decode_path": "corrupted_msgblock_from_upstream",
         }
     if mode == "blockfetch_range_mismatch":
         return {
@@ -410,6 +440,7 @@ def apply_mode(
         mutation_direction=str(defaults["mutation_direction"]),
         mutation_protocol=str(defaults["mutation_protocol"]),
         mutate_after_segments=int(defaults["mutate_after_segments"]),
+        mutation_message=defaults.get("mutation_message"),
     )
 
     if selected_upstream in original_peer_addresses:
@@ -485,6 +516,7 @@ def apply_mode(
     report = {
         "mode": mode,
         "target_node": target_node_id,
+        "upstream_node": upstream_node_name,
         "upstream_address": selected_upstream,
         "proxy_session": proxy_session,
         "proxy_listen_address": proxy_listen_address,

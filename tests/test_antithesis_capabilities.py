@@ -195,3 +195,11 @@ def test_chainhold_package_has_an_evaluable_workload():
     codes = {issue.get("code") for issue in result["issues"]}
     assert "scenario-capability-none" not in codes
     assert not any(issue.get("primitive") == "chain_select_differential" for issue in result["issues"])
+
+
+def test_resolved_plan_scenarios_are_not_an_unknown_release():
+    """F130b: 'resolved-plan' means 'no concrete pin' (like latest/any), not a release named resolved-plan."""
+    from profile_manager.antithesis_package import preview_package
+    from test_antithesis_package import request
+    result = preview_package(request(scenario_id="runtime-substrate-byzantine-blockfetch-example-smoke"))
+    assert "unknown-release" not in {issue.get("code") for issue in result["issues"]}

@@ -6,6 +6,7 @@ import selectors
 import signal
 import socket
 import socketserver
+import os
 import threading
 import time
 from pathlib import Path
@@ -118,7 +119,10 @@ class ProxyState:
         mutation_direction: str,
         mutation_protocol: str,
         mutate_after_segments: int,
+        mutation_message: str | None = None,
     ) -> None:
+        self.mutation_message = mutation_message or None
+        self._connection_counter = 0
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port
         self.output_dir = output_dir
@@ -146,6 +150,8 @@ class ProxyState:
             "mutation_direction": mutation_direction,
             "mutation_protocol": mutation_protocol,
             "mutate_after_segments": mutate_after_segments,
+            "mutation_message": mutation_message or None,
+            "connections": [],
         }
         self.events_path = output_dir / "proxy-events.ndjson"
         self.stats_path = output_dir / "proxy-stats.json"
@@ -155,9 +161,33 @@ class ProxyState:
         self._chainsync_fork_switch_mutate_next_inbound = False
         self._chainsync_fork_switch_triggered = False
 
-    def note_connection(self) -> None:
+    def note_connection(self) -> dict:
+        """Open a connection record (F130): its mutations and who closed it, and when."""
         with self.lock:
             self.stats["connections_seen"] += 1
+            self._connection_counter += 1
+            record = {"id": self._connection_counter, "opened_at": time.time(), "mutated_segments": 0,
+                      "first_mutation_at": None, "closed_at": None, "closed_by": None, "drop_seconds": None}
+            self._write_stats_locked()
+            return record
+
+    def note_mutation(self, record: dict | None) -> None:
+        if record is None:
+            return
+        with self.lock:
+            record["mutated_segments"] += 1
+            if record["first_mutation_at"] is None:
+                record["first_mutation_at"] = time.time()
+
+    def close_connection(self, record: dict, *, closed_by: str) -> None:
+        with self.lock:
+            if record.get("closed_at") is not None:
+                return
+            record["closed_at"] = time.time()
+            record["closed_by"] = closed_by
+            if record["first_mutation_at"] is not None:
+                record["drop_seconds"] = round(record["closed_at"] - record["first_mutation_at"], 3)
+            self.stats["connections"] = (self.stats["connections"] + [dict(record)])[-64:]
             self._write_stats_locked()
 
     def note_segment(self, *, direction: str, protocol: int, payload_length: int, mutated: bool) -> None:
@@ -269,6 +299,8 @@ class ProxyState:
             return False
         if self.mutation_protocol != "any" and int(self.mutation_protocol) != protocol:
             return False
+        if self.mutation_message is not None and message_kind != self.mutation_message:
+            return False
         if self.mutation_mode == "chainsync_fork_switch_once":
             if _normalize_protocol_id(protocol) != CHAINSYNC_PROTOCOL_ID:
                 return False
@@ -292,7 +324,10 @@ class ProxyState:
         body = dict(self.stats)
         body["uptime_seconds"] = round(time.time() - self.started_at, 3)
         self.stats_path.parent.mkdir(parents=True, exist_ok=True)
-        self.stats_path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        # Atomic replace: the fault step polls this file while the proxy runs (F130).
+        tmp_path = self.stats_path.with_name(self.stats_path.name + ".tmp")
+        tmp_path.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(tmp_path, self.stats_path)
 
 
 def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str) -> tuple[bytes, bool]:
@@ -329,10 +364,15 @@ def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str) -> tup
     return segment, mutated
 
 
-def _relay_segments(source: socket.socket, target: socket.socket, *, state: ProxyState, direction: str) -> None:
+def _relay_segments(source: socket.socket, target: socket.socket, *, state: ProxyState, direction: str,
+                    record: dict | None = None) -> None:
     buffer = bytearray()
     while not state.stop_event.is_set():
-        chunk = source.recv(65536)
+        try:
+            chunk = source.recv(65536)
+        except socket.timeout:
+            # An idle peer is not a closed peer (F130): keep relaying.
+            continue
         if not chunk:
             break
         buffer.extend(chunk)
@@ -343,7 +383,9 @@ def _relay_segments(source: socket.socket, target: socket.socket, *, state: Prox
                 break
             segment = bytes(buffer[:total_length])
             del buffer[:total_length]
-            segment, _ = _mutate_segment(segment, state=state, direction=direction)
+            segment, mutated = _mutate_segment(segment, state=state, direction=direction)
+            if mutated:
+                state.note_mutation(record)
             target.sendall(segment)
     if buffer:
         target.sendall(bytes(buffer))
@@ -352,18 +394,27 @@ def _relay_segments(source: socket.socket, target: socket.socket, *, state: Prox
 class MuxProxyHandler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
         state: ProxyState = self.server.proxy_state
-        state.note_connection()
-        with socket.create_connection((state.upstream_host, state.upstream_port), timeout=10.0) as upstream:
+        record = state.note_connection()
+        # outbound reads the downstream (the node under test); inbound reads the upstream.
+        reader_side = {"outbound": "downstream", "inbound": "upstream"}
+        try:
+            upstream = socket.create_connection((state.upstream_host, state.upstream_port), timeout=10.0)
+        except OSError:
+            state.close_connection(record, closed_by="upstream-unreachable")
+            raise
+        with upstream:
             upstream.settimeout(1.0)
             self.request.settimeout(1.0)
             stop = threading.Event()
 
             def pump(source: socket.socket, target: socket.socket, direction: str) -> None:
                 try:
-                    _relay_segments(source, target, state=state, direction=direction)
+                    _relay_segments(source, target, state=state, direction=direction, record=record)
                 except (ConnectionError, OSError):
                     pass
                 finally:
+                    if not state.stop_event.is_set():
+                        state.close_connection(record, closed_by=reader_side[direction])
                     stop.set()
                     try:
                         target.shutdown(socket.SHUT_RDWR)
@@ -376,6 +427,8 @@ class MuxProxyHandler(socketserver.BaseRequestHandler):
             inbound.start()
             while not stop.is_set() and not state.stop_event.is_set():
                 time.sleep(0.1)
+            if state.stop_event.is_set():
+                state.close_connection(record, closed_by="proxy")
 
 
 class ThreadedMuxProxy(socketserver.ThreadingTCPServer):
@@ -396,6 +449,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mutation-direction", default="outbound")
     parser.add_argument("--mutation-protocol", default="any")
     parser.add_argument("--mutate-after-segments", type=int, default=1)
+    parser.add_argument("--mutation-message", default=None, help="mutate only this message kind (e.g. block)")
     args = parser.parse_args(argv)
 
     upstream_host, upstream_port_text = str(args.upstream_address).rsplit(":", 1)
@@ -409,6 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         mutation_direction=str(args.mutation_direction),
         mutation_protocol=str(args.mutation_protocol),
         mutate_after_segments=max(1, int(args.mutate_after_segments)),
+        mutation_message=args.mutation_message,
     )
 
     def _handle_signal(_signum, _frame):

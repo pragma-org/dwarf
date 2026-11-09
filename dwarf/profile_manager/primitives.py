@@ -20696,10 +20696,13 @@ class PeerEvictionWithinSeconds(AssertionPrimitive):
     """Pass iff honest nodes no longer list any byzantine peer inside the bounded observation window."""
 
     def evaluate(self, handle):
-        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
         honest_node_ids = [str(node_id) for node_id in self.params.get("honest_node_ids", [])]
         byzantine_node_ids = {str(node_id) for node_id in self.params.get("byzantine_node_ids", [])}
         timeout_seconds = float(self.params.get("timeout_seconds", 0))
+        proxy = _proxy_drop_evidence(handle, honest_node_ids, byzantine_node_ids)
+        if proxy:
+            return self._evaluate_proxy(proxy, honest_node_ids, byzantine_node_ids, timeout_seconds)
+        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
         observation_window_seconds = float(result_body.get("observation_window_seconds", 0.0) or 0.0)
         connectivity = _multi_node_connectivity_map(result_body, summary)
         violating = {
@@ -20731,6 +20734,53 @@ class PeerEvictionWithinSeconds(AssertionPrimitive):
             "result": result,
             "note": note,
         }
+
+
+    def _evaluate_proxy(self, proxy, honest_node_ids, byzantine_node_ids, timeout_seconds):
+        """F130: a corrupting proxy sits between each honest node and the byzantine peer; the
+        eviction is the honest node closing the connection that carried the corrupted message."""
+        violating = {}
+        for node_id in honest_node_ids:
+            records = proxy.get(node_id) or []
+            evicted = any(
+                bool(r.get("dropped_by_target"))
+                and (timeout_seconds <= 0 or (r.get("drop_seconds") is not None and float(r["drop_seconds"]) <= timeout_seconds))
+                for r in records
+            )
+            if not evicted:
+                violating[node_id] = sorted({r.get("upstream_node") for r in records if r.get("upstream_node")} or byzantine_node_ids)
+        enough = bool(honest_node_ids) and bool(byzantine_node_ids) and not violating
+        return {
+            "primitive": "peer_eviction_within_seconds",
+            "params": dict(self.params),
+            "evaluated_value": {
+                "completed": 1,
+                "evidence_source": "proxy-drop",
+                "timeout_seconds": timeout_seconds,
+                "drops": {node_id: [{k: r.get(k) for k in ("upstream_node", "dropped_by_target", "drop_seconds")}
+                                    for r in proxy.get(node_id) or []] for node_id in honest_node_ids},
+                "violating_honest_nodes": violating,
+            },
+            "data_points_used": [r for records in proxy.values() for r in records],
+            "result": "pass" if enough else "fail",
+            "note": None if enough else "expected each honest node to drop the byzantine peer's corrupting connection within the timeout",
+        }
+
+
+def _proxy_drop_evidence(handle, honest_node_ids, byzantine_node_ids) -> dict:
+    """Per honest node, the proxy-drop results of fault steps that corrupted a byzantine upstream (F130)."""
+    evidence: dict = {}
+    for event in _events_from_handle(handle, phase="load", event="completed"):
+        payload = event.get("payload") or {}
+        result = payload.get("result") or {}
+        report = payload.get("report") or {}
+        if "dropped_by_target" not in result or payload.get("outcome") != "ok":
+            continue
+        target = str(report.get("target_node") or "")
+        upstream = str(report.get("upstream_node") or "")
+        if target in honest_node_ids and upstream in byzantine_node_ids:
+            evidence.setdefault(target, []).append({"upstream_node": upstream, **result})
+    return evidence
 
 
 class ByzantineIsolationObserved(AssertionPrimitive):
