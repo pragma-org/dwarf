@@ -179,6 +179,8 @@ class ProxyState:
         self._connection_counter = 0
         self._replay_store: list[bytes] = []
         self._replay_done = False
+        self._flip_done = False
+        self._live: dict[int, dict] = {}
         self.upstream_host = upstream_host
         self.upstream_port = upstream_port
         self.output_dir = output_dir
@@ -225,6 +227,7 @@ class ProxyState:
             self._connection_counter += 1
             record = {"id": self._connection_counter, "opened_at": time.time(), "mutated_segments": 0,
                       "first_mutation_at": None, "closed_at": None, "closed_by": None, "drop_seconds": None}
+            self._live[record["id"]] = record
             self._write_stats_locked()
             return record
 
@@ -235,6 +238,7 @@ class ProxyState:
             record["mutated_segments"] += 1
             if record["first_mutation_at"] is None:
                 record["first_mutation_at"] = time.time()
+            self._write_stats_locked()
 
     def close_connection(self, record: dict, *, closed_by: str) -> None:
         with self.lock:
@@ -244,6 +248,7 @@ class ProxyState:
             record["closed_by"] = closed_by
             if record["first_mutation_at"] is not None:
                 record["drop_seconds"] = round(record["closed_at"] - record["first_mutation_at"], 3)
+            self._live.pop(record.get("id"), None)
             self.stats["connections"] = (self.stats["connections"] + [dict(record)])[-64:]
             self._write_stats_locked()
 
@@ -358,6 +363,11 @@ class ProxyState:
             return False
         if self.mutation_message is not None and message_kind != self.mutation_message:
             return False
+        if self.mutation_mode == "flip_once":
+            if self._flip_done or (self.stats["intercepted_segments"] + 1) < self.mutate_after_segments:
+                return False
+            self._flip_done = True
+            return True
         if self.mutation_mode == "chainsync_fork_switch_once":
             if _normalize_protocol_id(protocol) != CHAINSYNC_PROTOCOL_ID:
                 return False
@@ -379,6 +389,8 @@ class ProxyState:
 
     def _write_stats_locked(self) -> None:
         body = dict(self.stats)
+        # F142b: still-open connections are evidence too (their records were written only on close).
+        body["connections"] = list(self.stats.get("connections") or []) + [dict(r) for r in getattr(self, "_live", {}).values()]
         body["uptime_seconds"] = round(time.time() - self.started_at, 3)
         self.stats_path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic replace: the fault step polls this file while the proxy runs (F130).
@@ -400,11 +412,22 @@ def _replay_earlier(state: ProxyState, *, segment: bytes, header: dict, message_
             state._replay_store.append(bytes(payload))
             del state._replay_store[:-16]
             return segment, None
+        previous = state._replay_store[-1]
         replayed = state._replay_store[0]
+        if message_kind == "roll_forward":
+            # F142b: after forks the store is not in slot order; replay the lowest-slot header below the tip.
+            prev_info = decode_roll_forward(previous)
+            candidates = [(info["slot"], stored) for stored in state._replay_store[:-1]
+                          for info in [decode_roll_forward(stored)]
+                          if info and prev_info and info["slot"] < prev_info["slot"]]
+            if not candidates:
+                state._replay_store.append(bytes(payload))
+                del state._replay_store[:-16]
+                return segment, None
+            replayed = min(candidates)[1]
         if replayed == payload:
             return segment, None
         state._replay_done = True
-        previous = state._replay_store[-1]
     info = {"message_kind": message_kind, "protocol": header["protocol"]}
     if message_kind == "roll_forward":
         old, prev_sent, current = decode_roll_forward(replayed), decode_roll_forward(previous), decode_roll_forward(payload)

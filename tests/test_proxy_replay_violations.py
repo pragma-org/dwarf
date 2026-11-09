@@ -136,3 +136,38 @@ def test_ready_waits_for_the_injection_outcome():
     assert fault.proxy_activity_ready(mode="chainsync_nonmonotonic_slot", stats={"replays": [REPLAY], "connections": [DROPPED]})
     assert fault.proxy_activity_ready(mode="blockfetch_invalid_range",
                                       stats={"connections": [{"range_request_corrupted": True, "range_response": "no_blocks"}]})
+
+
+def test_replay_picks_a_header_with_a_lower_slot_than_the_tip(tmp_path):
+    """F142b: after forks the oldest stored header can have a HIGHER slot (live cda9d5d8: +13)."""
+    state = _state(tmp_path, mutation_protocol="2", mutation_message="roll_forward", mutate_after_segments=3)
+    record = state.note_connection()
+    order = [(5, 150), (3, 90), (4, 120), (6, 160)]   # fork: stored out of slot order
+    prev = b"\x00" * 32
+    for block_no, slot in order:
+        payload, h = _roll_forward(block_no, slot, prev)
+        proxy._mutate_segment(_segment(payload, 2), state=state, direction="inbound", record=record)
+        prev = h
+    [replay] = state.stats["replays"]
+    assert replay["slot_delta"] < 0 and replay["replayed"]["slot"] == 90
+
+
+def test_flip_once_corrupts_only_the_first_request(tmp_path):
+    state = proxy.ProxyState(upstream_host="127.0.0.1", upstream_port=1, output_dir=tmp_path,
+                             mutation_mode="flip_once", mutation_direction="outbound",
+                             mutation_protocol="3", mutation_message="request_range", mutate_after_segments=1)
+    record = state.note_connection()
+    request = cbor2.dumps([0, [1, b"\x22" * 32], [2, b"\x33" * 32]])
+    flags = [proxy._mutate_segment(_segment(request, 3, responder=False), state=state, direction="outbound", record=record)[1]
+             for _ in range(4)]
+    assert flags == [True, False, False, False]
+
+
+def test_open_connections_are_in_the_stats(tmp_path):
+    import json as _json
+    state = _state(tmp_path, mutation_protocol="2", mutation_message="roll_forward", mutate_after_segments=3)
+    record = state.note_connection()
+    record["range_request_corrupted"] = True
+    state.note_mutation(record)
+    stats = _json.loads((tmp_path / "proxy-stats.json").read_text())
+    assert any(c.get("range_request_corrupted") for c in stats["connections"])

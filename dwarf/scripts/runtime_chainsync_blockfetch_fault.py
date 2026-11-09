@@ -58,8 +58,8 @@ MODE_DEFAULTS: dict[str, dict[str, object]] = {
         "mutate_after_segments": 2,
     },
     "blockfetch_invalid_range": {
-        # F142: corrupt the point inside the outgoing MsgRequestRange; measure what the upstream serves.
-        "mutation_mode": "flip_payload_byte",
+        # F142: corrupt the point inside the outgoing MsgRequestRange (once); measure what the upstream serves.
+        "mutation_mode": "flip_once",
         "mutation_direction": "outbound",
         "mutation_protocol": "3",
         "mutation_message": "request_range",
