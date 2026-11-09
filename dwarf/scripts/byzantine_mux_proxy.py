@@ -10,7 +10,11 @@ import socketserver
 import os
 import threading
 import time
+import sys
 from pathlib import Path
+
+if __package__ in (None, ""):  # run as a script (tmux session): make ``scripts.*`` importable
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 HEADER_LENGTH = 8
@@ -236,8 +240,13 @@ class ProxyState:
         mutation_protocol: str,
         mutate_after_segments: int,
         mutation_message: str | None = None,
+        forge=None,
+        arm_file: Path | None = None,
     ) -> None:
         self.mutation_message = mutation_message or None
+        # forge_substitute mode: a shared block_forge.ForgeSubstitution (block-apply bridge)
+        self.forge = forge
+        self.arm_file = Path(arm_file) if arm_file else None
         self._connection_counter = 0
         self._replay_store: list[bytes] = []
         self._replay_done = False
@@ -861,10 +870,79 @@ class _LockedSender:
             self.sock.sendall(data)
 
 
+MAX_SDU = 12288
+
+
+def _forge_rewrites(state: ProxyState, *, direction: str, protocol_word: int) -> bool:
+    """forge_substitute rewrites ChainSync/BlockFetch traffic of the downstream's own
+    client (its requests outbound, the upstream's responses inbound); the upstream's
+    client running over the same duplex connection is relayed untouched."""
+    if state.forge is None or _normalize_protocol_id(protocol_word) not in (CHAINSYNC_PROTOCOL_ID, BLOCKFETCH_PROTOCOL_ID):
+        return False
+    from_responder = bool(protocol_word & RESPONDER_PROTOCOL_BIT)
+    return from_responder if direction == "inbound" else not from_responder
+
+
+def _maybe_arm(state: ProxyState) -> None:
+    if state.forge is None or state.forge.armed_slot is not None or state.arm_file is None:
+        return
+    try:
+        body = json.loads(state.arm_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if isinstance(body, dict) and isinstance(body.get("armed_slot"), int):
+        state.forge.arm(int(body["armed_slot"]))
+        write_forge_record(state)
+
+
+def write_forge_record(state: ProxyState) -> None:
+    if state.forge is None:
+        return
+    with state.lock:
+        body = {**state.forge.summary(), "events": list(state.forge.events[-500:])}
+        path = state.output_dir / "forge-record.json"
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(body, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+
+
+def _forge_messages(state: ProxyState, streams: dict, segment: bytes) -> list[bytes]:
+    """Reassemble one mini-protocol stream, rewrite each complete message, re-segment."""
+    try:
+        from scripts import block_forge  # noqa: PLC0415
+    except ImportError:  # run as a script from dwarf/scripts (the live proxy)
+        import block_forge  # noqa: PLC0415
+
+    header = parse_mux_segment_header(segment[:HEADER_LENGTH])
+    word = header["raw_protocol"]
+    buffer = streams.setdefault(word, bytearray())
+    buffer.extend(segment[HEADER_LENGTH:])
+    out = bytearray()
+    while buffer:
+        try:
+            end = block_forge.item_end(bytes(buffer), 0)
+        except block_forge.Incomplete:
+            break
+        message = bytes(buffer[:end])
+        del buffer[:end]
+        if header["protocol"] == CHAINSYNC_PROTOCOL_ID:
+            _maybe_arm(state)
+        rewritten = state.forge.transform(header["protocol"], bool(word & RESPONDER_PROTOCOL_BIT), message)
+        if rewritten != message:
+            write_forge_record(state)
+        out.extend(rewritten)
+    segments = []
+    for start in range(0, len(out), MAX_SDU):
+        payload = bytes(out[start:start + MAX_SDU])
+        segments.append(segment[:4] + word.to_bytes(2, "big") + len(payload).to_bytes(2, "big") + payload)
+    return segments
+
+
 def _relay_segments(source: socket.socket, target, *, state: ProxyState, direction: str,
                     record: dict | None = None, session: ForkSwitchSession | None = None) -> None:
     send = target if callable(target) else target.sendall
     buffer = bytearray()
+    streams: dict[int, bytearray] = {}
     while not state.stop_event.is_set():
         try:
             chunk = source.recv(65536)
@@ -883,6 +961,10 @@ def _relay_segments(source: socket.socket, target, *, state: ProxyState, directi
             del buffer[:total_length]
             if session is not None and session.handles(direction, header):
                 session.on_segment(direction, segment)
+                continue
+            if _forge_rewrites(state, direction=direction, protocol_word=header["raw_protocol"]):
+                for rewritten in _forge_messages(state, streams, segment):
+                    send(rewritten)
                 continue
             segment, mutated = _mutate_segment(segment, state=state, direction=direction, record=record)
             send(segment)
@@ -944,6 +1026,27 @@ class ThreadedMuxProxy(socketserver.ThreadingTCPServer):
         super().__init__(server_address, request_handler_class)
 
 
+def _forge_from_plan(plan_path: str | None, output_dir: Path) -> dict:
+    """Load the block-apply forge plan; a missing/invalid plan is a launch error, never a silent relay."""
+    if not plan_path:
+        raise SystemExit("forge_substitute requires --forge-plan")
+    from scripts import block_forge, praos_kes  # noqa: PLC0415
+
+    plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    transactions = []
+    for tx_path in plan["transaction_files"]:
+        raw = Path(tx_path).read_bytes()
+        if raw.lstrip()[:1] == b"{":
+            raw = bytes.fromhex(json.loads(raw)["cborHex"])
+        transactions.append(raw)
+    forge = block_forge.ForgeSubstitution(
+        kes_sign_key=praos_kes.load_sign_key(Path(plan["kes_skey"])),
+        slots_per_kes_period=int(plan["slots_per_kes_period"]),
+        transactions=transactions,
+    )
+    return {"forge": forge, "arm_file": Path(plan["arm_file"]) if plan.get("arm_file") else output_dir / "arm.json"}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--listen-host", default="127.0.0.1")
@@ -955,6 +1058,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mutation-protocol", default="any")
     parser.add_argument("--mutate-after-segments", type=int, default=1)
     parser.add_argument("--mutation-message", default=None, help="mutate only this message kind (e.g. block)")
+    parser.add_argument("--forge-plan", default=None,
+                        help="forge_substitute mode: JSON plan {kes_skey, slots_per_kes_period, transaction_files, arm_file}")
     args = parser.parse_args(argv)
 
     upstream_host, upstream_port_text = str(args.upstream_address).rsplit(":", 1)
@@ -969,7 +1074,9 @@ def main(argv: list[str] | None = None) -> int:
         mutation_protocol=str(args.mutation_protocol),
         mutate_after_segments=max(1, int(args.mutate_after_segments)),
         mutation_message=args.mutation_message,
+        **(_forge_from_plan(args.forge_plan, output_dir) if args.mutation_mode == "forge_substitute" else {}),
     )
+    write_forge_record(state)
 
     def _handle_signal(_signum, _frame):
         state.stop()

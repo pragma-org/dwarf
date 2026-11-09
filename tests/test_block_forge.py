@@ -99,3 +99,109 @@ def test_item_end_reports_incomplete_buffers():
     assert block_forge.item_end(raw) == len(raw)
     with pytest.raises(block_forge.Incomplete):
         block_forge.item_end(raw[:-3])
+
+
+# --------------------------------------------------------------------------- #
+# ForgeSubstitution: the wire rewrite the proxy applies
+# --------------------------------------------------------------------------- #
+
+def _chain_of_two():
+    header, sk, spk = _vector(2)
+    empty = block_forge.EMPTY_BODY_SEGMENTS
+    a = block_forge.resign_header(header, kes_sign_key=sk, slots_per_kes_period=spk,
+                                  prev_hash=bytes(32), segments=empty)
+    b = block_forge.resign_header(header, kes_sign_key=sk, slots_per_kes_period=spk,
+                                  prev_hash=block_forge.header_hash(a), segments=empty)
+    return a, b, sk, spk
+
+
+def _roll_forward(header):
+    era = cbor2.dumps(6)
+    tip = block_forge.encode_array([block_forge.encode_array([cbor2.dumps(9), cbor2.dumps(block_forge.header_hash(header))]),
+                                    cbor2.dumps(1)])
+    return block_forge.encode_array([cbor2.dumps(2), block_forge.encode_array([era, block_forge.tag24(header)]), tip])
+
+
+def _header_from_roll_forward(message):
+    msg = cbor2.loads(message)
+    return bytes(msg[1][1].value), msg[2]
+
+
+def _msg_block(header, segments):
+    block = block_forge.assemble_block(header, segments)
+    return block_forge.encode_array([cbor2.dumps(4), block_forge.tag24(block_forge.encode_array([cbor2.dumps(7), block]))])
+
+
+CRAFTED = block_forge.encode_array([cbor2.dumps({0: [], 1: [], 2: 0, 22: 5_000_000}), cbor2.dumps({}), b"\xf4", b"\xf6"])
+
+
+def test_unarmed_forge_relays_headers_verbatim():
+    a, _b, sk, spk = _chain_of_two()
+    sub = block_forge.ForgeSubstitution(kes_sign_key=sk, slots_per_kes_period=spk, transactions=[CRAFTED])
+    message = _roll_forward(a)
+    assert sub.transform(2, True, message) == message
+    assert sub.summary()["forged_hash"] is None
+
+
+def test_armed_forge_replaces_body_reparents_child_and_serves_the_crafted_block():
+    a, b, sk, spk = _chain_of_two()
+    sub = block_forge.ForgeSubstitution(kes_sign_key=sk, slots_per_kes_period=spk, transactions=[CRAFTED])
+    slot = block_forge.header_fields(a)["slot"]
+    sub.arm(slot)
+
+    forged_a, tip = _header_from_roll_forward(sub.transform(2, True, _roll_forward(a)))
+    fa = block_forge.header_fields(forged_a)
+    assert fa["hash"] != block_forge.header_hash(a).hex()
+    assert fa["body_hash"] == block_forge.body_hash(sub.segments).hex()
+    assert tip[0][1].hex() == fa["hash"]          # tip rewritten onto the fork
+    assert sub.summary()["crafted_invalid_indices"] == [0]
+
+    forged_b, _ = _header_from_roll_forward(sub.transform(2, True, _roll_forward(b)))
+    fb = block_forge.header_fields(forged_b)
+    assert fb["prev_hash"] == fa["hash"]
+    assert fb["body_hash"] == block_forge.header_fields(b)["body_hash"]
+
+    # block-fetch: the consumer asks for forged points, upstream sees real ones
+    request = block_forge.encode_array([cbor2.dumps(0),
+                                        block_forge.encode_array([cbor2.dumps(slot), cbor2.dumps(bytes.fromhex(fa["hash"]))]),
+                                        block_forge.encode_array([cbor2.dumps(slot), cbor2.dumps(bytes.fromhex(fb["hash"]))])])
+    upstream_request = cbor2.loads(sub.transform(3, False, request))
+    assert upstream_request[1][1] == block_forge.header_hash(a)
+    assert upstream_request[2][1] == block_forge.header_hash(b)
+
+    served = cbor2.loads(sub.transform(3, True, _msg_block(a, block_forge.EMPTY_BODY_SEGMENTS)))
+    era_raw, block_raw = block_forge.array_items(bytes(served[1].value))
+    header, segments = block_forge.split_block(block_raw)
+    assert header == forged_a and segments == sub.segments
+    assert block_forge.body_hash(segments).hex() == fa["body_hash"]
+    assert cbor2.loads(era_raw) == 7
+
+    served_b = cbor2.loads(sub.transform(3, True, _msg_block(b, block_forge.EMPTY_BODY_SEGMENTS)))
+    header_b, segments_b = block_forge.split_block(block_forge.array_items(bytes(served_b[1].value))[1])
+    assert header_b == forged_b and segments_b == block_forge.EMPTY_BODY_SEGMENTS
+    assert sub.summary()["served_target_blocks"] == 1
+
+
+def test_forge_skips_a_target_whose_real_body_is_not_empty():
+    header, sk, spk = _vector(2)
+    busy = block_forge.resign_header(header, kes_sign_key=sk, slots_per_kes_period=spk,
+                                     segments=block_forge.body_segments([block_forge.split_transaction(CRAFTED)]))
+    sub = block_forge.ForgeSubstitution(kes_sign_key=sk, slots_per_kes_period=spk, transactions=[CRAFTED])
+    sub.arm(0)
+    message = _roll_forward(busy)
+    assert sub.transform(2, True, message) == message
+    assert sub.events[-1]["reason"] == "non-empty real body"
+
+
+def test_intersection_points_cross_the_fork_both_ways():
+    a, _b, sk, spk = _chain_of_two()
+    sub = block_forge.ForgeSubstitution(kes_sign_key=sk, slots_per_kes_period=spk, transactions=[CRAFTED])
+    sub.arm(0)
+    forged_a, _ = _header_from_roll_forward(sub.transform(2, True, _roll_forward(a)))
+    point_forged = block_forge.encode_array([cbor2.dumps(1), cbor2.dumps(block_forge.header_hash(forged_a))])
+    find = block_forge.encode_array([cbor2.dumps(4), block_forge.encode_array([point_forged])])
+    assert cbor2.loads(sub.transform(2, False, find))[1][0][1] == block_forge.header_hash(a)
+    point_real = block_forge.encode_array([cbor2.dumps(1), cbor2.dumps(block_forge.header_hash(a))])
+    tip = block_forge.encode_array([point_real, cbor2.dumps(1)])
+    found = block_forge.encode_array([cbor2.dumps(5), point_real, tip])
+    assert cbor2.loads(sub.transform(2, True, found))[1][1] == block_forge.header_hash(forged_a)
