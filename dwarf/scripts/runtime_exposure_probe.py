@@ -101,6 +101,22 @@ def _runtime_pid(node: dict) -> int | None:
     return None
 
 
+def _wire_endpoint(node: dict, host: str | None) -> tuple[str, int]:
+    try:
+        from scripts.runtime_common import node_wire_endpoint
+    except ImportError:  # pragma: no cover - helper subprocess path
+        from runtime_common import node_wire_endpoint
+    return node_wire_endpoint(node, host)
+
+
+def _runtime_wire_endpoint(runtime_metadata_path: Path, target_node: str, host: str | None, port: int) -> tuple[str, int]:
+    try:
+        from scripts.runtime_common import runtime_node_wire_endpoint
+    except ImportError:  # pragma: no cover - helper subprocess path
+        from runtime_common import runtime_node_wire_endpoint
+    return runtime_node_wire_endpoint(runtime_metadata_path, target_node, host, fallback_port=port)
+
+
 def _resolve_n2n_target(*, metadata: dict, config: dict) -> dict:
     runtime_metadata_path = Path(config["runtime_metadata_path"])
     target_node = str(config["target_node"])
@@ -129,6 +145,8 @@ def _resolve_n2n_target(*, metadata: dict, config: dict) -> dict:
     )
     if host in {"0.0.0.0", "::", "[::]"}:
         host = "127.0.0.1"
+    # F126: from the controller, a container node is reached at its container address.
+    host, port = _wire_endpoint({**node, "port": port}, host)
     return {
         "host": host,
         "port": port,
@@ -619,7 +637,8 @@ def _run_local_submit_stress(*, metadata: dict, config: dict) -> dict:
     target_node = str(config["target_node"])
     runtime_metadata_path = Path(config["runtime_metadata_path"])
     target = resolve_target_process(runtime_metadata_path, target_node)
-    host = str(config.get("target_host") or "127.0.0.1")
+    host, target_port = _runtime_wire_endpoint(runtime_metadata_path, target_node, config.get("target_host"), int(target["port"]))
+    target = {**target, "port": target_port}
     limit = int(config.get("submit_queue_depth_limit", 32))
     worker_count = max(1, min(int(config.get("worker_count", 4)), limit))
     duration_seconds = float(config.get("duration_seconds", 3.0))
@@ -714,7 +733,8 @@ def _run_handshake_version_negotiation_pressure(*, metadata: dict, config: dict)
     runtime_metadata_path = Path(config["runtime_metadata_path"])
     target_node = str(config["target_node"])
     target = resolve_target_process(runtime_metadata_path, target_node)
-    host = str(config.get("target_host") or "127.0.0.1")
+    host, target_port = _runtime_wire_endpoint(runtime_metadata_path, target_node, config.get("target_host"), int(target["port"]))
+    target = {**target, "port": target_port}
     handshake_frame = _encode_mux_sdu(bytes.fromhex(HANDSHAKE_UNSUPPORTED_VERSION_HEX), mini_protocol_num=0)
     response_kind = "connect-failed"
     node_stayed_up = True

@@ -270,19 +270,12 @@ def _load_runtime_node(runtime_metadata_path: Path, target_node: str) -> dict:
 
 
 def _node_endpoint(node: dict, target_host: str) -> tuple[str, int]:
-    """Where to connect for a runtime node (F63).  A controller-run node records
-    ``container_ip`` and ``container_listen_address``; the probe runs attached to
-    that topology network, where the host-published loopback port is unreachable.
-    An explicit non-loopback ``target_host`` (multi-host substrates) keeps the
-    published port; ``127.0.0.1`` is the host-era default, not a routing choice."""
-    explicit = str(target_host or "").strip()
-    if explicit and explicit not in {"127.0.0.1", "localhost"}:
-        return explicit, int(node["port"])
-    container_ip = str(node.get("container_ip") or "").strip()
-    listen = str(node.get("container_listen_address") or "")
-    if container_ip and ":" in listen:
-        return container_ip, int(listen.rsplit(":", 1)[1])
-    return (explicit or "127.0.0.1"), int(node["port"])
+    """Where to connect for a runtime node (F63; shared as runtime_common.node_wire_endpoint)."""
+    try:
+        from scripts.runtime_common import node_wire_endpoint
+    except ImportError:  # pragma: no cover - helper subprocess path
+        from runtime_common import node_wire_endpoint
+    return node_wire_endpoint(node, target_host)
 
 
 def build_result_body(

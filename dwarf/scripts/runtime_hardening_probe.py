@@ -232,14 +232,25 @@ def _build_panic_path_payload_hex(report: dict) -> str:
     return "81" + entropy[:2].hex() + "00"
 
 
+def _wire_endpoint(runtime_metadata_path: Path, target_node: str, host: str | None) -> tuple[str, int]:
+    """The node's container address from the controller (F126); the host-era process port as fallback."""
+    from runtime_common import runtime_node_wire_endpoint
+    fallback = None
+    try:
+        fallback = int(resolve_target_process(runtime_metadata_path, target_node).get("port") or 0) or None
+    except RuntimeError:
+        pass
+    return runtime_node_wire_endpoint(runtime_metadata_path, target_node, host, fallback_port=fallback)
+
+
 def _send_malformed_txsubmission_sequence(*, runtime_metadata_path: Path, target_node: str, payload_hex: str, host: str = "127.0.0.1") -> dict:
-    target = resolve_target_process(runtime_metadata_path, target_node)
+    connect_host, connect_port = _wire_endpoint(runtime_metadata_path, target_node, host)
     handshake_frame = _encode_mux_sdu(bytes.fromhex(HANDSHAKE_PROPOSE_HEX), mini_protocol_num=0)
     malformed_frame = _encode_mux_sdu(bytes.fromhex(payload_hex), mini_protocol_num=4)
     handshake_response_kind = "unknown"
     txsubmission_response_kind = "unknown"
     try:
-        with socket.create_connection((host, int(target["port"])), timeout=2.0) as sock:
+        with socket.create_connection((connect_host, connect_port), timeout=2.0) as sock:
             sock.settimeout(2.0)
             sock.sendall(handshake_frame)
             try:

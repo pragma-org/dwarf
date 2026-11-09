@@ -345,6 +345,38 @@ def _node_entry(config: RuntimeConfig, node: str) -> dict | None:
     return None
 
 
+def node_wire_endpoint(node: dict, target_host: str | None = None) -> tuple[str, int]:
+    """Where a wire probe in the controller connects to a runtime node (F63, shared by F126).
+
+    A controller-run node records ``container_ip`` and ``container_listen_address``; the probe runs
+    attached to that network, where the host-published loopback port is not the node. An explicit
+    non-loopback ``target_host`` (multi-host substrates) keeps the published port.
+    """
+    explicit = str(target_host or "").strip()
+    if explicit and explicit not in {"127.0.0.1", "localhost"}:
+        return explicit, int(node["port"])
+    container_ip = str(node.get("container_ip") or "").strip()
+    listen = str(node.get("container_listen_address") or "")
+    if container_ip and ":" in listen:
+        return container_ip, int(listen.rsplit(":", 1)[1])
+    return (explicit or "127.0.0.1"), int(node["port"])
+
+
+def runtime_node_wire_endpoint(runtime_metadata_path, target_node: str, target_host: str | None = None,
+                               *, fallback_port: int | None = None) -> tuple[str, int]:
+    """node_wire_endpoint for ``target_node`` in a runtime metadata file."""
+    body = json.loads(Path(runtime_metadata_path).read_text(encoding="utf-8"))
+    for entry in [*(body.get("nodes") or []), *(body.get("haskell_nodes") or []), *(body.get("amaru_nodes") or [])]:
+        if isinstance(entry, dict) and target_node in (entry.get("id"), entry.get("name")):
+            node = dict(entry)
+            if not node.get("port") and fallback_port:
+                node["port"] = fallback_port
+            return node_wire_endpoint(node, target_host)
+    if fallback_port:
+        return (str(target_host or "127.0.0.1"), int(fallback_port))
+    raise RuntimeError(f"runtime metadata has no node {target_node!r}")
+
+
 def run_in_node_netns(container: str, script: str, *, runner=subprocess.run):
     """Run ``script`` in a node container's network namespace (F99 helper settings).
 
