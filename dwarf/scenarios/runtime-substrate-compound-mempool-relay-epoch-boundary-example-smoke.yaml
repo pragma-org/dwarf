@@ -15,7 +15,7 @@
   ],
   "target": {
     "implementation": "cardano-node",
-    "version": "10.7.1"
+    "version": "resolved-plan"
   },
   "runtime": "devnet",
   "substrate": {
@@ -24,21 +24,21 @@
       {
         "id": "node1",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "role": "honest",
         "identity_binding": "resolved-plan"
       },
       {
         "id": "node2",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "role": "honest",
         "identity_binding": "resolved-plan"
       },
       {
         "id": "node3",
         "impl": "cardano-node",
-        "version": "10.7.1",
+        "version": "resolved-plan",
         "role": "honest",
         "identity_binding": "resolved-plan"
       }

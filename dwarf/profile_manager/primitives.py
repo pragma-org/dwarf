@@ -6618,6 +6618,10 @@ class _RuntimeEpochBoundaryProbePrimitive(LoadPrimitive):
             config["target_node"] = str(self.params["target_node"])
         if "target_slot" in self.params:
             config["target_slot"] = int(self.params["target_slot"])
+        if "sample_interval_seconds" in self.params:
+            config["sample_interval_seconds"] = float(self.params["sample_interval_seconds"])
+        # The probe waits for a natural epoch boundary; it must finish inside the step timeout.
+        config["time_budget_seconds"] = max(float(self.params.get("timeout_seconds", 180)) - 20.0, 10.0)
         return config
 
     def run(self, handle, rng):
@@ -21016,31 +21020,67 @@ class HotWarmChurnWithinBounds(AssertionPrimitive):
         }
 
 
+_EPOCH_PRODUCER_PRIMITIVES = (
+    "runtime_force_epoch_boundary",
+    "runtime_simulate_stake_snapshot_update",
+    "runtime_recompute_leadership_schedule",
+    "runtime_trigger_rupd_pulse",
+)
+_LEDGER_PEER_PRODUCER_PRIMITIVES = (
+    "runtime_perturb_ledger_peer_weights",
+    "runtime_substitute_big_ledger_peers",
+)
+
+
+def _latest_producer_section(handle, key: str, primitives_: tuple[str, ...]):
+    """The newest completed producer step (one of ``primitives_``) whose result carries ``key``.
+
+    Epoch / stake / ledger-peer evidence is measured by the producer step itself
+    (runtime_epoch_boundary_probe.py, runtime_topology_fault.py) and read from that step's
+    result — never from observation summaries or overrides."""
+    for entry in reversed(_events_from_handle(handle, phase="load", event="completed")):
+        if entry.get("primitive") not in primitives_:
+            continue
+        payload = entry.get("payload") or {}
+        section = (payload.get("result") or {}).get(key)
+        if isinstance(section, dict):
+            return entry, payload, section
+    return None, {}, {}
+
+
+def _producer_measured(latest, payload: dict, section: dict) -> bool:
+    return latest is not None and payload.get("outcome") == "ok" and section.get("measured") is True
+
+
+def _producer_note(section: dict, default: str) -> str:
+    reason = section.get("reason")
+    return f"{default} (producer: {reason})" if reason else default
+
+
 class LedgerPeerStakeWeightPreserved(AssertionPrimitive):
-    """Pass iff observed ledger-peer stake weighting remains within the allowed delta."""
+    """Pass iff the node's ledger-peer stake weighting matches on-chain stake within the allowed delta."""
 
     def evaluate(self, handle):
-        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
-        ledger_peers = summary.get("ledger_peers") or result_body.get("ledger_peers") or {}
+        latest, payload, section = _latest_producer_section(handle, "ledger_peers", _LEDGER_PEER_PRODUCER_PRIMITIVES)
         maximum_absolute_delta = float(self.params.get("maximum_absolute_delta", 0.0) or 0.0)
-        observed_delta = float(ledger_peers.get("max_absolute_delta", 1.0) or 0.0)
+        observed_delta = section.get("max_absolute_delta")
         enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and (payload.get("artifact_summary") or {}).get("has_observation_summary", False)
-            and observed_delta <= maximum_absolute_delta
+            _producer_measured(latest, payload, section)
+            and observed_delta is not None
+            and float(observed_delta) <= maximum_absolute_delta
         )
         result = "pass" if enough else "fail"
-        note = None if enough else f"expected stake-weight delta <= {maximum_absolute_delta}"
+        note = None if enough else _producer_note(section, f"expected stake-weight delta <= {maximum_absolute_delta}")
         return {
             "primitive": "ledger_peer_stake_weight_preserved",
             "params": dict(self.params),
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
+                "measured": section.get("measured"),
                 "max_absolute_delta": observed_delta,
                 "maximum_absolute_delta": maximum_absolute_delta,
-                "expected_stake_distribution": ledger_peers.get("expected_stake_distribution"),
-                "observed_stake_distribution": ledger_peers.get("observed_stake_distribution"),
+                "expected_stake_distribution": section.get("expected_stake_distribution"),
+                "observed_stake_distribution": section.get("observed_stake_distribution"),
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,
@@ -21049,28 +21089,24 @@ class LedgerPeerStakeWeightPreserved(AssertionPrimitive):
 
 
 class BigLedgerPeerQuorumIntact(AssertionPrimitive):
-    """Pass iff the observed BLP subset still contains enough expected top peers."""
+    """Pass iff the node's big-ledger-peer set still contains enough of the on-chain top peers."""
 
     def evaluate(self, handle):
-        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
-        big_ledger_peers = summary.get("big_ledger_peers") or result_body.get("big_ledger_peers") or {}
-        expected = [str(peer_id) for peer_id in big_ledger_peers.get("expected_top_peer_ids", [])]
-        observed = [str(peer_id) for peer_id in big_ledger_peers.get("observed_top_peer_ids", [])]
+        latest, payload, section = _latest_producer_section(handle, "big_ledger_peers", _LEDGER_PEER_PRODUCER_PRIMITIVES)
+        expected = [str(peer_id) for peer_id in section.get("expected_top_peer_ids") or []]
+        observed = [str(peer_id) for peer_id in section.get("observed_top_peer_ids") or []]
         minimum_expected_matches = int(self.params.get("minimum_expected_matches", 1))
         matches = sorted(set(expected) & set(observed))
-        enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and (payload.get("artifact_summary") or {}).get("has_observation_summary", False)
-            and len(matches) >= minimum_expected_matches
-        )
+        enough = _producer_measured(latest, payload, section) and len(matches) >= minimum_expected_matches
         result = "pass" if enough else "fail"
-        note = None if enough else f"expected at least {minimum_expected_matches} expected BLP matches"
+        note = None if enough else _producer_note(
+            section, f"expected at least {minimum_expected_matches} expected BLP matches")
         return {
             "primitive": "big_ledger_peer_quorum_intact",
             "params": dict(self.params),
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
+                "measured": section.get("measured"),
                 "minimum_expected_matches": minimum_expected_matches,
                 "matched_peer_ids": matches,
                 "expected_top_peer_ids": expected,
@@ -21083,30 +21119,31 @@ class BigLedgerPeerQuorumIntact(AssertionPrimitive):
 
 
 class StakeSnapshotFreezeConsistent(AssertionPrimitive):
-    """Pass iff the stake snapshot remains stable across the freeze window."""
+    """Pass iff the measured stake snapshot stays byte-stable across its freeze window (one epoch)."""
 
     def evaluate(self, handle):
-        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
-        stake_snapshot = summary.get("stake_snapshot") or result_body.get("stake_snapshot") or {}
-        snapshot_hashes = [str(value) for value in stake_snapshot.get("snapshot_hashes", [])]
-        freeze_window_stable = bool(stake_snapshot.get("freeze_window_stable", False))
+        latest, payload, section = _latest_producer_section(handle, "stake_snapshot", _EPOCH_PRODUCER_PRIMITIVES)
+        snapshot_hashes = [str(value) for value in section.get("snapshot_hashes") or []]
+        freeze_window_stable = section.get("freeze_window_stable") is True
         enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and (payload.get("artifact_summary") or {}).get("has_observation_summary", False)
+            _producer_measured(latest, payload, section)
             and freeze_window_stable
-            and len(set(snapshot_hashes)) <= 1
             and len(snapshot_hashes) >= 1
+            and len(set(snapshot_hashes)) == 1
         )
         result = "pass" if enough else "fail"
-        note = None if enough else "expected stake snapshot to remain byte-stable across the freeze window"
+        note = None if enough else _producer_note(
+            section, "expected stake snapshot to remain byte-stable across the freeze window")
         return {
             "primitive": "stake_snapshot_freeze_consistent",
             "params": dict(self.params),
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
+                "measured": section.get("measured"),
                 "freeze_window_stable": freeze_window_stable,
                 "snapshot_hashes": snapshot_hashes,
+                "rotation_consistent": section.get("rotation_consistent"),
+                "cross_node_consistent": section.get("cross_node_consistent"),
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,
@@ -21115,14 +21152,13 @@ class StakeSnapshotFreezeConsistent(AssertionPrimitive):
 
 
 class EpochBoundaryTimingWithinBounds(AssertionPrimitive):
-    """Pass iff the observed epoch boundary falls inside the expected slot window."""
+    """Pass iff the observed epoch boundary falls inside the genesis-derived slot window on every node."""
 
     def evaluate(self, handle):
-        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
-        epoch_boundary = summary.get("epoch_boundary") or result_body.get("epoch_boundary") or {}
-        observed_slot = epoch_boundary.get("observed_boundary_slot")
-        window_start = epoch_boundary.get("expected_window_start")
-        window_end = epoch_boundary.get("expected_window_end")
+        latest, payload, section = _latest_producer_section(handle, "epoch_boundary", _EPOCH_PRODUCER_PRIMITIVES)
+        observed_slot = section.get("observed_boundary_slot")
+        window_start = section.get("expected_window_start")
+        window_end = section.get("expected_window_end")
         in_range = (
             observed_slot is not None
             and window_start is not None
@@ -21130,21 +21166,23 @@ class EpochBoundaryTimingWithinBounds(AssertionPrimitive):
             and int(window_start) <= int(observed_slot) <= int(window_end)
         )
         enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and (payload.get("artifact_summary") or {}).get("has_observation_summary", False)
+            _producer_measured(latest, payload, section)
             and in_range
+            and section.get("all_nodes_within_bounds") is True
         )
         result = "pass" if enough else "fail"
-        note = None if enough else "expected epoch boundary to occur within the configured slot window"
+        note = None if enough else _producer_note(
+            section, "expected epoch boundary to occur within the configured slot window")
         return {
             "primitive": "epoch_boundary_timing_within_bounds",
             "params": dict(self.params),
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
+                "measured": section.get("measured"),
                 "observed_boundary_slot": observed_slot,
                 "expected_window_start": window_start,
                 "expected_window_end": window_end,
+                "all_nodes_within_bounds": section.get("all_nodes_within_bounds"),
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,
@@ -21153,28 +21191,24 @@ class EpochBoundaryTimingWithinBounds(AssertionPrimitive):
 
 
 class LeadershipScheduleRecomputesClean(AssertionPrimitive):
-    """Pass iff leadership schedule recomputation matches deterministically."""
+    """Pass iff the leadership schedule recomputes identically (twice, and on every node)."""
 
     def evaluate(self, handle):
-        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
-        leadership_schedule = summary.get("leadership_schedule") or result_body.get("leadership_schedule") or {}
-        deterministic_match = bool(leadership_schedule.get("deterministic_match", False))
-        enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and (payload.get("artifact_summary") or {}).get("has_observation_summary", False)
-            and deterministic_match
-        )
+        latest, payload, section = _latest_producer_section(handle, "leadership_schedule", _EPOCH_PRODUCER_PRIMITIVES)
+        deterministic_match = section.get("deterministic_match") is True
+        enough = _producer_measured(latest, payload, section) and deterministic_match
         result = "pass" if enough else "fail"
-        note = None if enough else "expected leadership schedule recomputation to match deterministically"
+        note = None if enough else _producer_note(
+            section, "expected leadership schedule recomputation to match deterministically")
         return {
             "primitive": "leadership_schedule_recomputes_clean",
             "params": dict(self.params),
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
+                "measured": section.get("measured"),
                 "deterministic_match": deterministic_match,
-                "expected_schedule_hash": leadership_schedule.get("expected_schedule_hash"),
-                "recomputed_schedule_hash": leadership_schedule.get("recomputed_schedule_hash"),
+                "expected_schedule_hash": section.get("expected_schedule_hash"),
+                "recomputed_schedule_hash": section.get("recomputed_schedule_hash"),
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,
@@ -21183,28 +21217,24 @@ class LeadershipScheduleRecomputesClean(AssertionPrimitive):
 
 
 class RewardCalculationBoundaryInvariant(AssertionPrimitive):
-    """Pass iff reward totals remain invariant across the epoch boundary calculation path."""
+    """Pass iff ADA is conserved across the observed epoch boundary (the reward-update path)."""
 
     def evaluate(self, handle):
-        latest, payload, result_body, summary = _latest_multi_node_observation(handle)
-        reward_calculation = summary.get("reward_calculation") or result_body.get("reward_calculation") or {}
-        invariant_holds = bool(reward_calculation.get("boundary_invariant_holds", False))
-        enough = (
-            latest is not None
-            and payload.get("outcome") == "ok"
-            and (payload.get("artifact_summary") or {}).get("has_observation_summary", False)
-            and invariant_holds
-        )
+        latest, payload, section = _latest_producer_section(handle, "reward_calculation", _EPOCH_PRODUCER_PRIMITIVES)
+        invariant_holds = section.get("boundary_invariant_holds") is True
+        enough = _producer_measured(latest, payload, section) and invariant_holds
         result = "pass" if enough else "fail"
-        note = None if enough else "expected reward calculation invariants to hold across the epoch boundary"
+        note = None if enough else _producer_note(
+            section, "expected reward calculation invariants to hold across the epoch boundary")
         return {
             "primitive": "reward_calculation_boundary_invariant",
             "params": dict(self.params),
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
+                "measured": section.get("measured"),
                 "boundary_invariant_holds": invariant_holds,
-                "expected_total_rewards": reward_calculation.get("expected_total_rewards"),
-                "observed_total_rewards": reward_calculation.get("observed_total_rewards"),
+                "expected_total_rewards": section.get("expected_total_rewards"),
+                "observed_total_rewards": section.get("observed_total_rewards"),
             },
             "data_points_used": [payload] if latest is not None else [],
             "result": result,

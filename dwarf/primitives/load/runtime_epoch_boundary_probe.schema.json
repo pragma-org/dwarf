@@ -7,6 +7,7 @@
     "runtime_metadata_path": { "type": "string", "minLength": 1 },
     "target_node": { "type": "string", "minLength": 1 },
     "target_slot": { "type": "integer", "minimum": 0 },
+    "sample_interval_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "output_dir": { "type": "string", "minLength": 1 },
     "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "expect_exit": { "type": "integer", "minimum": 0 }

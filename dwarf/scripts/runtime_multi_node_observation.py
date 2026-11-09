@@ -780,6 +780,8 @@ OBSERVATION_MEASUREMENT_KEYS = frozenset({
     "latest_common_tip", "latest_tips", "missing_peer_edge_count", "missing_peer_edges", "node_count",
     "observed_peer_edge_count", "observed_peer_edges", "per_node_connectivity", "quorum_count", "quorum_fraction",
     "quorum_tip", "responsive_node_count", "responsive_nodes", "responsiveness_basis", "tip_group_count", "tip_groups", "topology",
+    # Measured by their producer steps (epoch-boundary probe / topology fault) and read from those steps.
+    "epoch_boundary", "stake_snapshot", "leadership_schedule", "reward_calculation", "ledger_peers", "big_ledger_peers",
 })
 
 

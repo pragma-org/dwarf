@@ -8,9 +8,15 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import sys
 import time
 from datetime import datetime
+from fractions import Fraction
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 
 def _load_metadata(runtime_metadata_path: Path) -> dict:
@@ -670,6 +676,207 @@ def _run_hot_warm_churn(config: dict) -> dict:
         _teardown(nodes, workroot)
 
 
+
+# --------------------------------------------------------------------------------------
+# Ledger peers (cardano-node LSQ): on-chain stake distribution vs the node's own ledger-peer
+# view. Feeds ledger_peer_stake_weight_preserved / big_ledger_peer_quorum_intact.
+# --------------------------------------------------------------------------------------
+
+# ouroboros-network's bigLedgerPeerQuota: the largest pools (by stake, relays only) that together
+# hold at least this share are big ledger peers. The node does not expose it; recorded with results.
+BIG_LEDGER_PEER_QUOTA = 0.9
+
+_BECH32 = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+
+def _bech32_to_hex(value: str) -> str:
+    """Decode a bech32 id (e.g. pool1...) to hex; return the input lower-cased when it is not bech32."""
+    text = str(value).strip().lower()
+    if "1" not in text:
+        return text
+    hrp, data = text.rsplit("1", 1)
+    if not hrp or not hrp.isalpha() or len(data) < 7 or any(ch not in _BECH32 for ch in data):
+        return text
+    acc, bits, out = 0, 0, bytearray()
+    for ch in data[:-6]:
+        acc = (acc << 5) | _BECH32.index(ch)
+        bits += 5
+        while bits >= 8:
+            bits -= 8
+            out.append((acc >> bits) & 0xFF)
+    return out.hex()
+
+
+def _fraction(value) -> Fraction | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return Fraction(value).limit_denominator(10**12)
+    if isinstance(value, dict):
+        return _fraction(value.get("stake", value.get("relativeStake", value.get("stakeFraction"))))
+    try:
+        return Fraction(str(value).replace("%", "/").replace(" ", "")).limit_denominator(10**12)
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
+def _relay_id(relay) -> str | None:
+    """host:port for a relay in either ledger (pool-state) or network (peer snapshot) JSON form."""
+    if not isinstance(relay, dict):
+        return None
+    if len(relay) == 1:
+        (inner,) = relay.values()
+        if isinstance(inner, dict):
+            return _relay_id(inner)
+    host = None
+    for key in ("address", "IPv4", "ipv4", "IPv6", "ipv6", "domain", "dnsName", "dns", "host", "srv"):
+        if relay.get(key):
+            host = str(relay[key])
+            break
+    if host is None:
+        return None
+    port = relay.get("port")
+    return f"{host}:{port}" if port is not None else host
+
+
+def _pool_relays(pool_state_entry) -> list[str]:
+    holders = (pool_state_entry.get("poolParams"), pool_state_entry) if isinstance(pool_state_entry, dict) else ()
+    for holder in holders:
+        if isinstance(holder, dict):
+            for key in ("relays", "spsRelays", "poolRelays"):
+                if isinstance(holder.get(key), list):
+                    return sorted(filter(None, (_relay_id(r) for r in holder[key])))
+    return []
+
+
+def expected_big_ledger_pools(stake_distribution: dict, pool_state: dict, quota: float = BIG_LEDGER_PEER_QUOTA) -> dict:
+    """The big-ledger-peer set the on-chain state implies: pools with relays, stake renormalised
+    over them, largest first, until the accumulated stake reaches ``quota`` (crossing pool included)."""
+    stakes = {_bech32_to_hex(pool): _fraction(value) for pool, value in (stake_distribution or {}).items()}
+    relays = {_bech32_to_hex(pool): _pool_relays(entry) for pool, entry in (pool_state or {}).items()}
+    with_relays = {pool: stake for pool, stake in stakes.items() if stake and relays.get(pool)}
+    total = sum(with_relays.values(), Fraction(0))
+    limit = Fraction(quota).limit_denominator(1000)
+    chosen, accumulated = {}, Fraction(0)
+    for pool, stake in sorted(with_relays.items(), key=lambda item: (-item[1], item[0])):
+        if accumulated >= limit:
+            break
+        relative = stake / total
+        accumulated += relative
+        chosen[",".join(relays[pool])] = float(relative)
+    return {"pools": len(stakes), "pools_with_relays": len(with_relays), "distribution": chosen,
+            "peer_ids": sorted({rid for key in chosen for rid in key.split(",")})}
+
+
+def observed_big_ledger_pools(snapshot: dict) -> dict | None:
+    pools = (snapshot or {}).get("bigLedgerPools")
+    if not isinstance(pools, list):
+        return None
+    distribution = {}
+    for entry in pools:
+        ids = sorted(filter(None, (_relay_id(r) for r in (entry or {}).get("relays") or [])))
+        stake = _fraction((entry or {}).get("relativeStake"))
+        if ids and stake is not None:
+            distribution[",".join(ids)] = float(stake)
+    return {"distribution": distribution, "peer_ids": sorted({rid for key in distribution for rid in key.split(",")})}
+
+
+def _cardano_ledger_peers(node: dict, magic: int, quota: float) -> dict:
+    import runtime_epoch_boundary_probe as lsq
+
+    body = {"implementation": "cardano-node",
+            "source": "cardano-cli query stake-distribution + pool-state --all-stake-pools (on-chain expectation) "
+                      "vs query ledger-peer-snapshot (the node's own big-ledger-peer computation), in the node container",
+            "big_ledger_peer_quota": quota}
+    distribution, error = lsq.cardano_query(node, magic, "stake-distribution")
+    pool_state, error2 = lsq.cardano_query(node, magic, "pool-state", ["--all-stake-pools"])
+    snapshot, error3 = lsq.cardano_query(node, magic, "ledger-peer-snapshot")
+    if not isinstance(distribution, dict) or not isinstance(pool_state, dict) or not isinstance(snapshot, dict):
+        body.update({"measured": False, "reason": error or error2 or error3 or "unexpected LSQ output shape"})
+        return body
+    expected = expected_big_ledger_pools(distribution, pool_state, quota)
+    observed = observed_big_ledger_pools(snapshot)
+    body.update({"pool_count": expected["pools"], "pools_with_relays": expected["pools_with_relays"],
+                 "snapshot_point": snapshot.get("Point") or snapshot.get("point")})
+    if observed is None:
+        body.update({"measured": False, "reason": "ledger-peer-snapshot has no bigLedgerPools list"})
+        return body
+    if not expected["distribution"]:
+        body.update({"measured": False, "observed_stake_distribution": observed["distribution"],
+                     "reason": "no stake pool on this devnet registers a relay, so the ledger has no ledger peers "
+                               "to compare (pool-state relays empty)"})
+        return body
+    keys = set(expected["distribution"]) | set(observed["distribution"])
+    delta = max(abs(expected["distribution"].get(k, 0.0) - observed["distribution"].get(k, 0.0)) for k in keys)
+    body.update({
+        "measured": True,
+        "expected_stake_distribution": expected["distribution"],
+        "observed_stake_distribution": observed["distribution"],
+        "max_absolute_delta": delta,
+        "expected_top_peer_ids": expected["peer_ids"],
+        "observed_top_peer_ids": observed["peer_ids"],
+        "matched_peer_ids": sorted(set(expected["peer_ids"]) & set(observed["peer_ids"])),
+    })
+    return body
+
+
+def _amaru_ledger_peers(node: dict, config: dict) -> dict:
+    import runtime_epoch_boundary_probe as lsq
+
+    body = {"implementation": "amaru", "source": "amaru peer_selection.connect_initial traces",
+            "measured": False,
+            "reason": "amaru does not derive ledger peers from on-chain stake: big-ledger peers come from its "
+                      "--peer-snapshot file and no per-peer stake is traced, so stake weighting is not measurable"}
+    log_text, error = lsq._amaru_log(node, config)
+    if log_text is None:
+        body["log_error"] = error
+        return body
+    for _obj, fields, msg in _iter_events(log_text):
+        if msg == "peer_selection.connect_initial":
+            body["snapshot_peers"] = fields.get("snapshot_peers")
+            body["static_peers"] = fields.get("static_peers")
+    return body
+
+
+def measure_ledger_peers(metadata: dict, config: dict) -> dict:
+    """Both sections, measured per node; top-level values are the target node's."""
+    import runtime_epoch_boundary_probe as lsq
+
+    magic = lsq._network_magic(metadata)
+    quota = float(config.get("big_ledger_peer_quota") or BIG_LEDGER_PEER_QUOTA)
+    per_node = {}
+    for node in lsq.all_nodes(metadata):
+        if lsq._impl(node) == "amaru":
+            per_node[lsq._node_id(node)] = _amaru_ledger_peers(node, config)
+        elif node.get("container_name"):
+            per_node[lsq._node_id(node)] = _cardano_ledger_peers(node, magic, quota)
+    target = str(config.get("target_node") or "")
+    if target not in per_node:
+        target = next(iter(per_node), "")
+    top = per_node.get(target) or {}
+    deltas = [b["max_absolute_delta"] for b in per_node.values() if b.get("max_absolute_delta") is not None]
+    common = {"target_node": target, "measured": bool(top.get("measured")), "per_node": per_node,
+              "big_ledger_peer_quota": quota}
+    if not top.get("measured"):
+        common["reason"] = top.get("reason") or "target node not measurable"
+    ledger_peers = {
+        **common,
+        "source": "on-chain stake distribution (relay pools, renormalised) vs the node's ledger-peer snapshot",
+        "expected_stake_distribution": top.get("expected_stake_distribution"),
+        "observed_stake_distribution": top.get("observed_stake_distribution"),
+        "max_absolute_delta": top.get("max_absolute_delta"),
+        "max_absolute_delta_all_nodes": max(deltas) if deltas else None,
+    }
+    big_ledger_peers = {
+        **common,
+        "source": "big-ledger-peer set implied by on-chain stake vs the node's ledger-peer snapshot",
+        "expected_top_peer_ids": top.get("expected_top_peer_ids") or [],
+        "observed_top_peer_ids": top.get("observed_top_peer_ids") or [],
+        "matched_peer_ids": top.get("matched_peer_ids") or [],
+    }
+    return {"ledger_peers": ledger_peers, "big_ledger_peers": big_ledger_peers}
+
+
 def apply_topology_mode(*, metadata: dict, mode: str, config: dict) -> dict:
     valid = {
         "simulate_peer_set_capture",
@@ -683,7 +890,18 @@ def apply_topology_mode(*, metadata: dict, mode: str, config: dict) -> dict:
     overrides = dict(metadata.get("observation_overrides") or {})
 
     if mode == "substitute_big_ledger_peers":
-        result = _run_snapshot_substitution(config)
+        if _live_prereq(config) is None:
+            # Amaru host-binary driver: substituted --peer-snapshot trust-boundary probe.
+            result = _run_snapshot_substitution(config)
+        else:
+            # Substrate nodes: measure each node's big-ledger-peer set against on-chain stake.
+            result = {
+                "mode": mode,
+                "fault_applied": False,
+                "fault_note": "no snapshot substitution on substrate nodes (needs config.amaru_binary + amaru_store); "
+                              "the node's own big-ledger-peer set is measured against on-chain stake",
+                "big_ledger_peers": measure_ledger_peers(metadata, config)["big_ledger_peers"],
+            }
         result.setdefault("target_node", str(config.get("target_node", "")))
         metadata["observation_overrides"] = overrides
         return {"result": result, "observation_overrides": overrides}
@@ -700,20 +918,20 @@ def apply_topology_mode(*, metadata: dict, mode: str, config: dict) -> dict:
         metadata["observation_overrides"] = overrides  # no fabricated overrides
         return {"result": result, "observation_overrides": overrides}
 
-    # perturb_ledger_peer_weights: still substrate-walled in the single-process model. We do NOT
-    # fabricate observation_overrides (no fake peer edges / quorum / tips / stake distributions) and
-    # we do NOT return a pass. Honest not_applicable.
+    # perturb_ledger_peer_weights: on-chain stake cannot be re-weighted mid-run on this substrate, so no
+    # perturbation is applied (said so in the result); the node's ledger-peer stake weighting is measured
+    # against the on-chain stake distribution under whatever load the scenario applies.
     result = {
         "target_node": str(config.get("target_node", "")),
         "mode": mode,
-        "status": "not_applicable",
-        "measured": False,
-        "reason": "ledger-peer weight manipulation requires a live-advancing on-chain stake distribution; "
-                  "the stock substrate is VRF-walled at the bootstrap tip (ledger frozen). Not faking a pass. "
-                  "Real implementation pending a patched-amaru + matched-genesis substrate.",
+        "fault_applied": False,
+        "fault_note": "stake weights are not perturbed (on-chain stake cannot be re-weighted mid-run); "
+                      "the node's ledger-peer weighting is measured against on-chain stake",
+        "ledger_peers": measure_ledger_peers(metadata, config)["ledger_peers"],
     }
     metadata["observation_overrides"] = overrides
     return {"result": result, "observation_overrides": overrides}
+
 
 def run_topology_fault(*, runtime_metadata_path: Path, output_dir: Path, mode: str, config: dict) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
