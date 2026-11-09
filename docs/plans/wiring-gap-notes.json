@@ -2,6 +2,13 @@
  "_about": "Hand-kept causes and statuses for the wiring-campaign gap tracker. Rules are matched in order; the first match wins. 'match' is a scenario-id prefix or an exact id. Statuses: rerun-pending (fix deployed, not re-run yet), open (cause known, no fix yet), investigate (cause not yet known), review (verdict needs a human look), declared-gap (accepted limitation), removed.",
  "rules": [
   {
+   "match": "phase3-runtime-profile-a-copied-state-",
+   "group": "copied-state behaviour verdicts",
+   "status": "review",
+   "cause": "F121/F121b: container stop/start and stale-snapshot creation now work. On the private devnet (0.1 s slots) the copied stale node catches up within seconds, so the scenarios that expect it to stay behind fail: \"expected bounded divergence with node2 behind node3, saw 4956 and 4956\" (d95ecf3e); m3 node2 recovery \"unexpectedly recovered within the bounded window\" (02a175a4)",
+   "fix": "decide what a copied stale state should show on a fast devnet: bounded non-recovery (needs a longer stale gap or slower slots) or prompt recovery as the pass condition"
+  },
+  {
    "match": "cardano-n2n-handshake-version-table-forward-compat-1112",
    "group": "profile prepare failures",
    "status": "fixed",
@@ -49,13 +56,6 @@
    "status": "fixed",
    "cause": "F99 fixed the netns error; the check then probed 127.0.0.1:<published port>, unreachable from the controller; the blocked-node half was a FALSE PASS",
    "fix": "F106: PASS on 35913370 (run ab69e934)"
-  },
-  {
-   "match": "phase3-runtime-profile-a-copied-state-",
-   "group": "host-model helpers on container profiles",
-   "status": "open",
-   "cause": "runtime_profile_recovery_check.py stops/starts the whole devnet through tmux, copies node db directories on the host (env/node-data/<node>/db) and expects node1 to be behind node2 at baseline (a host-devnet accident). Container profiles keep each db in a controller-owned Docker volume",
-   "fix": "needs a controller lifecycle action: stop node, snapshot/copy its volume, start; the controller already snapshots volumes for apply rollback, and the snapshot capture/restore smoke scenarios need the same action \u2014 design once for both"
   },
   {
    "match": "phase3-runtime-profile-a-pcap-capture-primitive",
@@ -110,7 +110,7 @@
    "match": "m3-runtime-node2-copied-state-recovery",
    "group": "profile-a behaviour verdicts",
    "status": "review",
-   "cause": "helper raised \"node2 unexpectedly recovered to slot 4826 within the bounded window\": the node recovered faster than the scenario expects",
+   "cause": "same as copied-state behaviour verdicts: node recovers within seconds on the fast devnet",
    "fix": "decide: is fast recovery a pass, or must the window be tighter"
   },
   {
