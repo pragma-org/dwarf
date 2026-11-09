@@ -117,7 +117,7 @@ COPY antithesis/cardano_amaru_miniprotocol_security/ /home/dwarf/dwarf-fw/antith
 # Fixture transactions the submit/block-apply scenarios name (fixture/... or
 # antithesis/cardano_amaru_adversarial/fixture/...); staged into each run dir.
 COPY antithesis/cardano_amaru_adversarial/fixture/ /home/dwarf/dwarf-fw/antithesis/cardano_amaru_adversarial/fixture/
-COPY antithesis/components/dwarf-adversary/coverage-docker/Dockerfile/home/dwarf/dwarf-fw/antithesis/components/dwarf-adversary/coverage-docker/Dockerfile
+COPY antithesis/components/dwarf-adversary/coverage-docker/Dockerfile /home/dwarf/dwarf-fw/antithesis/components/dwarf-adversary/coverage-docker/Dockerfile
 COPY infrastructure/docker/dwarf-fw-entrypoint.sh /usr/local/bin/dwarf-fw-entrypoint
 COPY infrastructure/docker/requirements-framework.txt /tmp/requirements-framework.txt
 
