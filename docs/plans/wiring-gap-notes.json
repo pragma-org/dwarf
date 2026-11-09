@@ -125,28 +125,28 @@
    "group": "ledger differential controls",
    "status": "rerun-pending",
    "cause": "Amaru admitted the compact control before cardano-node's tx-submission init delay elapsed and never re-offered it (same class as F97c)",
-   "fix": "F97d shared wait_for_target_propagation_eligibility in all six gated runners (commit after d6211168; deploy after rerun #3)"
+   "fix": "F97d shared wait_for_target_propagation_eligibility in all six gated runners (commit after d6211168; deploy after rerun #3); F102/F103 also apply"
   },
   {
    "match": "ledger-submit-empty-redeemers-container-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "investigate",
-   "cause": "controls included on both nodes, but 'one or more live outcomes are unavailable or inconclusive'; reconciled_control_inclusion_count=0",
-   "fix": "F97d may cover it; re-check after deploy, then read the outcome records"
+   "status": "rerun-pending",
+   "cause": "the boundary cases are conclusive (Amaru ledger_reject, cardano-node decode_reject for empty list/map); the missing-redeemer CONTROL read inconclusive: cardano-node returned a term dump and the only decoder was pinned to 11.1.2 (and got no evidence from the helper)",
+   "fix": "F102 49bc89b2: pinned decoder removed; unreadable typed rejections are read with the reference image cardano-cli"
   },
   {
    "match": "ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node",
    "group": "ledger differential controls",
-   "status": "investigate",
-   "cause": "valid controls complete; the tag24-trailing boundary transaction was not included and its outcome record is empty, so divergence is not established either way",
-   "fix": "re-check after F97d deploy; possible real divergence, do not assume"
+   "status": "rerun-pending",
+   "cause": "controls pass; on the trailing-bytes boundary case Amaru accepted (not included) and cardano-node dropped the connection, recorded as unavailable: the runner did not correlate the node log decode failure",
+   "fix": "F103 5f5500ea: node-log correlation then cli reader; rerun to see whether the divergence is real"
   },
   {
    "match": "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",
    "group": "ledger differential controls",
    "status": "investigate",
    "cause": "deep vector inclusion file says included, but boundary_included=false and role_outcomes_recorded=false",
-   "fix": "re-check after F97d deploy; then read the role outcome assembly"
+   "fix": "re-check after F97d deploy; then read the role outcome assembly; F102/F103 also apply"
   },
   {
    "match": "runtime-bundle-",
