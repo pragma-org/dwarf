@@ -436,44 +436,6 @@ def test_no_script_mutations_change_only_the_redeemer_container():
             assert witnesses[5] == expected
 
 
-def _exact_missing_redeemer_derivation():
-    policy_id = "186e32faa80a26810392fda6d559c7ed4721a65ce1c9d4ef3e1c87b4"
-    return {
-        "schema_version": 1,
-        "status": "exact-source-bound-derivation",
-        "derivation_lineage": {
-            "cardano_node_source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
-            "ouroboros_network_source_revision": "c45735a56c567fa977969173d18943bac6bb3821",
-            "ouroboros_consensus_source_revision": "82ecba329d7d054340bf707d44fe6e9ac27cec40",
-            "cardano_ledger_source_revision": "f649f9751074d2ab3de033fc3912f29c9862c1f5",
-        },
-        "negotiated_version": "NodeToClientV_20",
-        "era": "Conway",
-        "apply_tx_error": "ConwayApplyTxError",
-        "predicate_failures": [
-            {
-                "path": [
-                    "ConwayUtxowFailure",
-                    "UtxoFailure",
-                    "UtxosFailure",
-                    "CollectErrors",
-                    "NoRedeemer",
-                ],
-                "plutus_purpose": "ConwayMinting",
-                "policy_id": policy_id,
-            },
-            {
-                "path": ["ConwayUtxowFailure", "MissingRedeemers"],
-                "plutus_purpose": "ConwayMinting",
-                "policy_id": policy_id,
-                "script_hash": policy_id,
-            },
-        ],
-        "canonical_cbor_length": 115,
-        "canonical_cbor_sha256": "2e33e2c1aad23c8f6d8469d06028a922309a62dd621d8d1a7451783247a36aca",
-    }
-
-
 def test_live_control_assessment_requires_real_controls_and_missing_redeemer_evidence():
     records = []
     assigned = funding_inputs("f" * 64)
@@ -619,13 +581,11 @@ def test_live_control_completion_does_not_require_the_hypothesized_target_verdic
                     if role == "target"
                     else {
                         "classification": "ledger_reject",
-                        "body": "opaque typed rejection",
+                        # read with the reference image's cardano-cli (F102)
+                        "body": "ApplyTxError (ConwayUtxowFailure (MissingRedeemers [(ConwayMinting ...)]))",
+                        "raw_rejection_body": "opaque typed rejection",
+                        "reject_reason_source": "reference-image-cardano-cli",
                         "reference_chain_included": False,
-                        "protocol_receipt": {
-                            "reject_evidence": {
-                                "source_bound_derivation": _exact_missing_redeemer_derivation()
-                            }
-                        },
                     }
                 )
             else:
@@ -1229,7 +1189,7 @@ def _oversized_reject_evidence():
     return evidence
 
 
-def test_exact_cardano_node_reject_term_derives_named_missing_redeemer_errors(
+def test_exact_cardano_node_reject_term_is_kept_without_release_pinned_naming(
     monkeypatch,
 ):
     retained_term = base64.b64decode(
@@ -1284,30 +1244,10 @@ def test_exact_cardano_node_reject_term_derives_named_missing_redeemer_errors(
     )
 
     assert result["http"] == 400
-    derived = result["protocol_receipt"]["reject_evidence"][
-        "source_bound_derivation"
-    ]
-    assert derived == _exact_missing_redeemer_derivation()
-
-    receipt["negotiated_version"] = "NodeToClientV_19"
-    receipt["reject_evidence"]["source_bound_derivation"] = {
-        "status": "helper-injected-fake",
-        "predicate_failures": [
-            {
-                "path": ["ConwayUtxowFailure", "MissingRedeemers"],
-                "plutus_purpose": "ConwayMinting",
-            }
-        ],
-    }
-    wrong_version = _submit_raw_receipt(
-        monkeypatch,
-        receipt,
-        source_revision="fef83fed01d7926f3de83b3b917be5a4a48768b5",
-    )
-    assert wrong_version["http"] == 400
-    assert "source_bound_derivation" not in wrong_version["protocol_receipt"][
-        "reject_evidence"
-    ]
+    # F102: no release-pinned decoder names the failure; the evidence is kept as captured and the
+    # reason is read with the reference image's own cardano-cli.
+    assert "source_bound_derivation" not in result["protocol_receipt"]["reject_evidence"]
+    assert result["body"] == "opaque typed rejection"
 
 
 def _submit_raw_receipt(monkeypatch, receipt, *, source_revision="c" * 40):

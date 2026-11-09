@@ -238,7 +238,7 @@ def run_plutus_case_differential(
         _envelope, _query_reference_tip, _reference_tx_submission_propagation_gate,
         _select_funding_input, _submit_amaru_container, _submit_reference_raw,
         _wait_for_reference_inclusion, _wait_for_target_adoption, _write_envelope,
-        split_transaction, validate_runtime_identity,
+        readable_reference_response, split_transaction, validate_runtime_identity,
     )
 
     unknown = [name for name in family_names if name not in plutus_cases.FAMILY_LANGUAGES]
@@ -367,10 +367,17 @@ def run_plutus_case_differential(
                 if wait:
                     time.sleep(wait)
             pre_tip = _query_reference_tip(cli=cli, socket_path=socket_path, network_magic=network_magic)
-            response = (_submit_amaru_container(str(target["container_id"]), built["payload"]) if role == "target"
-                        else _submit_reference_raw(runtime=runtime, reference=reference, payload=built["payload"],
-                                                   helper_image=helper_image))
-            classification = _validation_stage(response)
+            if role == "target":
+                response = _submit_amaru_container(str(target["container_id"]), built["payload"])
+                classification = _validation_stage(response)
+            else:
+                # an unreadable node rejection is read with the reference image's own cli (F102)
+                response = readable_reference_response(
+                    _submit_reference_raw(runtime=runtime, reference=reference, payload=built["payload"],
+                                          helper_image=helper_image),
+                    payload=built["payload"], cli=cli, socket_path=socket_path, network_magic=network_magic,
+                    envelope_from=setup_tx, work_dir=case_dir / "cli-reject-reading")
+                classification = response["classification"]
             included = adopted = False
             if wait_inclusion and classification == "accepted":
                 inclusion_path = case_dir / "inclusion.json"

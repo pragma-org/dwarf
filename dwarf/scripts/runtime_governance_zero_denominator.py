@@ -38,6 +38,7 @@ from scripts.runtime_redeemer_container_live_controls import (
     _query_reference_tip,
     _reference_tx_submission_propagation_gate,
     wait_for_target_propagation_eligibility,
+    reference_reader,
     _select_funding_input,
     _submit_amaru_container,
     _submit_reference_raw,
@@ -508,6 +509,11 @@ def _submit_amaru_with_admission_log(
     }
 
 
+def _read_ref(read_reference, response: dict[str, Any], payload: bytes) -> dict[str, Any]:
+    """Apply the run's reference reject reader when one is bound (F102)."""
+    return read_reference(response, payload) if read_reference is not None else response
+
+
 def _submit_zero_denominator_attempts(
     *,
     runtime: dict[str, Any],
@@ -518,18 +524,19 @@ def _submit_zero_denominator_attempts(
     helper_image: str,
     before_target: Callable[[], Any] | None = None,
     admission_wait_seconds: float = _TARGET_ADMISSION_WAIT_SECONDS,
+    read_reference: Callable[[dict[str, Any], bytes], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Submit one shared mutant reference-first, then to the Amaru target."""
 
     from profile_manager.submit_primitives import _validation_stage
 
     def submit_reference() -> dict[str, Any]:
-        response = _submit_reference_raw(
+        response = _read_ref(read_reference, _submit_reference_raw(
             runtime=runtime,
             reference=reference,
             payload=payload,
             helper_image=helper_image,
-        )
+        ), payload)
         return {
             **response,
             "classification": response.get("classification")
@@ -581,6 +588,7 @@ def _submit_matched_nonzero_attempts(
     transaction_id: str,
     helper_image: str,
     before_reference: Callable[[], Any] | None = None,
+    read_reference: Callable[[dict[str, Any], bytes], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Submit one shared valid middle control reference-first, then to Amaru."""
 
@@ -589,12 +597,12 @@ def _submit_matched_nonzero_attempts(
     reference_pre_submit = (
         before_reference() if before_reference is not None else None
     )
-    reference_response = _submit_reference_raw(
+    reference_response = _read_ref(read_reference, _submit_reference_raw(
         runtime=runtime,
         reference=reference,
         payload=payload,
         helper_image=helper_image,
-    )
+    ), payload)
     reference_response = {
         **reference_response,
         "classification": reference_response.get("classification")
@@ -644,6 +652,7 @@ def _confirm_post_mutant_control_on_reference(
     address: str,
     output_dir: Path,
     target_observation: dict[str, Any],
+    read_reference: Callable[[dict[str, Any], bytes], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Submit the retained post-control bytes directly after target observation."""
 
@@ -665,12 +674,12 @@ def _confirm_post_mutant_control_on_reference(
     initial_tip = _query_reference_tip(
         cli=cli, socket_path=socket_path, network_magic=network_magic
     )
-    response = _submit_reference_raw(
+    response = _read_ref(read_reference, _submit_reference_raw(
         runtime=runtime,
         reference=reference,
         payload=payload,
         helper_image=helper_image,
-    )
+    ), payload)
     classification = response.get("classification") or _validation_stage(response)
     identity_binding = response.get("identity_binding") or {}
     expected_identity = {
@@ -2256,6 +2265,10 @@ def run_governance_zero_denominator_admission(
         command.extend(["--out-file", str(setup_body)])
         _checked(command)
         setup_tx = output_dir / "funding-setup.tx"
+        read_reference = reference_reader(  # F102: unreadable node rejections
+            cli=cli, socket_path=socket_path, network_magic=network_magic,
+            envelope_from=setup_tx, work_dir=output_dir / "cli-reject-readings",
+        )
         _checked(
             [
                 cli,
@@ -2426,12 +2439,12 @@ def run_governance_zero_denominator_admission(
                     submit=_submit_amaru_container,
                 )
             else:
-                response = _submit_reference_raw(
+                response = _read_ref(read_reference, _submit_reference_raw(
                     runtime=runtime,
                     reference=reference,
                     payload=payload,
                     helper_image=helper_image,
-                )
+                ), payload)
             from profile_manager.submit_primitives import _validation_stage
 
             classification = str(
@@ -2526,6 +2539,7 @@ def run_governance_zero_denominator_admission(
         tx_id = _transaction_id_from_body(final_body)
         if experiment_mode == MATCHED_CONTROL_MODE:
             attempts = _submit_matched_nonzero_attempts(
+                read_reference=read_reference,
                 runtime=runtime,
                 reference=reference,
                 target=target,
@@ -2540,6 +2554,7 @@ def run_governance_zero_denominator_admission(
             )
         else:
             attempts = _submit_zero_denominator_attempts(
+                read_reference=read_reference,
                 runtime=runtime,
                 reference=reference,
                 target=target,
@@ -2869,6 +2884,7 @@ def run_governance_zero_denominator_admission(
                 if not p2p_trace_recovery:
                     post_record["direct_reference_confirmation"] = (
                         _confirm_post_mutant_control_on_reference(
+                            read_reference=read_reference,
                             runtime=runtime,
                             reference=reference,
                             payload=post_payload,

@@ -259,6 +259,7 @@ def run_inline_datum_tag24_boundary(
         resign_transaction_body,
     )
     from scripts.runtime_redeemer_container_live_controls import (
+        reference_reader,
         _envelope,
         _query_reference_tip,
         _reference_tx_submission_propagation_gate,
@@ -374,6 +375,10 @@ def run_inline_datum_tag24_boundary(
         setup_command.extend(["--out-file", str(setup_body)])
         _checked(setup_command)
         setup_tx = output_dir / "funding-setup.tx"
+        read_reference = reference_reader(  # F102: unreadable node rejections
+            cli=cli, socket_path=socket_path, network_magic=network_magic,
+            envelope_from=setup_tx, work_dir=output_dir / "cli-reject-readings",
+        )
         _checked(
             [
                 cli,
@@ -503,12 +508,12 @@ def run_inline_datum_tag24_boundary(
             response = (
                 _submit_amaru_container(str(target["container_id"]), built["payload"])
                 if role == "target"
-                else _submit_reference_raw(
+                else read_reference(_submit_reference_raw(
                     runtime=runtime,
                     reference=reference,
                     payload=built["payload"],
                     helper_image=helper_image,
-                )
+                ), built["payload"])
             )
             classification = _validation_stage(response)
             included = False
@@ -580,12 +585,12 @@ def run_inline_datum_tag24_boundary(
             cli=cli, socket_path=socket_path, network_magic=network_magic
         )
         responses = {
-            "reference": _submit_reference_raw(
+            "reference": read_reference(_submit_reference_raw(
                 runtime=runtime,
                 reference=reference,
                 payload=built["payload"],
                 helper_image=helper_image,
-            ),
+            ), built["payload"]),
             "target": _submit_amaru_container(
                 str(target["container_id"]), built["payload"]
             ),

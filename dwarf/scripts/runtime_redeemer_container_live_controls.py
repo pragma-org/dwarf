@@ -77,10 +77,6 @@ _RAW_REJECT_TERM_JSON_LIMIT = 262_144
 _RAW_REJECT_WIRE_SCOPE = "localtxsubmission-mini-protocol-response-after-demux"
 _RAW_REJECT_CANONICAL_SCOPE = "decoded-reject-term-canonical-cbor"
 _RAW_REJECT_TERM_WIRE_SCOPE = "localtxsubmission-submitfail-reject-term"
-_CARDANO_NODE_11_1_2_SOURCE = "fef83fed01d7926f3de83b3b917be5a4a48768b5"
-_CARDANO_NODE_11_1_2_NETWORK_SOURCE = "c45735a56c567fa977969173d18943bac6bb3821"
-_CARDANO_NODE_11_1_2_CONSENSUS_SOURCE = "82ecba329d7d054340bf707d44fe6e9ac27cec40"
-_CARDANO_NODE_11_1_2_LEDGER_SOURCE = "f649f9751074d2ab3de033fc3912f29c9862c1f5"
 _UTC_TIMESTAMP_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z"
 )
@@ -128,91 +124,6 @@ def _extract_reject_term_wire(wire: bytes, canonical: bytes) -> dict[str, Any]:
         "sha256": hashlib.sha256(exact_term).hexdigest(),
         "message_tag": 2,
         "matches_canonical_cbor": exact_term == canonical,
-    }
-
-
-def _derive_cardano_node_11_1_2_reject_term(
-    canonical: bytes,
-    *,
-    source_revision: str,
-    negotiated_version: str,
-) -> dict[str, Any] | None:
-    """Name one exact Conway rejection using the selected node's source codecs."""
-
-    if (
-        source_revision != _CARDANO_NODE_11_1_2_SOURCE
-        or negotiated_version != "NodeToClientV_20"
-    ):
-        return None
-    decoder = cbor2.CBORDecoder(io.BytesIO(canonical))
-    try:
-        term = decoder.decode()
-        try:
-            decoder.decode()
-        except cbor2.CBORDecodeEOF:
-            pass
-        else:
-            return None
-        policy_id = term[0][1][0][1][1][1][1][0][1][1]
-    except (cbor2.CBORDecodeError, IndexError, KeyError, TypeError):
-        return None
-    if not isinstance(policy_id, bytes) or len(policy_id) != 28:
-        return None
-
-    # Source-bound constructor chain:
-    # HardForkApplyTxErr/ConwayApplyTxError -> ConwayUtxowFailure, with both
-    # UtxosFailure(CollectErrors(NoRedeemer)) and MissingRedeemers.
-    minting_purpose = [1, policy_id]
-    no_redeemer = [0, minting_purpose]
-    collect_errors = [1, [no_redeemer]]
-    utxos_failure = [0, collect_errors]
-    utxo_failure = [0, utxos_failure]
-    expected = [
-        [
-            6,
-            [
-                [1, utxo_failure],
-                [1, [10, [[minting_purpose, policy_id]]]],
-            ],
-        ]
-    ]
-    if term != expected:
-        return None
-
-    policy_hex = policy_id.hex()
-    return {
-        "schema_version": 1,
-        "status": "exact-source-bound-derivation",
-        "derivation_lineage": {
-            "cardano_node_source_revision": _CARDANO_NODE_11_1_2_SOURCE,
-            "ouroboros_network_source_revision": _CARDANO_NODE_11_1_2_NETWORK_SOURCE,
-            "ouroboros_consensus_source_revision": _CARDANO_NODE_11_1_2_CONSENSUS_SOURCE,
-            "cardano_ledger_source_revision": _CARDANO_NODE_11_1_2_LEDGER_SOURCE,
-        },
-        "negotiated_version": negotiated_version,
-        "era": "Conway",
-        "apply_tx_error": "ConwayApplyTxError",
-        "predicate_failures": [
-            {
-                "path": [
-                    "ConwayUtxowFailure",
-                    "UtxoFailure",
-                    "UtxosFailure",
-                    "CollectErrors",
-                    "NoRedeemer",
-                ],
-                "plutus_purpose": "ConwayMinting",
-                "policy_id": policy_hex,
-            },
-            {
-                "path": ["ConwayUtxowFailure", "MissingRedeemers"],
-                "plutus_purpose": "ConwayMinting",
-                "policy_id": policy_hex,
-                "script_hash": policy_hex,
-            },
-        ],
-        "canonical_cbor_length": len(canonical),
-        "canonical_cbor_sha256": hashlib.sha256(canonical).hexdigest(),
     }
 
 
@@ -855,40 +766,6 @@ def _has_missing_redeemer_diagnostic(observation: dict[str, Any]) -> bool:
     ):
         return True
 
-    derived = (
-        ((observation.get("protocol_receipt") or {}).get("reject_evidence") or {}).get(
-            "source_bound_derivation"
-        )
-        or {}
-    )
-    if (
-        not isinstance(derived, dict)
-        or derived.get("schema_version") != 1
-        or derived.get("status") != "exact-source-bound-derivation"
-        or derived.get("negotiated_version") != "NodeToClientV_20"
-        or derived.get("era") != "Conway"
-        or derived.get("apply_tx_error") != "ConwayApplyTxError"
-        or derived.get("derivation_lineage")
-        != {
-            "cardano_node_source_revision": _CARDANO_NODE_11_1_2_SOURCE,
-            "ouroboros_network_source_revision": _CARDANO_NODE_11_1_2_NETWORK_SOURCE,
-            "ouroboros_consensus_source_revision": _CARDANO_NODE_11_1_2_CONSENSUS_SOURCE,
-            "cardano_ledger_source_revision": _CARDANO_NODE_11_1_2_LEDGER_SOURCE,
-        }
-    ):
-        return False
-    for failure in derived.get("predicate_failures") or []:
-        if not isinstance(failure, dict):
-            continue
-        policy_id = failure.get("policy_id")
-        if (
-            failure.get("path") == ["ConwayUtxowFailure", "MissingRedeemers"]
-            and failure.get("plutus_purpose") == "ConwayMinting"
-            and isinstance(policy_id, str)
-            and re.fullmatch(r"[0-9a-f]{56}", policy_id) is not None
-            and failure.get("script_hash") == policy_id
-        ):
-            return True
     return False
 
 
@@ -1896,19 +1773,6 @@ def _submit_reference_raw(
         raw_reject_evidence, outcome
     )
     if reject_evidence is not None:
-        reject_evidence.pop("source_bound_derivation", None)
-        canonical_value = reject_evidence.get("canonical_cbor_base64")
-        if isinstance(canonical_value, str):
-            canonical = _decode_reject_base64(
-                canonical_value, "canonical_cbor_base64"
-            )
-            derived = _derive_cardano_node_11_1_2_reject_term(
-                canonical,
-                source_revision=source_revision,
-                negotiated_version=str(receipt.get("negotiated_version") or ""),
-            )
-            if derived is not None:
-                reject_evidence["source_bound_derivation"] = derived
         protocol_receipt["reject_evidence"] = reject_evidence
     elif raw_reject_evidence is not None:
         protocol_receipt["reject_evidence_validation"] = {
@@ -2022,6 +1886,70 @@ def _submit_reference_with_decoder_log(
             "matched_line": matched_line,
         },
     }
+
+
+def readable_reference_response(
+    response: dict[str, Any],
+    *,
+    payload: bytes,
+    cli: str,
+    socket_path: str,
+    network_magic: int,
+    envelope_from: Path,
+    work_dir: Path,
+    run: Callable[..., Any] | None = None,
+) -> dict[str, Any]:
+    """Read an unreadable cardano-node rejection with the reference image's own cardano-cli (F102).
+
+    The raw LocalTxSubmission helper returns ApplyTxErr as a term dump that no text marker
+    matches. The cli in the reference image is built with the node's own ledger, so its error text
+    names the predicate failure for any release. Only a typed node rejection that the markers cannot
+    classify is resubmitted; the raw reply is kept. The envelope type comes from a file this cli
+    signed in the same run, so no era name is assumed.
+    """
+    classification = _classify_live_response(response)
+    receipt = response.get("protocol_receipt") or {}
+    if receipt.get("outcome") != "node_rejected" or classification != "inconclusive_reject":
+        return {**response, "classification": classification}
+    envelope = json.loads(Path(envelope_from).read_text(encoding="utf-8"))
+    envelope_type = envelope.get("type")
+    if not isinstance(envelope_type, str) or not envelope_type:
+        raise RuntimeError("the reference cli envelope has no type")
+    work_dir.mkdir(parents=True, exist_ok=True)
+    tx_file = work_dir / f"cli-reject-reading-{hashlib.sha256(payload).hexdigest()[:16]}.tx"
+    tx_file.write_text(json.dumps({"type": envelope_type, "description": "", "cborHex": payload.hex()}), encoding="utf-8")
+    command = [cli, "latest", "transaction", "submit", "--tx-file", str(tx_file),
+               "--socket-path", str(socket_path), "--testnet-magic", str(network_magic)]
+    result = (run or subprocess.run)(command, capture_output=True, text=True, timeout=120, check=False)
+    text = ((result.stderr or "") + (result.stdout or "")).strip()[-4096:]
+    if result.returncode == 0:
+        return {**response, "classification": classification,
+                "reject_reason_source": "reference-image-cardano-cli-accepted-after-node-reject",
+                "reference_cli_output": text}
+    readable = {**response, "body": text, "raw_rejection_body": response.get("body"),
+                "reject_reason_source": "reference-image-cardano-cli", "reference_cli_exit_code": result.returncode}
+    readable_class = _classify_live_response(readable)
+    if readable_class not in {"ledger_reject", "phase2_reject"}:
+        # The node decoded the transaction (typed rejection); a cli read error or an unnamed
+        # failure is not the node's reason.
+        return {**response, "classification": classification,
+                "reject_reason_source": "reference-image-cardano-cli-unattributable",
+                "reference_cli_output": text, "reference_cli_exit_code": result.returncode}
+    return {**readable, "classification": readable_class}
+
+
+def reference_reader(
+    *, cli: str, socket_path: str, network_magic: int, envelope_from: Path, work_dir: Path
+) -> Callable[[dict[str, Any], bytes], dict[str, Any]]:
+    """Bind ``readable_reference_response`` to one run's reference cli and envelope."""
+
+    def read(response: dict[str, Any], payload: bytes) -> dict[str, Any]:
+        return readable_reference_response(
+            response, payload=payload, cli=cli, socket_path=socket_path,
+            network_magic=network_magic, envelope_from=envelope_from, work_dir=work_dir,
+        )
+
+    return read
 
 
 def _classify_live_response(response: dict[str, Any]) -> str:
@@ -2271,10 +2199,11 @@ def run_fresh_funded_live_controls(
                     payload=payload,
                     helper_image=helper_image,
                 )
-                return {
-                    **raw_response,
-                    "classification": _classify_live_response(raw_response),
-                }
+                return readable_reference_response(
+                    raw_response, payload=payload, cli=cli, socket_path=socket_path,
+                    network_magic=network_magic, envelope_from=setup_tx,
+                    work_dir=output_dir / "cli-reject-readings",
+                )
 
             response = _submit_reference_with_decoder_log(
                 submit=submit_reference,
