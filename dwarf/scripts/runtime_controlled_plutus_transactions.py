@@ -365,7 +365,10 @@ def _plutus_workload_accounting(
             "transaction_bytes", "elapsed_nanos", "elapsed_micros",
         )
         # A phase-1 rejection never reaches a block, so inclusion stages are optional there.
-        phase1 = str(record.get("chain_outcome") or "") in {"rejected-phase1", "accepted-unexpected"}
+        phase1 = (
+            str(record.get("chain_outcome") or "") in {"rejected-phase1", "accepted-unexpected"}
+            or str(record.get("attempt_id") or "").endswith("-double-spend")  # a probe never reaches a block
+        )
         if not phase1:
             required += ("submit_to_block_inclusion_nanos", "submit_to_block_inclusion_micros")
         missing = [key for key in required if record.get(key) is None]
@@ -512,9 +515,16 @@ def run_controlled_plutus_transactions(
         row["outcome"] == "rejected" and row["chain_outcome"] == "included-invalid"
         for row in result["records"]
     )
+    # F111: the workload resubmits an included spend after each batch (a phase-1 invalid double
+    # spend the node must refuse). A probe has no lock transaction and is not one of the spends.
+    probes = [row for row in result["records"] if str(row.get("attempt_id") or "").endswith("-double-spend")]
+    spends = [row for row in result["records"] if row not in probes]
     identifiers_retained = all(
         all(row.get(key) for key in ("attempt_id", "lock_transaction_id", "spend_transaction_id"))
-        for row in result["records"]
+        for row in spends
+    ) and all(row.get("attempt_id") and row.get("spend_transaction_id") for row in probes)
+    probes_rejected = sum(
+        row.get("outcome") == "rejected" and row.get("chain_outcome") == "rejected-phase1" for row in probes
     )
     health = result["target_health"]
     before_height = (health.get("tip_before") or {}).get("block_height")
@@ -539,16 +549,20 @@ def run_controlled_plutus_transactions(
         "transaction_identifiers_retained": identifiers_retained,
         "target_progress_continues": progress,
         "target_health_clean": health_clean,
+        "double_spend_probes_rejected": probes_rejected == len(probes),
     }
     result["outcome_counts"] = {"accepted": accepted, "rejected": rejected}
+    if probes:
+        result["outcome_counts"]["double_spend_probes_rejected"] = probes_rejected
     result["accounting"] = _plutus_workload_accounting(
         result["records"], measurement_implementation
     )
     result["checks"]["workload_accounting_complete"] = (
-        result["accounting"]["attempted"] == transaction_count
-        and len(result["accounting"]["attempts"]) == transaction_count
+        result["accounting"]["attempted"] == transaction_count + len(probes)
+        and len(result["accounting"]["attempts"]) == transaction_count + len(probes)
+        and len(spends) == transaction_count
         and result["accounting"]["successful"] == accepted
-        and result["accounting"]["rejected"] == rejected
+        and result["accounting"]["rejected"] == rejected + sum(row.get("outcome") == "rejected" for row in probes)
         and result["accounting"]["timed_out"] == 0
     )
     (output_dir / "result.json").write_text(
