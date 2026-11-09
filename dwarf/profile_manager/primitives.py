@@ -270,6 +270,13 @@ def _resolve_runtime_path(path):
     return candidate
 
 
+def _optional_runtime_path(path):
+    """``_resolve_runtime_path`` for an optional parameter: None and "" stay unset (F101)."""
+    if path is None or str(path) == "":
+        return path
+    return Path(_resolve_runtime_path(path)).absolute()
+
+
 def _resolve_aflnet_target_binary_path(path) -> Path:
     candidate = _resolve_runtime_path(path)
     if candidate.exists():
@@ -10987,7 +10994,7 @@ class RuntimeBundleDedupe(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runs_dir = self.params.get("runs_dir")
+        runs_dir = _optional_runtime_path(self.params.get("runs_dir"))
         target_run_id = self.params.get("target_run_id")
         signature_primitive = self.params.get("signature_primitive")
 
@@ -11134,7 +11141,7 @@ class RuntimeBundleTriage(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runs_dir = self.params.get("runs_dir")
+        runs_dir = _optional_runtime_path(self.params.get("runs_dir"))
         target_run_id = self.params.get("target_run_id")
         reason_code = str(self.params.get("reason_code", "divergence"))
         reason_text = str(self.params.get("reason_text", "promote runtime bundle for operator review"))
@@ -11453,7 +11460,7 @@ class RuntimeBundleChain(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 120))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runs_dir = self.params.get("runs_dir")
+        runs_dir = _optional_runtime_path(self.params.get("runs_dir"))
         target_run_id = self.params.get("target_run_id")
         reason_code = str(self.params.get("reason_code", "divergence"))
         reason_text = str(self.params.get("reason_text", "promote runtime bundle for operator review"))
@@ -11625,7 +11632,7 @@ class RuntimeBundleReplay(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runs_dir = self.params.get("runs_dir")
+        runs_dir = _optional_runtime_path(self.params.get("runs_dir"))
         state_dir = self.params.get("state_dir")
         registry_path = self.params.get("registry_path")
         target_run_id = str(self.params["target_run_id"])
@@ -11789,7 +11796,7 @@ class RuntimeBundleDiff(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runs_dir = self.params.get("runs_dir")
+        runs_dir = _optional_runtime_path(self.params.get("runs_dir"))
         left_run_id = str(self.params["left_run_id"])
         right_run_id = str(self.params["right_run_id"])
         compare_relpaths = [str(item) for item in self.params["compare_relpaths"]]
@@ -11952,7 +11959,7 @@ class RuntimeBundleChainVerify(LoadPrimitive):
         python_bin = str(self.params.get("python_bin", "python3"))
         timeout_seconds = float(self.params.get("timeout_seconds", 300))
         expected_helper_exit = int(self.params.get("expected_helper_exit", 0))
-        runs_dir = self.params.get("runs_dir")
+        runs_dir = _optional_runtime_path(self.params.get("runs_dir"))
         target_run_id = str(self.params["target_run_id"])
 
         handle.log(
@@ -18428,9 +18435,15 @@ class BundleDiffCompletedClean(AssertionPrimitive):
         latest = completed[-1] if completed else None
         payload = (latest or {}).get("payload") or {}
         result_body = payload.get("result") or {}
-        enough = latest is not None and payload.get("outcome") == "ok" and bool(result_body.get("comparisons"))
+        comparisons = result_body.get("comparisons") or []
+        # A file absent from either bundle was not compared; two absent files are not a divergence (F101).
+        absent = [item.get("relpath") for item in comparisons
+                  if not (item.get("left_exists") is True and item.get("right_exists") is True)]
+        enough = latest is not None and payload.get("outcome") == "ok" and bool(comparisons) and not absent
         result = "pass" if enough else "fail"
-        note = None if enough else "expected runtime_bundle_diff to emit a non-empty diff result"
+        note = None if enough else (
+            f"compared files are absent from a bundle: {absent}" if absent
+            else "expected runtime_bundle_diff to emit a non-empty diff result")
         return {
             "primitive": "bundle_diff_completed_clean",
             "params": dict(self.params),
