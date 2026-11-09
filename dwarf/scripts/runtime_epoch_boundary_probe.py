@@ -225,6 +225,22 @@ def _expected_epoch_start(epoch: int, genesis: dict) -> int | None:
     return epoch * int(genesis["epoch_length"])
 
 
+# ouroboros-consensus defaultClockSkew = clockSkewInSeconds 2 (MiniProtocol/ChainSync/Client/InFutureCheck.hs):
+# a node accepts a header up to 2 s ahead of its own clock, so a first block that far ahead of the
+# controller's clock is still on time.
+CONSENSUS_CLOCK_SKEW_SECONDS = 2.0
+
+
+def _clock_skew_slots(genesis: dict) -> int:
+    return int(math.ceil(CONSENSUS_CLOCK_SKEW_SECONDS / float(genesis["slot_length"])))
+
+
+def _window_end(t: float, genesis: dict) -> int | None:
+    """Last slot a first post-boundary block may carry: wall-clock slot plus the consensus clock skew."""
+    slot = _wallclock_slot(t, genesis)
+    return None if slot is None else slot + _clock_skew_slots(genesis)
+
+
 def _wallclock_slot(t: float, genesis: dict) -> int | None:
     start = genesis.get("system_start_unix")
     if start is None:
@@ -390,7 +406,7 @@ def _cardano_epoch_boundary(node: dict, samples: list[dict], start_epoch, genesi
         return body
     boundary_epoch = int(post["epoch"])
     window_start = _expected_epoch_start(boundary_epoch, genesis)
-    window_end = _wallclock_slot(post["t"], genesis)
+    window_end = _window_end(post["t"], genesis)
     epoch_length = int(genesis["epoch_length"])
     # The node's own epoch arithmetic must agree with genesis on every sample.
     epoch_math = [
@@ -404,7 +420,8 @@ def _cardano_epoch_boundary(node: dict, samples: list[dict], start_epoch, genesi
         "observed_boundary_slot": int(post["slot"]),
         "expected_window_start": window_start,
         "expected_window_end": window_end,
-        "window_end_basis": "wall-clock slot at the post-boundary sample (controller clock vs genesis systemStart)",
+        "window_end_basis": "wall-clock slot at the post-boundary sample (controller clock vs genesis systemStart) plus the consensus clock skew (2 s)",
+        "clock_skew_allowance_slots": _clock_skew_slots(genesis),
         "epoch_math_consistent": all(epoch_math) if epoch_math else None,
     })
     if window_start is None:
@@ -448,14 +465,15 @@ def _amaru_epoch_boundary(node: dict, config: dict, genesis: dict | None, watch_
                      "reason": "no cardano-node genesis on this substrate to give the expected window"})
         return body
     window_start = _expected_epoch_start(int(post["epoch"]), genesis)
-    window_end = _wallclock_slot(post["t"], genesis) if post.get("t") is not None else None
+    window_end = _window_end(post["t"], genesis) if post.get("t") is not None else None
     reported_start = (int(post["slot"]) - int(post["slot_in_epoch"])) if post.get("slot_in_epoch") is not None else None
     body.update({
         "measured": window_start is not None and window_end is not None,
         "boundary_epoch": int(post["epoch"]),
         "observed_boundary_slot": int(post["slot"]),
         "expected_window_start": window_start, "expected_window_end": window_end,
-        "window_end_basis": "wall-clock slot at the amaru trace timestamp of the first post-boundary tip",
+        "window_end_basis": "wall-clock slot at the amaru trace timestamp of the first post-boundary tip plus the consensus clock skew (2 s)",
+        "clock_skew_allowance_slots": _clock_skew_slots(genesis),
         "amaru_reported_epoch_start": reported_start,
         "epoch_math_consistent": (reported_start == window_start) if reported_start is not None else None,
     })
@@ -883,10 +901,15 @@ def extract_pots(ledger_state) -> tuple[dict | None, str | None]:
     def walk(value):
         nonlocal rewards, reward_fields
         if isinstance(value, dict):
+            # One account record: newer ledgers repeat the same lovelace as balance and reward.
+            # Count the record once, from the first field present.
+            own = next((k for k in ("balance", "rdReward", "reward") if isinstance(value.get(k), int)), None)
+            if own is not None:
+                rewards += value[own]
+                reward_fields += 1
             for key, item in value.items():
                 if key in ("rdReward", "reward", "balance") and isinstance(item, int):
-                    rewards += item
-                    reward_fields += 1
+                    continue
                 elif key == "rewards" and isinstance(item, dict) and all(isinstance(v, int) for v in item.values()):
                     rewards += sum(item.values())
                     reward_fields += len(item)

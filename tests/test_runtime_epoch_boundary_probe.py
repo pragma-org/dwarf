@@ -307,3 +307,52 @@ def test_stake_snapshot_window_moves_to_next_epoch_when_started_at_the_boundary(
     assert len(section["snapshot_hashes"]) >= 2 and len(set(section["snapshot_hashes"])) == 1
     assert section["rotation_consistent"] is True
     assert section["freeze_window_stable"] is True
+
+
+def test_an_account_with_balance_and_reward_counts_once():
+    """cardano-node 10.x/11.x dstate accounts carry the same lovelace as both balance and reward."""
+    from scripts.runtime_epoch_boundary_probe import extract_pots
+
+    state = {"stateBefore": {
+        "esAccountState": {"reserves": 10, "treasury": 5},
+        "esLState": {
+            "utxoState": {"deposited": 4000000, "fees": 0, "utxo": {}},
+            "delegationState": {"dstate": {"accounts": {
+                "keyHash-0e": {"balance": 1065935125629, "deposit": 2000000, "drep": None, "reward": 1065935125629},
+                "keyHash-67": {"balance": 1223510289317, "deposit": 2000000, "drep": None, "reward": 1223510289317},
+            }, "fGenDelegs": [], "genDelegs": {}, "irwd": {"deltaReserves": 0, "deltaTreasury": 0}}},
+        },
+    }}
+    pots, error = extract_pots(state)
+    assert error is None
+    assert pots["rewards"] == 1065935125629 + 1223510289317
+    assert pots["reward_account_fields"] == 2
+
+
+def _genesis_tenth_second_slots():
+    return {"epoch_length": 500, "slot_length": 0.1, "system_start_unix": 1000.0, "shelley_hard_fork_at_epoch": 0}
+
+
+def _tip(slot, t, epoch):
+    return {"ok": True, "t": t, "slot": slot, "epoch": epoch, "slot_in_epoch": slot % 500, "hash": "h"}
+
+
+def test_a_first_block_within_the_consensus_clock_skew_is_within_bounds():
+    """Live run 20261109T192710Z: slot 532 seen 0.2 s before its slot started by the controller clock.
+
+    ouroboros-consensus defaultClockSkew = clockSkewInSeconds 2 (InFutureCheck.hs), so a node may hold
+    a block up to 2 s (20 slots of 0.1 s) ahead of another clock."""
+    genesis = _genesis_tenth_second_slots()
+    samples = [_tip(497, 1049.8, 0), _tip(532, 1053.0, 1)]  # wall-clock slot at t=1053.0 is 530
+    body = probe._cardano_epoch_boundary({}, samples, 0, genesis)
+    assert body["observed_boundary_slot"] == 532
+    assert body["expected_window_end"] == 550
+    assert body["clock_skew_allowance_slots"] == 20
+    assert body["within_bounds"] is True
+
+
+def test_a_first_block_beyond_the_clock_skew_is_out_of_bounds():
+    genesis = _genesis_tenth_second_slots()
+    samples = [_tip(497, 1049.8, 0), _tip(551, 1053.0, 1)]
+    body = probe._cardano_epoch_boundary({}, samples, 0, genesis)
+    assert body["within_bounds"] is False

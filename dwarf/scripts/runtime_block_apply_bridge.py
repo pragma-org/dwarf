@@ -497,9 +497,15 @@ def consumer_query(name: str, magic: int, *args: str, timeout: float = 120) -> s
                      "--socket-path", "/consumer/sock", "--testnet-magic", str(magic)], timeout=timeout)
 
 
+def _chain_tip(raw: str) -> dict | None:
+    """A parsed ``query tip``; None at origin, where cardano-cli omits block/slot/hash."""
+    tip = json.loads(raw)
+    return tip if isinstance(tip, dict) and all(k in tip for k in ("block", "slot", "hash")) else None
+
+
 def consumer_tip(name: str, magic: int) -> dict | None:
     try:
-        return json.loads(consumer_query(name, magic, "tip"))
+        return _chain_tip(consumer_query(name, magic, "tip"))
     except Exception:  # noqa: BLE001 - socket not up yet / node restarting
         return None
 
@@ -560,7 +566,7 @@ def _size(path: Path) -> int:
 
 def producer_tip(producer: dict, magic: int) -> dict | None:
     try:
-        return json.loads(_checked(["docker", "exec", str(producer["container_name"]), "cardano-cli", "conway", "query",
+        return _chain_tip(_checked(["docker", "exec", str(producer["container_name"]), "cardano-cli", "conway", "query",
                                     "tip", "--socket-path", str(producer["container_socket_path"]),
                                     "--testnet-magic", str(magic)]))
     except Exception:  # noqa: BLE001

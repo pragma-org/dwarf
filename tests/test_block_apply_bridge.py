@@ -258,3 +258,19 @@ def test_submit_outcome_checks_every_submission_against_its_own_expectation(tmp_
     _runner_accepts(result)
     assert result["result"] == "fail" and result["evaluated_value"] == {"submissions": 2, "mismatched": 1}
     assert "stale fixture" in result["note"]
+
+
+def test_a_tip_at_origin_counts_as_not_synced(monkeypatch):
+    """cardano-cli omits block/slot/hash at genesis; the sync wait must keep waiting, not crash."""
+    from scripts import runtime_block_apply_bridge as bridge
+
+    origin = '{"era": "Conway", "syncProgress": "0.00"}'
+    synced = '{"block": 12, "slot": 240, "hash": "ab", "epoch": 0, "slotInEpoch": 240}'
+    monkeypatch.setattr(bridge, "consumer_query", lambda name, magic, *args, timeout=120: origin)
+    monkeypatch.setattr(bridge, "_checked", lambda argv, cwd=None, timeout=120: origin)
+    assert bridge.consumer_tip("ref", 42) is None
+    assert bridge.producer_tip({"container_name": "p", "container_socket_path": "/s"}, 42) is None
+    monkeypatch.setattr(bridge, "consumer_query", lambda name, magic, *args, timeout=120: synced)
+    monkeypatch.setattr(bridge, "_checked", lambda argv, cwd=None, timeout=120: synced)
+    assert bridge.consumer_tip("ref", 42)["block"] == 12
+    assert bridge.producer_tip({"container_name": "p", "container_socket_path": "/s"}, 42)["block"] == 12
