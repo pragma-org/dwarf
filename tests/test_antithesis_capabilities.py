@@ -184,3 +184,14 @@ def test_scenario_whose_assertions_are_all_skipped_is_refused_as_unverifiable():
     result = classify(scenario_from_body(json.dumps(body).encode()))
     assert result['level'] == 'none' and result['reason'] == 'no-evaluable-assertion'
     assert all(row['status'] == 'unsupported' for row in result['primitives'] if row['phase'] == 'assertions')
+
+
+def test_chainhold_package_has_an_evaluable_workload():
+    """F123: chain_select_differential compares node tips only, which the in-package observation
+    collects; listing it lets the self-composed chainhold run on Antithesis."""
+    from profile_manager.antithesis_package import preview_package
+    from test_antithesis_package import request
+    result = preview_package(request(scenario_id="consensus-chainhold-upstream-differential"))
+    codes = {issue.get("code") for issue in result["issues"]}
+    assert "scenario-capability-none" not in codes
+    assert not any(issue.get("primitive") == "chain_select_differential" for issue in result["issues"])
