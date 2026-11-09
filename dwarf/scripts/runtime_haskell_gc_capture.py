@@ -300,6 +300,10 @@ def _capture_container_node(*, node: dict, target_node: str, output_dir: Path, c
     return {
         "target_node": target_node,
         "mechanism": "resources-trace",
+        "session": None,
+        "capture_pid": None,  # the node keeps running; nothing is restarted
+        "restored_pid": None,
+        "rts_stderr_relpath": None,
         "port": port,
         "connect_successes": int(connect_successes),
         "connect_failures": int(connect_failures),

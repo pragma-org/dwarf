@@ -169,9 +169,18 @@ def run_container_capture(*, runtime_metadata_path: Path, target_nodes: list[str
     argv = common.capture_tools_command(tool, network_container=os.environ.get("HOSTNAME") or "",
                                         capabilities=("NET_RAW", "NET_ADMIN"))
     connect_successes = 0
-    with pcap_path.open("wb") as sink:
-        proc = subprocess.Popen(argv, stdout=sink, stderr=subprocess.DEVNULL)
+    stderr_path = output_dir / "tcpdump.stderr.log"
+    with pcap_path.open("wb") as sink, stderr_path.open("wb") as errors:
+        proc = subprocess.Popen(argv, stdout=sink, stderr=errors)
         try:
+            # docker run needs longer than a fixed wait to start the helper; the burst starts only
+            # once tcpdump reports it is listening (live 3e975402: the burst ran before it).
+            deadline = time.monotonic() + max(30.0, startup_seconds)
+            while b"listening on" not in stderr_path.read_bytes():
+                if time.monotonic() > deadline or (hasattr(proc, "poll") and proc.poll() is not None):
+                    raise RuntimeError("tcpdump did not start listening in the controller namespace: "
+                                       + stderr_path.read_bytes().decode("utf-8", "replace")[-300:])
+                time.sleep(0.2)
             time.sleep(startup_seconds)
             for _ in range(connect_attempts):
                 for host, port in endpoints:

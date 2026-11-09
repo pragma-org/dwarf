@@ -82,3 +82,22 @@ def test_container_node_is_sampled_from_its_logs_without_a_restart(tmp_path, mon
     assert result["mechanism"] == "resources-trace" and result["connect_successes"] == 2
     assert result["total_bytes_allocated"] == 2000 and calls[0][-1] == "dwarf-i-node2-1"
     assert (tmp_path / "out" / "resources-trace.ndjson").read_text().count("Resources") == 2
+
+
+def test_helper_main_reports_a_container_capture(tmp_path, monkeypatch, capsys):
+    """Live 5fdf8544: the capture ran, then the summary line asked for the old capture_pid key."""
+    import subprocess
+    from types import SimpleNamespace
+
+    runtime = tmp_path / "runtime.json"
+    runtime.write_text(json.dumps({"haskell_nodes": [{"name": "node2", "id": "node2", "port": 34302,
+                                                      "container_name": "dwarf-i-node2-1", "container_ip": "10.9.0.3",
+                                                      "container_listen_address": "node2:3001"}]}))
+    out = "\n".join([_record("t0"), _record("t1", Alloc=3000, CentiCpu=120, CentiMut=105, CentiGC=15)])
+    monkeypatch.setattr(subprocess, "run", lambda argv, **k: SimpleNamespace(returncode=0, stdout=out, stderr=""))
+    monkeypatch.setattr(subject, "_connect_burst", lambda host, port, attempts: (attempts, 0))
+    monkeypatch.setattr(subject.time, "sleep", lambda s: None)
+    code = subject.main(["gc", "--runtime-metadata-path", str(runtime), "--target-node", "node2",
+                         "--output-dir", str(tmp_path / "out"), "--sample-seconds", "0"])
+    assert code == 0
+    assert "total_bytes_allocated=2000" in capsys.readouterr().out

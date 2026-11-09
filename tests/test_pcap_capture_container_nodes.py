@@ -40,9 +40,11 @@ def test_container_capture_uses_the_controller_namespace_and_container_endpoints
 
     class _Proc:
         returncode = 0
-        def __init__(self, argv, stdout=None, **kwargs):
+        def __init__(self, argv, stdout=None, stderr=None, **kwargs):
             seen["argv"] = argv
             stdout.write(_pcap(4))
+            stderr.write(b"tcpdump: listening on any, link-type LINUX_SLL2, snapshot length 262144 bytes\n")
+            stderr.flush()
         def send_signal(self, sig):
             seen["signal"] = sig
         def wait(self, timeout=None):
@@ -72,3 +74,39 @@ def test_container_capture_uses_the_controller_namespace_and_container_endpoints
     assert connects == [("10.9.0.2", 3001), ("10.9.0.3", 3001)] * 2
     assert result["packet_count"] == 4 and result["connect_successes"] == 4 and result["mechanism"] == "controller-netns"
     assert result["workload_exit_code"] == 0
+    assert "listening on any" in (tmp_path / "out" / "tcpdump.stderr.log").read_text()
+
+
+def test_capture_that_never_starts_listening_fails_without_a_burst(tmp_path, monkeypatch):
+    """Live 3e975402: docker run took longer than the fixed start wait; the burst ran unseen."""
+    monkeypatch.setenv("HOSTNAME", "controllerid")
+    runtime = tmp_path / "runtime.json"
+    runtime.write_text(json.dumps({"haskell_nodes": [{"name": "node1", "id": "node1", "port": 34301,
+        "container_name": "dwarf-p-node1-1", "container_ip": "10.9.0.2", "container_listen_address": "node1:3001"}]}))
+    stopped = []
+
+    class _Proc:
+        returncode = 1
+        def __init__(self, argv, stdout=None, stderr=None, **kwargs):
+            pass
+        def poll(self):
+            return None
+        def send_signal(self, sig):
+            stopped.append(sig)
+        def wait(self, timeout=None):
+            return 1
+
+    def no_connect(*args, **kwargs):
+        raise AssertionError("burst must not start before tcpdump listens")
+
+    monkeypatch.setattr(rc, "capture_tools_command", lambda tool, **kw: ["docker", "run", *tool])
+    monkeypatch.setattr(subprocess, "Popen", _Proc)
+    monkeypatch.setattr(subject.socket, "create_connection", no_connect)
+    clock = iter(range(0, 1000, 5))
+    monkeypatch.setattr(subject.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(subject.time, "sleep", lambda s: None)
+    import pytest
+    with pytest.raises(RuntimeError, match="listening"):
+        subject.run_container_capture(runtime_metadata_path=runtime, target_nodes=["node1"], output_dir=tmp_path / "out",
+                                      connect_attempts=1, startup_seconds=0, settle_seconds=0)
+    assert stopped
