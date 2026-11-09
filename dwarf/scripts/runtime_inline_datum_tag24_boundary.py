@@ -169,6 +169,8 @@ def build_inline_datum_transaction(
 
 def assess_inline_datum_boundary(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Assess controls and evidence without requiring or assuming divergence."""
+    from scripts.runtime_redeemer_container_live_controls import target_acceptance_proven
+
 
     by_case = {str(record.get("case_id") or ""): record for record in records}
     control = by_case.get(CONTROL_CASE) or {}
@@ -199,13 +201,15 @@ def assess_inline_datum_boundary(records: list[dict[str, Any]]) -> dict[str, Any
         item.get("payload_sha256") == payload_sha256 for item in roles
     )
     decisive = {"accepted", "decode_reject", "ledger_reject", "phase2_reject"}
+    # F105: only the Amaru target may prove an acceptance from its mempool; the reference must include.
     outcomes_conclusive = all(
         item.get("classification") in decisive
         and (
             item.get("classification") != "accepted"
             or item.get("included") is True
+            or (index == 0 and target_acceptance_proven(item))
         )
-        for item in roles
+        for index, item in enumerate(roles)
     )
     target_class = str(roles[0].get("classification") or "")
     reference_class = str(roles[1].get("classification") or "")
@@ -261,6 +265,7 @@ def run_inline_datum_tag24_boundary(
     from scripts.runtime_redeemer_container_live_controls import (
         reference_reader,
         submit_reference_readable,
+        probe_amaru_mempool_holds,
         _classify_live_response,
         _envelope,
         _query_reference_tip,
@@ -641,6 +646,14 @@ def run_inline_datum_tag24_boundary(
                     target_adopted = True
                 except RuntimeError:
                     target_adopted = False
+        # F105: cardano-node, the only producer, can never include a transaction it cannot
+        # decode; prove an Amaru acceptance from Amaru's mempool instead.
+        target_mempool_evidence = None
+        if classifications.get("target") == "accepted" and not included:
+            target_mempool_evidence = probe_amaru_mempool_holds(
+                str(target["container_id"]), built["payload"],
+                transaction_id=built["transaction_id"], first_response=responses["target"],
+            )
         boundary_record: dict[str, Any] = {
             "case_id": BOUNDARY_CASE,
             "funding_input": funding_inputs[2],
@@ -667,6 +680,8 @@ def run_inline_datum_tag24_boundary(
                 "target_adopted": target_adopted,
                 "payload_sha256": built["payload_sha256"],
             }
+        if target_mempool_evidence is not None:
+            boundary_record["target"]["target_mempool_evidence"] = target_mempool_evidence
         records.append(boundary_record)
         (boundary_dir / "result.json").write_text(
             json.dumps(boundary_record, indent=2, sort_keys=True) + "\n",

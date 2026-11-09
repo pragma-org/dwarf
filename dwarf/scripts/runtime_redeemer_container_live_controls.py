@@ -1451,6 +1451,46 @@ def _wait_for_target_adoption(
         time.sleep(2)
 
 
+def probe_amaru_mempool_holds(
+    container_id: str,
+    payload: bytes,
+    *,
+    transaction_id: str,
+    first_response: dict[str, Any],
+    submit: Callable[[str, bytes], dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Prove Amaru's mempool still holds a transaction it accepted (F105).
+
+    Amaru's submit API answers 202 with the tx id only after its mempool inserted the
+    transaction, and 409 "duplicate" to the same bytes while the mempool holds it. Any other
+    answer leaves the acceptance unproven.
+    """
+    first_id = str(first_response.get("body") or "").strip().strip('"').lower()
+    id_matches = int(first_response.get("http") or 0) == 202 and first_id == str(transaction_id).lower()
+    probe = (submit or _submit_amaru_container)(container_id, payload)
+    probe_http = int(probe.get("http") or 0)
+    duplicate = probe_http == 409 and "duplicate" in str(probe.get("body") or "").lower()
+    return {
+        "method": "amaru-submit-api-duplicate-probe",
+        "accepted_transaction_id_matches": id_matches,
+        "probe_http": probe_http,
+        "probe_body": str(probe.get("body") or probe.get("transport") or "")[:512],
+        "held": bool(id_matches and duplicate),
+    }
+
+
+def target_acceptance_proven(item: dict[str, Any]) -> bool:
+    """An accepted target counts when included, or when Amaru's mempool provably holds it."""
+    if item.get("included") is True:
+        return True
+    evidence = item.get("target_mempool_evidence") or {}
+    return bool(
+        evidence.get("method") == "amaru-submit-api-duplicate-probe"
+        and evidence.get("held") is True
+        and evidence.get("accepted_transaction_id_matches") is True
+    )
+
+
 def _submit_amaru_container(container_id: str, payload: bytes) -> dict[str, Any]:
     """Submit raw bytes to the already-running Amaru built-in API."""
 
