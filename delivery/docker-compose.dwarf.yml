@@ -177,6 +177,8 @@ services:
       DWARF_ARTIFACT_PACKAGE_AMARU_BASE: ${DWARF_ARTIFACT_PACKAGE_AMARU_BASE:?set DWARF_ARTIFACT_PACKAGE_AMARU_BASE to a digest-pinned standard image}
       DWARF_ARTIFACT_PACKAGE_CARDANO_BASE: ${DWARF_ARTIFACT_PACKAGE_CARDANO_BASE:?set DWARF_ARTIFACT_PACKAGE_CARDANO_BASE to a digest-pinned standard image}
       DWARF_LOCALTXSUBMISSION_HELPER_IMAGE: ${DWARF_LOCALTXSUBMISSION_HELPER_IMAGE:-}
+      # tcpdump/strace for container-node captures, started only for a capture window (F113)
+      DWARF_CAPTURE_TOOLS_IMAGE: ${DWARF_CAPTURE_TOOLS_IMAGE:-dwarf/capture-tools:current}
       DWARF_RUN_ARTIFACT_BASE_URL: ${DWARF_RUN_ARTIFACT_BASE_URL:-}
     volumes:
       # An optional full Cardano-CBOR-dataset repository bind is merged here

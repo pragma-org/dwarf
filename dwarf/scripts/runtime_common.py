@@ -336,6 +336,35 @@ def run_in_node_netns(container: str, script: str, *, runner=subprocess.run):
     return result
 
 
+def capture_tools_command(tool_argv, *, network_container: str | None = None, pid_container: str | None = None,
+                          capabilities=(), runner=subprocess.run) -> list[str]:
+    """``docker run`` argv for the capture-tools image, joined to one namespace (F113).
+
+    The image is resolved to its immutable id and must carry this release's revision label, so a
+    stale or foreign image is never used. Only the named capabilities are added.
+    """
+    reference = os.environ.get("DWARF_CAPTURE_TOOLS_IMAGE") or "dwarf/capture-tools:current"
+    probe = runner(["docker", "image", "inspect", "-f",
+                    "{{.Id}} {{index .Config.Labels \"org.opencontainers.image.revision\"}}", reference],
+                   capture_output=True, text=True, timeout=15, check=False)
+    fields = (probe.stdout or "").split()
+    if probe.returncode != 0 or len(fields) != 2:
+        raise RuntimeError(f"capture-tools image {reference} is unavailable; reinstall to build it")
+    image_id, revision = fields
+    expected = os.environ.get("DWARF_SOURCE_REVISION") or ""
+    if expected and revision != expected:
+        raise RuntimeError(f"capture-tools image revision {revision} differs from the controller revision {expected}")
+    argv = ["docker", "run", "--rm", "--user", "0:0", "--cap-drop", "ALL"]
+    for capability in capabilities:
+        argv += ["--cap-add", capability]
+    argv += ["--security-opt", "no-new-privileges"]
+    if network_container:
+        argv += ["--network", f"container:{network_container}"]
+    if pid_container:
+        argv += ["--pid", f"container:{pid_container}", "--network", "none"]
+    return [*argv, image_id, *tool_argv]
+
+
 def _controller_ip_toward(container: str, *, runner=subprocess.run) -> str:
     """The controller's address on a network it shares with ``container``."""
     own = os.environ.get("HOSTNAME") or ""

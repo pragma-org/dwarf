@@ -10069,6 +10069,11 @@ class RuntimePcapCapture(LoadPrimitive):
         if target_ports:
             command.append("--target-ports")
             command.extend(str(port) for port in target_ports)
+        if self.params.get("runtime_metadata_path") and self.params.get("target_nodes"):
+            # F113: container nodes are captured from the controller namespace by node name
+            metadata_path = _resolve_runtime_metadata_path(handle, self.params, primitive="runtime_pcap_capture")
+            command.extend(["--runtime-metadata-path", str(metadata_path), "--target-nodes",
+                            *[str(node) for node in self.params["target_nodes"]]])
         if helper_output_dir is not None:
             command.extend(["--output-dir", str(helper_output_dir)])
 

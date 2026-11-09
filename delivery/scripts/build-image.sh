@@ -73,3 +73,19 @@ docker run --rm --entrypoint sh "${DWARF_CONTROLLER_IMAGE}" -c '
   cardano-node --version >/dev/null
 '
 echo "Built image: ${DWARF_CONTROLLER_IMAGE}"
+
+echo "Building ${DWARF_CAPTURE_TOOLS_IMAGE} from ${DWARF_IMAGE}"
+docker build \
+  --build-arg "DWARF_FRAMEWORK_IMAGE=${DWARF_IMAGE}" \
+  --build-arg "DWARF_SOURCE_REVISION=${DWARF_SOURCE_REVISION}" \
+  -f "${BUILD_CONTEXT}/infrastructure/docker/dwarf-capture-tools.Dockerfile" \
+  -t "${DWARF_CAPTURE_TOOLS_IMAGE}" \
+  "${BUILD_CONTEXT}"
+docker run --rm --entrypoint sh "${DWARF_CAPTURE_TOOLS_IMAGE}" -c '
+  set -eu
+  command -v tcpdump >/dev/null
+  command -v strace >/dev/null
+  tcpdump --version >/dev/null 2>&1
+  strace -V >/dev/null
+'
+echo "Built image: ${DWARF_CAPTURE_TOOLS_IMAGE}"

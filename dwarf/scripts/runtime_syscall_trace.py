@@ -139,6 +139,11 @@ def run_trace(
     sudo_bin: str,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
+    node = _load_runtime_node(runtime_metadata_path, target_node)
+    if node.get("container_name"):
+        return _trace_container_node(node=node, target_node=target_node, output_dir=output_dir,
+                                     connect_attempts=connect_attempts, startup_seconds=startup_seconds,
+                                     settle_seconds=settle_seconds)
     target = resolve_target_process(runtime_metadata_path, target_node)
     trace_path = output_dir / "trace.log"
     trace_cmd = [
@@ -190,6 +195,54 @@ def run_trace(
         "trace_path": str(trace_path),
         **summary,
     }
+
+
+def _trace_container_node(*, node: dict, target_node: str, output_dir: Path, connect_attempts: int,
+                          startup_seconds: float, settle_seconds: float) -> dict:
+    """Trace a container node from the capture-tools image in its pid namespace (F113).
+
+    The helper holds SYS_PTRACE only and no network; strace attaches to the node's oldest
+    cardano-node process and writes to stderr, which lands in trace.log. strace slows the node
+    while attached, so the window is emitted for the taps.
+    """
+    try:
+        from scripts import runtime_common as common
+    except ImportError:  # pragma: no cover - helper subprocess path
+        import runtime_common as common
+
+    container = str(node["container_name"])
+    address = str(node.get("container_listen_address") or "")
+    port = int(address.rsplit(":", 1)[1]) if ":" in address else int(node.get("port") or 0)
+    host = str(node.get("container_ip") or "127.0.0.1")
+    script = 'pid=$(pgrep -o -x cardano-node) && exec strace -qq -f -p "$pid" -o /dev/stderr'
+    argv = common.capture_tools_command(["sh", "-c", script], pid_container=container, capabilities=("SYS_PTRACE",))
+    trace_path = output_dir / "trace.log"
+    emit_target_event(primitive="runtime_syscall_trace", event="trace_window_started",
+                      payload={"target_node": target_node, "container": container, "affects_node_timing": True})
+    with trace_path.open("w", encoding="utf-8") as trace_file:
+        trace_proc = subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=trace_file, text=True,
+                                      start_new_session=True)
+        connect_successes = 0
+        try:
+            time.sleep(startup_seconds)
+            for _ in range(connect_attempts):
+                with socket.create_connection((host, port), timeout=1.0):
+                    connect_successes += 1
+            time.sleep(settle_seconds)
+        finally:
+            trace_proc.send_signal(signal.SIGINT)
+            try:
+                trace_proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                trace_proc.kill()
+                trace_proc.wait(timeout=5)
+    emit_target_event(primitive="runtime_syscall_trace", event="trace_window_ended",
+                      payload={"target_node": target_node, "container": container})
+    summary = summarize_trace(trace_path)
+    _write_summary(output_dir, summary)
+    return {"target_node": target_node, "pid": None, "pid_scope": "node-container", "port": port,
+            "connect_successes": int(connect_successes), "trace_path": str(trace_path),
+            "mechanism": "container-pid-namespace", **summary}
 
 
 def _default_output_dir() -> Path:
