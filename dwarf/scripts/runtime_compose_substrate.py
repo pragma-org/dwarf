@@ -405,6 +405,11 @@ def _enable_cardano_observability_traces(config_path: Path) -> dict:
         configured = dict(options.get(namespace)) if isinstance(options.get(namespace), dict) else {}
         configured.update({"severity": "Debug", "detail": "DDetailed"})
         options[namespace] = configured
+    # Resources (RTS counters, once per second) feeds the live GC capture (F114).
+    resources = dict(options.get("Resources")) if isinstance(options.get("Resources"), dict) else {}
+    if resources.get("severity") not in ("Debug", "Info"):
+        resources["severity"] = "Info"
+    options["Resources"] = resources
     body["TraceOptions"] = options
     config_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
     return {"enabled": True, "namespaces": sorted(CARDANO_OBSERVABILITY_TRACE_NAMESPACES), "config_path": str(config_path)}

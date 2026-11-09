@@ -226,6 +226,90 @@ def _parse_rts_stats(text: str) -> dict:
     return summary
 
 
+def summarize_resources(lines) -> dict:
+    """GC summary from cardano-node's Resources trace records (F114).
+
+    The counters are cumulative, so the summary is the change between the first and last record
+    of the sample window. The RTS -s fields with no live counter (bytes copied during GC, the
+    longest pause) are reported as None, never 0.
+    """
+    records = []
+    for line in lines:
+        text = line.strip()
+        start = text.find("{")
+        if start < 0:
+            continue
+        try:
+            body = json.loads(text[start:])
+        except ValueError:
+            continue
+        data = body.get("data") if isinstance(body, dict) else None
+        if body.get("ns") == "Resources" and isinstance(data, dict) and "CentiCpu" in data:
+            records.append(data)
+    if len(records) < 2:
+        raise RuntimeError(f"fewer than two Resources trace records in the sample window ({len(records)})")
+    first, last = records[0], records[-1]
+
+    def delta(key):
+        return int(last.get(key) or 0) - int(first.get(key) or 0)
+
+    cpu, gc, mut = delta("CentiCpu") / 100, delta("CentiGC") / 100, delta("CentiMut") / 100
+    return {
+        "source": "resources-trace",
+        "samples": len(records),
+        "total_bytes_allocated": delta("Alloc"),
+        "bytes_copied_during_gc": None,
+        "max_residency_bytes": max(int(r.get("Live") or 0) for r in records),
+        "total_memory_in_use_mib": max(int(r.get("Heap") or 0) for r in records) // (1024 * 1024),
+        "gen_0_collections": delta("GcsMinor"),
+        "gen_1_collections": delta("GcsMajor"),
+        "max_pause_seconds": None,
+        "mutator_cpu_seconds": mut,
+        "gc_cpu_seconds": gc,
+        "total_cpu_seconds": cpu,
+        "productivity_user_pct": (mut / cpu * 100) if cpu else 0.0,
+        "productivity_elapsed_pct": None,
+    }
+
+
+def _capture_container_node(*, node: dict, target_node: str, output_dir: Path, connect_attempts: int,
+                            sample_seconds: float, startup_timeout_seconds: float) -> dict:
+    """GC capture of a container node from its live Resources trace; the node is not restarted."""
+    from datetime import datetime, timezone
+
+    container = str(node["container_name"])
+    address = str(node.get("container_listen_address") or "")
+    port = int(address.rsplit(":", 1)[1]) if ":" in address else int(node.get("port") or 0)
+    host = str(node.get("container_ip") or "127.0.0.1")
+    since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    connect_successes, connect_failures = _connect_burst(host, port, connect_attempts)
+    time.sleep(sample_seconds)
+    deadline = time.monotonic() + max(startup_timeout_seconds, 3.0)
+    while True:
+        logs = subprocess.run(["docker", "logs", "--since", since, container], capture_output=True, text=True,
+                              timeout=30, check=False)
+        lines = ((logs.stdout or "") + "\n" + (logs.stderr or "")).splitlines()
+        resources = [line for line in lines if '"ns":"Resources"' in line or '"ns": "Resources"' in line]
+        if len(resources) >= 2 or time.monotonic() > deadline:
+            break
+        time.sleep(1.0)
+    (output_dir / "resources-trace.ndjson").write_text("\n".join(resources) + ("\n" if resources else ""),
+                                                       encoding="utf-8")
+    summary = summarize_resources(resources)
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return {
+        "target_node": target_node,
+        "mechanism": "resources-trace",
+        "port": port,
+        "connect_successes": int(connect_successes),
+        "connect_failures": int(connect_failures),
+        "restored_listener_ok": True,
+        "summary_relpath": _relative_to_run(output_dir / "summary.json"),
+        "resources_trace_relpath": _relative_to_run(output_dir / "resources-trace.ndjson"),
+        **summary,
+    }
+
+
 def _capture_session_command(node: dict, args: str, gc_log_path: Path) -> str:
     pid_file = shlex.quote(str(node["pid_file"]))
     stdout_log = shlex.quote(str(node["log_path"]))
@@ -276,6 +360,10 @@ def run_gc_capture(
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     node = _load_runtime_node(runtime_metadata_path, target_node)
+    if node.get("container_name"):
+        return _capture_container_node(node=node, target_node=target_node, output_dir=output_dir,
+                                       connect_attempts=connect_attempts, sample_seconds=sample_seconds,
+                                       startup_timeout_seconds=startup_timeout_seconds)
     session = str(node["session"])
     initial = resolve_target_process(runtime_metadata_path, target_node)
     args = _ps_args(int(initial["pid"]))

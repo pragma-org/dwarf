@@ -4,6 +4,7 @@
   "haskell_count": 3,
   "amaru_count": 0,
   "network_magic": 42,
+  "cardano_observability_traces": true,
   "peer_sharing": false,
   "version_policy": "latest-confirmed",
   "topology_pattern": "local-mesh",
