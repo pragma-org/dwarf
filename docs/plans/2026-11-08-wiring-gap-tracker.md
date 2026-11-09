@@ -1,16 +1,16 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 07:30 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 11:18 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
 
 | Outcome | Scenarios |
 |---|---|
-| error | 1 |
-| fail | 20 |
-| pass | 98 |
-| prepare-failed | 2 |
+| error | 5 |
+| fail | 16 |
+| pass | 99 |
+| prepare-failed | 1 |
 
 | Status | Group | Count |
 |---|---|---|
@@ -20,7 +20,6 @@ Generated 2026-11-09 07:30 EST from the campaign ledger and the run bundles. Han
 | open | duplex hard limit | 1 |
 | open | profile prepare failures | 2 |
 | open | weak proxy fault modes | 1 |
-| review | decision needed | 1 |
 | review | known upstream-fixed Amaru bugs | 1 |
 | review | review list | 1 |
 | review | smoke-scenario assertion verdicts | 6 |
@@ -45,18 +44,18 @@ Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-
 Cause: dataset is mounted, but the reference verifier image cardano-cbor-dataset:a7561cd is absent on the box
 Fix: building cardano-cbor-dataset:a7561cd on the box from Dockerfile.dwarf (snapshot apt fix, pins unchanged), 2026-11-09
 
-- `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261109T082945Z-88c52cd5): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
+- `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261109T151604Z-1833006a): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
 
 ## open: block-apply bridge
 
 Cause: forge_block and serve_crafted_block are "deferred" stubs (external cod-forge and wire tools); fixtures are not staged into the run dir (prop3.tx not found)
 Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply scenarios are outside the campaign for the same reason
 
-- `conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node` (fail, run 20261109T005441Z-b4582ddd): runtime_tx_submit_differential: [Errno 2] No such file or directory: '/var/dwarf/runs/20261109T005441Z-b4582ddd/fixture/gov_scriptcontext/prop3.tx'
-- `ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node` (fail, run 20261109T025734Z-9b44faec): fail
+- `conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node` (fail, run 20261109T153133Z-33835cf1): runtime_tx_submit_differential: [Errno 2] No such file or directory: '/var/dwarf/runs/20261109T153133Z-33835cf1/fixture/gov_scriptcontext/prop3.tx'
+- `ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node` (fail, run 20261109T153516Z-3cae5421): fail
   - Cause: same deferred forge/serve bridge
   - Fix: same as above
-- `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node` (fail, run 20261109T030110Z-b7f049cf): fail
+- `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node` (fail, run 20261109T153907Z-8fab3645): fail
   - Cause: same deferred forge/serve bridge
   - Fix: same as above
 
@@ -65,7 +64,7 @@ Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply
 Cause: real now (F126): node accepted 24 duplex bearers vs hard_limit 8, but 8 exists only in the probe; the node runs the default AcceptedConnectionsLimit (hard 512)
 Fix: add a substrate setting that writes AcceptedConnectionsLimit into the node config; the probe reads the node limit
 
-- `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261109T111206Z-67de298e): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
+- `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261109T152825Z-48dd04e0): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
 
 ## open: profile prepare failures
 
@@ -73,47 +72,40 @@ Cause: F109 works: profile-g now deploys. But profile-g ("haskell-preview2-proof
 Fix: Option A (kept as a public-preview profile; moving it to a private devnet would remove its purpose): profile-g stays deployed between runs (campaign KEEP_PROFILES) and syncs the public preview chain; its 2 scenarios rerun once the node reports semantic health. 2026-11-09 10:29: syncing, slot 1.47M, epoch 18
 
 - `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
-- `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
+- `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (fail, run 20261109T155620Z-9c805486): load_events_are_ok: fail
 
 ## open: weak proxy fault modes
 
 Cause: after F127: 0 range requests went through the proxy (target fetched elsewhere); observed_peak_blocks_in_memory is a constant
 Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection; measure per-batch peak from the proxy
 
-- `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261109T111035Z-cde1dc3e): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
-
-## review: decision needed
-
-Cause: after F134/F137 only ExperimentalProtocolsEnabled=true remains (cardano-testnet default on cardano-only devnets; Amaru-bearing devnets already pin false)
-Fix: ask: pin ExperimentalProtocolsEnabled=false on cardano-only devnets too (public-network default)
-
-- `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261109T122756Z-4bd6fd65): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
+- `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261109T152553Z-3d9f5d98): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
 
 ## review: known upstream-fixed Amaru bugs
 
 Cause: NOT NOVEL: Amaru 10.11.20260918 (aedfe797, 2026-09-18) aborts with "thread 'ledger' has overflowed its stack" on the Delay^28000 vector; upstream fixed it in d9bb18e7 "fix: decode uplc with smaller stack" (2026-09-19), first in v10.11.20260925. DWARF detects the pre-fix build correctly (evidence: run 90c557db, F104 node log + exit 134)
 Fix: rerun against a post-0925 Amaru to prove the fix; scenario should report "target crashed" as its own outcome
 
-- `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node` (fail, run 20261109T034926Z-90c557db): uplc_deep_delay_stack_safety_matches: UPLC deep-delay evidence is incomplete or inconclusive
+- `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node` (fail, run 20261109T154257Z-9f4ac73a): uplc_deep_delay_stack_safety_matches: UPLC deep-delay evidence is incomplete or inconclusive
 
 ## review: review list
 
-Cause: regression reproduces the known Amaru coin-overflow DoS on 10.11.20260918: after the i64-max+1 case the Amaru submit API stops answering ("fresh-funded value-overflow security finding observed"). The scenario fails because the bug is still present, not because DWARF is broken
+Cause: regression reproduces the known Amaru coin-overflow DoS on 10.11.20260912 (frozen b159172; earlier note said 0918, corrected 2026-11-09): after the i64-max+1 case the Amaru submit API stops answering ("fresh-funded value-overflow security finding observed"). The scenario fails because the bug is still present, not because DWARF is broken
 Fix: none in DWARF; decide whether this regression should report "finding still present" as its own outcome. F104 keeps the Amaru log on the next run
 
-- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru` (fail, run 20261109T035625Z-9592c658): value_coin_overflow_regression_passed: fresh-funded value-overflow security finding observed
+- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru` (fail, run 20261109T155009Z-fc5026ab): value_coin_overflow_regression_passed: fresh-funded value-overflow security finding observed
 
 ## review: smoke-scenario assertion verdicts
 
 Cause: the scenario ran and an assertion failed; decide whether the node, the scenario or the assertion is wrong
 Fix: none yet
 
-- `runtime-substrate-compound-eclipse-recovery-example-smoke` (fail, run 20261109T085452Z-bd242424): reconnection_clean: expected the reconnected node to rejoin and match the honest quorum tip with non-trivial connectivity and real reconnect telemetry
-- `runtime-substrate-compound-local-query-recovery-example-smoke` (fail, run 20261109T003112Z-310d139c): k_bound_rollback_recovered: expected a within-k rollback to recover consistently with non-trivial connectivity and observed slot transitions
-- `runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke` (fail, run 20261109T004846Z-627ca532): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
-- `runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke` (fail, run 20261109T002755Z-f717fb32): stake_snapshot_freeze_consistent: expected stake snapshot to remain byte-stable across the freeze window
-- `runtime-substrate-compound-time-skew-epoch-boundary-example-smoke` (fail, run 20261109T005228Z-8bf30a31): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
-- `runtime-substrate-eclipse-topology-example-smoke` (fail, run 20261109T085657Z-4e64f09e): ledger_peer_stake_weight_preserved: expected stake-weight delta <= 0.05
+- `runtime-substrate-compound-eclipse-recovery-example-smoke` (fail, run 20261109T151940Z-33822761): chainsync_responder_rollback_then_forward_clean: expected producer fork-switch to yield rollback-then-forward follower behavior
+- `runtime-substrate-compound-local-query-recovery-example-smoke` (fail, run 20261109T152147Z-397146f4): k_bound_rollback_recovered: expected a within-k rollback to recover consistently with non-trivial connectivity and observed slot transitions
+- `runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke` (fail, run 20261109T152725Z-59a5e4f8): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
+- `runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke` (fail, run 20261109T151824Z-b2e095be): stake_snapshot_freeze_consistent: expected stake snapshot to remain byte-stable across the freeze window
+- `runtime-substrate-compound-time-skew-epoch-boundary-example-smoke` (fail, run 20261109T153021Z-ac6916db): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
+- `runtime-substrate-eclipse-topology-example-smoke` (fail, run 20261109T152341Z-c20e9221): ledger_peer_stake_weight_preserved: expected stake-weight delta <= 0.05
 
 ## declared-gap: byzantine/amaru tmux relaunch
 
@@ -127,17 +119,17 @@ Fix: none yet
 Cause: assertion deliberately superseded by the opcert header scenarios
 Fix: remove or repoint the smoke scenario
 
-- `runtime-substrate-praos-header-assertion-example-smoke` (fail, run 20261108T191455Z-13ba101e): praos_header_assertion_rejected: superseded by runtime_opcert_header_cases; header rejection is proven by the opcert header scenarios
+- `runtime-substrate-praos-header-assertion-example-smoke` (fail, run 20261109T152923Z-37117ba3): praos_header_assertion_rejected: superseded by runtime_opcert_header_cases; header rejection is proven by the opcert header scenarios
 
 ## removed: removed from the repo
 
 Cause: scenario no longer exists
 Fix: none yet
 
-- `conway-scriptcontext-txinfo-fidelity-differential-amaru-cardano-node` (fail, run 20261108T193551Z-262f0847): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-- `runtime-substrate-plutus-phase2-donointervene-retry-clean-example-smoke` (fail, run 20261108T191424Z-fc2fc36c): plutus_phase2_donotintervene_retry_clean: expected DoNotIntervene retry behavior to remain within the configured budget
-- `runtime-substrate-plutus-phase2-exunits-cost-model-string-undercharge-mixed-amaru` (fail, run 20261108T191612Z-0208dcc1): runtime_compose_substrate: compose_substrate_docker raise RuntimeError( RuntimeError: amaru compose substrate did not intersect, advance, and converge before the startup gate failed (ready_node_count=0, blocking_signals={}; substrate torn d
-- `runtime-substrate-plutus-phase2-isvalid-mismatch-rejected-example-smoke` (fail, run 20261108T192051Z-ff1c394f): plutus_phase2_isvalid_mismatch_rejected: expected phase-2 IsValid mismatch to be rejected with ValidationTagMismatch
+- `conway-scriptcontext-txinfo-fidelity-differential-amaru-cardano-node` (error, run none): RuntimeError: resolve 400: scenario_id: load.runtime_plutus_phase2_differential_observation is not present in the primitive registry; assertions.plutus_phase2_differential_equivalent is not present in the primitive registry
+- `runtime-substrate-plutus-phase2-donointervene-retry-clean-example-smoke` (error, run none): RuntimeError: resolve 400: scenario_id: load.runtime_plutus_phase2_submit_probe is not present in the primitive registry; assertions.plutus_phase2_donotintervene_retry_clean is not present in the primitive registry
+- `runtime-substrate-plutus-phase2-exunits-cost-model-string-undercharge-mixed-amaru` (error, run none): RuntimeError: resolve 400: scenario_id: load.runtime_plutus_phase2_submit_probe is not present in the primitive registry; assertions.plutus_phase2_exunits_overrun_rejected is not present in the primitive registry
+- `runtime-substrate-plutus-phase2-isvalid-mismatch-rejected-example-smoke` (error, run none): RuntimeError: resolve 400: scenario_id: load.runtime_plutus_phase2_submit_probe is not present in the primitive registry; assertions.plutus_phase2_isvalid_mismatch_rejected is not present in the primitive registry
 
 ## follow-ups (not scenario failures)
 
@@ -148,3 +140,5 @@ Fix: none yet
 - **epoch-and-ledger-producers** (after the easier groups): 13 unwired assertions in 5 scenarios (3 epoch-boundary compound smokes, eclipse-topology ledger peers, local-query chain switch). runtime_epoch_boundary_probe.py measures Amaru (snapshot / pots.dump log lines) but returns observation_overrides unchanged and uses other keys than the assertions read; it has no cardano-node path. Plan: one producer contract writing the assertion keys (epoch_boundary, stake_snapshot, reward_calculation, leadership_schedule) with source + per-node results; cardano-node via its own image cardano-cli LSQ (tip+genesis epochLength, stake-snapshot hashes, ADA conservation from ledger-state, leadership-schedule twice); Amaru via its log lines mapped to the same keys; Amaru leadership = adopted blocks came from elected leaders (header-validation VRF, already tapped); boundaries are observed naturally on testnet_42 (short epochs). Then switch the 5 scenarios to resolved-plan.
 - **byzantine-isolation-primitive** (done): byzantine_isolation_observed has no scenario since F130 (its 'no link either way' expectation does not hold for cardano-node: inbound accepted, local roots retried); test_every_builtin_primitive_has_a_source_backed_scenario_reference fails until it is retired or given a correct use. DONE: retired (F135), user decision 2026-11-09.
 - **F133-override-audit** (in progress): F133: observation overrides can no longer replace or supply measurement keys. 14 passing scenarios that use override-writing scripts are re-run (#26) to confirm their passes are real.
+- **experimental-protocols-default-change** (note): CHANGED 2026-11-09: cardano-only devnets now run ExperimentalProtocolsEnabled=false (was cardano-testnet default true, offering N2N V16). Override per scenario with substrate.cardano_experimental_protocols: true. Sample of cardano-only scenarios rerun after deploy to confirm nothing depended on V16.
+- **self-compose-taps-final-rerun** (after all scenarios pass (user decision 2026-11-09, option b)): All 280 runs have exported bundles (0 missing). Tap output: 42 of 118 latest runs; 12 library runs have none by design; ~64 runtime runs on self-composed devnets have no taps attached (resolver attaches only to profile/attached runs). Plan: fix tap attachment for self-composed substrates, then one full rerun of all scenarios to capture taps. Also pending later: F138 cardano-only sample check (ExperimentalProtocolsEnabled=false).
