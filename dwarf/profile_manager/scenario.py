@@ -645,6 +645,11 @@ def _validate_substrate(value):
             normalized_substrate["cardano_accepted_connections_limit"] = _accepted_connections_limit(value)
         except ValueError as exc:
             raise ScenarioValidationError(str(exc)) from exc
+    pool_relays = value.get("cardano_pool_relays")
+    if pool_relays is not None:
+        if not isinstance(pool_relays, bool):
+            raise ScenarioValidationError("substrate.cardano_pool_relays must be a boolean")
+        normalized_substrate["cardano_pool_relays"] = pool_relays
     return normalized_substrate
 
 

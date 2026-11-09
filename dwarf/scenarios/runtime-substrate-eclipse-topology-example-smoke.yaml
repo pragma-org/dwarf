@@ -56,7 +56,8 @@
         "identity_binding": "resolved-plan"
       }
     ],
-    "compose_mode": "docker"
+    "compose_mode": "docker",
+    "cardano_pool_relays": true
   },
   "setup": [
     {

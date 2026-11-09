@@ -860,6 +860,71 @@ def _rewrite_cardano_testnet_genesis_for_older_cardano_nodes(*, genesis_path: Pa
     return changed
 
 
+def _cold_vkey_pool_id(path: Path) -> str:
+    """Pool id (hex) = blake2b-224 of the pool's cold verification key bytes."""
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    raw = cbor2.loads(bytes.fromhex(str(envelope.get("cborHex") or "")))
+    if not isinstance(raw, bytes) or len(raw) != 32:
+        raise RuntimeError(f"{path} is not a 32-byte stake pool cold verification key")
+    return hashlib.blake2b(raw, digest_size=28).hexdigest()
+
+
+def _register_cardano_pool_relays(*, env_root: Path, nodes: list[dict], enabled: bool) -> dict:
+    """Opt-in (substrate.cardano_pool_relays, decision 2026-11-09): give every genesis stake pool a
+    relay so the devnet ledger has ledger peers (live 20261109T193555Z-1ddc3ff8: none, so the
+    ledger-peer assertions could not measure).
+
+    Each pool's relay is its own node: the compose service DNS name (a network alias) and the
+    container port. The pool is matched to its node through pools-keys/pool<N>/cold.vkey, the same
+    key directory the node runs with. Both genesis layouts are edited: ``staking.pools`` and
+    ``extraConfig.stakePools.data`` (what newer cardano-testnet writes). Run before the Amaru
+    bootstrap reads the genesis and before the genesis hashes are pinned. Off: untouched.
+    """
+    if not enabled:
+        return {"applied": False}
+    from runtime_topology_fault import _bech32_to_hex
+
+    owners = {}
+    for node in nodes:
+        if node.get("impl") != "cardano-node":
+            continue
+        cold = env_root / "pools-keys" / f"pool{node['host_slot_index']}" / "cold.vkey"
+        if not cold.is_file():
+            raise RuntimeError(f"cardano_pool_relays: {cold} is missing, so {node['id']}'s pool is unknown")
+        owners[_cold_vkey_pool_id(cold)] = node
+    genesis_path = env_root / "shelley-genesis.json"
+    body = json.loads(genesis_path.read_text(encoding="utf-8"))
+    tables = [((body.get("staking") or {}).get("pools") or {}),
+              (((body.get("extraConfig") or {}).get("stakePools") or {}).get("data") or {})]
+    relays = {}
+    for table in tables:
+        for key, pool in table.items():
+            if not isinstance(pool, dict):
+                continue
+            pool_id = _bech32_to_hex(str(pool.get("poolId") or pool.get("publicKey") or key))
+            node = owners.get(pool_id)
+            if node is None:
+                raise RuntimeError(f"cardano_pool_relays: no cardano-node owns genesis stake pool {pool_id}")
+            port = _docker_container_port(node)
+            pool["relays"] = [{"single host name": {"dnsName": node["id"], "port": port}}]
+            relays[pool_id] = f"{node['id']}:{port}"
+    if not relays:
+        raise RuntimeError("cardano_pool_relays: the generated genesis has no stake pools to give relays")
+    genesis_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
+    return {"applied": True, "relays": dict(sorted(relays.items(), key=lambda item: item[1]))}
+
+
+def _refuse_unsupported_pool_relays(plan: dict, *, mode: str) -> None:
+    """cardano_pool_relays edits a generated single-host docker devnet genesis; refuse it elsewhere
+    rather than silently running without relays."""
+    if not plan.get("cardano_pool_relays"):
+        return
+    if mode != "docker":
+        raise RuntimeError(f"substrate.cardano_pool_relays is supported only for compose_mode docker on one host, not {mode}")
+    if _is_public_network(plan.get("network") or ""):
+        raise RuntimeError("substrate.cardano_pool_relays needs a generated devnet; public-network pools are real")
+
+
 def _prepare_generated_workload_funding(
     *, env_root: Path, cardano_cli: str, network_magic: int
 ) -> dict:
@@ -1554,6 +1619,7 @@ def _compose_substrate_docker(
     cardano_experimental_protocols = None
     generated_workload_funding = None
     kes_genesis_override_evidence = None
+    pool_relays = {"applied": False}
     governance_guardrails_fixture_evidence = None
     env_root = runtime_root / "env"
     if haskell_nodes and public_network:
@@ -1636,6 +1702,10 @@ def _compose_substrate_docker(
             genesis_path=env_root / "shelley-genesis.json",
             nodes=haskell_nodes,
         )
+        # Opt-in: after the genesis layout rewrite, before the Amaru bootstrap reads the genesis
+        # and before the F134 hash pins.
+        pool_relays = _register_cardano_pool_relays(
+            env_root=env_root, nodes=haskell_nodes, enabled=bool(plan.get("cardano_pool_relays")))
         measurement_trace_config = (
             _enable_cardano_measurement_traces(env_root / "configuration.yaml")
             if plan.get("cardano_measurement_traces") is True
@@ -1831,6 +1901,7 @@ def _compose_substrate_docker(
         "kes_genesis_override": kes_genesis_override_evidence,
         "genesis_hash_pins": genesis_hash_pins,
         "accepted_connections_limit": accepted_connections_limit,
+        "pool_relays": pool_relays,
         "nodes": metadata_nodes,
         "haskell_nodes": [node for node in metadata_nodes if node["impl"] == "cardano-node"],
         "amaru_nodes": [node for node in metadata_nodes if node["impl"] == "amaru"],
@@ -1925,6 +1996,7 @@ def _compose_substrate_docker(
         "kes_genesis_override": kes_genesis_override_evidence,
         "genesis_hash_pins": genesis_hash_pins,
         "accepted_connections_limit": accepted_connections_limit,
+        "pool_relays": pool_relays,
         "cardano_chain_progress_gate": chain_progress_gate,
         "amaru_chain_progress_gate": amaru_progress_gate,
         "public_network_assets": public_assets,
@@ -2386,6 +2458,10 @@ def compose_substrate(
         substrate.get("amaru_txsubmission_trace", False)
     )
 
+    _refuse_unsupported_pool_relays(
+        plan,
+        mode="multi-host" if compose_mode == "docker" and plan.get("host_strategy") == "explicit" else compose_mode,
+    )
     if compose_mode == "docker":
         if plan.get("host_strategy") == "explicit":
             return _compose_substrate_docker_multihost(

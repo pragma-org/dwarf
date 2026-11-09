@@ -152,6 +152,16 @@ def _accepted_connections_limit(substrate: dict) -> dict | None:
     return out
 
 
+def _cardano_pool_relays(substrate: dict) -> bool:
+    """substrate.cardano_pool_relays -> register one relay per devnet stake pool (opt-in, 2026-11-09)."""
+    value = substrate.get("cardano_pool_relays")
+    if value is None:
+        return False
+    if not isinstance(value, bool):
+        raise ValueError("substrate.cardano_pool_relays must be a boolean")
+    return value
+
+
 def normalize_substrate(substrate: dict) -> dict:
     if not isinstance(substrate, dict):
         raise ValueError("substrate must be a mapping")
@@ -521,6 +531,7 @@ def normalize_substrate(substrate: dict) -> dict:
         "cardano_observability_traces": cardano_observability_traces,
         "cardano_experimental_protocols": cardano_experimental_protocols,
         "cardano_accepted_connections_limit": _accepted_connections_limit(substrate),
+        "cardano_pool_relays": _cardano_pool_relays(substrate),
         "amaru_json_traces": amaru_json_traces,
         "amaru_txsubmission_trace": amaru_txsubmission_trace,
         "controller_ownership": controller_ownership,
@@ -941,6 +952,7 @@ def allocate_node_plan(
         "cardano_observability_traces": bool(normalized.get("cardano_observability_traces")),
         "cardano_experimental_protocols": normalized.get("cardano_experimental_protocols"),
         "cardano_accepted_connections_limit": normalized.get("cardano_accepted_connections_limit"),
+        "cardano_pool_relays": bool(normalized.get("cardano_pool_relays")),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
         "amaru_txsubmission_trace": bool(
             normalized.get("amaru_txsubmission_trace")

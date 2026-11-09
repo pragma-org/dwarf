@@ -94,6 +94,28 @@ The compose report records the decision as `experimental_protocols.policy_source
 (`public-network-default`, `amaru-interop-policy` or `explicit`). Runs before 2026-11-09 on
 cardano-only devnets used `true`; compare across that date with this in mind.
 
+### Opt-in 2026-11-09: stake pool relays on generated devnets
+
+`cardano-testnet create-env` registers the devnet's stake pools with no relays, so the ledger
+has no ledger peers (`query ledger-peer-snapshot` returns an empty `bigLedgerPools`). A scenario
+that measures ledger peers sets:
+
+```json
+"substrate": { "compose_mode": "docker", "cardano_pool_relays": true, ... }
+```
+
+Compose then gives each genesis pool one relay, its own node: `single host name` with the
+compose service name (a network alias) and the container port 3001. The pool is matched to its
+node through `pools-keys/pool<N>/cold.vkey`. Both genesis layouts are edited (`staking.pools`
+and `extraConfig.stakePools.data`), before the Amaru bootstrap reads the genesis and before the
+genesis hashes are pinned. The compose report records `pool_relays` (`applied` and the pool →
+relay map). The node topology is not changed: `useLedgerAfterSlot` stays `-1`, so nodes do not
+dial ledger peers; the ledger and the snapshot query have them.
+
+It is off by default; the genesis is then unchanged. It applies only to a generated single-host
+docker devnet; other compose modes and public networks refuse it rather than run without
+relays. Only `runtime-substrate-eclipse-topology-example-smoke` sets it.
+
 ## Refresh releases
 
 Opening `/operate/versions` reads retained catalog data and never contacts GitHub automatically. Each implementation has its own **Fetch Latest Version**

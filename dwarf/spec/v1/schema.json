@@ -400,6 +400,11 @@
         "topology": {
           "type": "object",
           "description": "Peer edges between nodes."
+        },
+        "cardano_pool_relays": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in (generated single-host docker devnets only): register each genesis stake pool's own node (service DNS name + container port) as its relay, so the ledger has ledger peers. Off: the generated genesis is unchanged."
         }
       }
     },
