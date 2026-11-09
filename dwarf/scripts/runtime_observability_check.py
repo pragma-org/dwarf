@@ -70,44 +70,64 @@ def run_log_baseline() -> int:
     return 0
 
 
-def run_trace_settings_baseline() -> int:
-    config = _configuration()
+# Legacy tracing flag -> trace-dispatcher namespace that carries the same events.
+TRACE_NAMESPACES = {
+    "TraceConnectionManager": "Net.ConnectionManager",
+    "TracePeerSelection": "Net.PeerSelection",
+    "TraceLocalRootPeers": "Net.Peers.LocalRoot",
+    "TracePublicRootPeers": "Net.Peers.PublicRoot",
+}
+_SEVERITY_ORDER = ("Debug", "Info", "Notice", "Warning", "Error", "Critical", "Alert", "Emergency", "Silence")
+
+
+def _dispatcher_severity(options: dict, namespace: str) -> str:
+    """The severity the dispatcher applies to ``namespace``: the longest configured prefix wins."""
+    parts = namespace.split(".")
+    for length in range(len(parts), -1, -1):
+        key = ".".join(parts[:length])
+        entry = options.get(key)
+        if isinstance(entry, dict) and isinstance(entry.get("severity"), str):
+            return entry["severity"]
+    return "Notice"  # cardano-node's dispatcher default
+
+
+def trace_settings(config: dict) -> dict:
+    """Read the peer and connection trace settings from either tracing system (F107)."""
+    options = config.get("TraceOptions")
+    if isinstance(options, dict) and not ("EnableLogging" in config or "setupBackends" in config):
+        severities = {ns: _dispatcher_severity(options, ns) for ns in TRACE_NAMESPACES.values()}
+        missing = [ns for ns, severity in severities.items() if severity != "Debug"]
+        return {"system": "trace-dispatcher", "severities": severities, "missing": missing,
+                "enable_logging": True, "min_severity": "Debug" if not missing else "per-namespace",
+                "ok": not missing}
     setup = config.get("setupBackends")
     if not isinstance(setup, dict):
         setup = config
-    trace_flags = [
-        "TraceConnectionManager",
-        "TracePeerSelection",
-        "TraceLocalRootPeers",
-        "TracePublicRootPeers",
-    ]
-    missing = [key for key in trace_flags if not setup.get(key)]
+    missing = [key for key in TRACE_NAMESPACES if not setup.get(key)]
     enable_logging = bool(setup.get("EnableLogging"))
     min_severity = str(setup.get("minSeverity", ""))
-    emit_runtime_metric("observability_trace_flag_count", value=len(trace_flags) - len(missing), meta={"kind": "enabled"})
-    emit_runtime_metric("observability_enable_logging", value=1 if enable_logging else 0, meta={"kind": "bool"})
-    emit_runtime_metric("observability_min_severity_debug", value=1 if min_severity == "Debug" else 0, meta={"kind": "bool"})
-    for key in trace_flags:
-        enabled = bool(setup.get(key))
-        emit_runtime_metric("observability_trace_flag_enabled", value=1 if enabled else 0, meta={"flag": key})
+    return {"system": "legacy", "missing": missing, "enable_logging": enable_logging,
+            "min_severity": min_severity,
+            "ok": enable_logging and min_severity == "Debug" and not missing}
+
+
+def run_trace_settings_baseline() -> int:
+    result = trace_settings(_configuration())
+    flags = list(TRACE_NAMESPACES.values() if result["system"] == "trace-dispatcher" else TRACE_NAMESPACES)
+    emit_runtime_metric("observability_trace_flag_count", value=len(flags) - len(result["missing"]), meta={"kind": "enabled"})
+    emit_runtime_metric("observability_enable_logging", value=1 if result["enable_logging"] else 0, meta={"kind": "bool"})
+    emit_runtime_metric("observability_min_severity_debug", value=1 if result["ok"] else 0, meta={"kind": "bool"})
+    for key in flags:
+        emit_runtime_metric("observability_trace_flag_enabled", value=0 if key in result["missing"] else 1, meta={"flag": key})
     emit_target_event(
         primitive="runtime_observability_check",
         event="trace_settings_observed",
-        payload={
-            "enable_logging": enable_logging,
-            "min_severity": min_severity,
-            "missing_flags": missing,
-            "trace_flags": trace_flags,
-        },
-        level="info" if enable_logging and not missing and min_severity == "Debug" else "error",
+        payload={**result, "trace_flags": flags},
+        level="info" if result["ok"] else "error",
     )
-    if not enable_logging:
-        raise RuntimeError("EnableLogging is not true")
-    if min_severity != "Debug":
-        raise RuntimeError(f"minSeverity is not Debug: {min_severity}")
-    if missing:
-        raise RuntimeError(f"missing enabled trace flags: {', '.join(missing)}")
-    print(f"enable_logging={enable_logging} min_severity={min_severity} trace_flag_count={len(trace_flags)}")
+    if not result["ok"]:
+        raise RuntimeError(f"{result['system']} trace settings do not enable Debug for: {', '.join(result['missing']) or 'logging'}")
+    print(f"system={result['system']} trace_flag_count={len(flags)}")
     return 0
 
 

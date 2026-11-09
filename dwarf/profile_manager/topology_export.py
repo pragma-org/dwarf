@@ -110,6 +110,7 @@ def _profile_dict(profile: Profile) -> dict[str, Any]:
         "measurement_target_mode": profile.measurement_target_mode,
         "amaru_json_traces": bool(profile.amaru_json_traces),
         "cardano_measurement_traces": bool(profile.cardano_measurement_traces),
+        "cardano_observability_traces": bool(profile.cardano_observability_traces),
         "plutus_v2_genesis": bool(profile.plutus_v2_genesis),
     }
     for key in (

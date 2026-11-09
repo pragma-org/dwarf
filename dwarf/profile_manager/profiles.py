@@ -167,6 +167,7 @@ class Profile:
     measurement_patch_set_sha256: str | None = None
     amaru_json_traces: bool = False
     cardano_measurement_traces: bool = False
+    cardano_observability_traces: bool = False
     plutus_v2_genesis: bool = False
     plutus_v2_cost_model_path: str | None = None
     plutus_v2_cost_model_sha256: str | None = None
@@ -212,6 +213,7 @@ class Profile:
             cardano_measurement_traces=bool(
                 data.get("cardano_measurement_traces", False)
             ),
+            cardano_observability_traces=bool(data.get("cardano_observability_traces", False)),
             plutus_v2_genesis=bool(data.get("plutus_v2_genesis", False)),
             plutus_v2_cost_model_path=data.get("plutus_v2_cost_model_path"),
             plutus_v2_cost_model_sha256=data.get("plutus_v2_cost_model_sha256"),
@@ -331,6 +333,7 @@ def profile_diff_text(left_id, right_id):
         "measurement_patch_set_sha256",
         "amaru_json_traces",
         "cardano_measurement_traces",
+        "cardano_observability_traces",
         "plutus_v2_genesis",
         "plutus_v2_cost_model_path",
         "plutus_v2_cost_model_sha256",
@@ -882,6 +885,7 @@ def versioned_substrate_for_profile(
         "measurement_target_mode": measurement_target_mode,
         "amaru_json_traces": profile.amaru_json_traces,
         "cardano_measurement_traces": profile.cardano_measurement_traces,
+        "cardano_observability_traces": profile.cardano_observability_traces,
         "plutus_v2_genesis": profile.plutus_v2_genesis,
         "plutus_v2_cost_model_path": profile.plutus_v2_cost_model_path,
         "plutus_v2_cost_model_sha256": profile.plutus_v2_cost_model_sha256,

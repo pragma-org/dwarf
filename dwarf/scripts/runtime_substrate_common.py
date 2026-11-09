@@ -147,6 +147,9 @@ def normalize_substrate(substrate: dict) -> dict:
     cardano_measurement_traces = substrate.get("cardano_measurement_traces", False)
     if not isinstance(cardano_measurement_traces, bool):
         raise ValueError("substrate.cardano_measurement_traces must be a boolean")
+    cardano_observability_traces = substrate.get("cardano_observability_traces", False)
+    if not isinstance(cardano_observability_traces, bool):
+        raise ValueError("substrate.cardano_observability_traces must be a boolean")
     amaru_json_traces = substrate.get("amaru_json_traces", False)
     if not isinstance(amaru_json_traces, bool):
         raise ValueError("substrate.amaru_json_traces must be a boolean")
@@ -487,6 +490,7 @@ def normalize_substrate(substrate: dict) -> dict:
     return {
         "profile_id": profile_id,
         "cardano_measurement_traces": cardano_measurement_traces,
+        "cardano_observability_traces": cardano_observability_traces,
         "cardano_experimental_protocols": cardano_experimental_protocols,
         "amaru_json_traces": amaru_json_traces,
         "amaru_txsubmission_trace": amaru_txsubmission_trace,
@@ -905,6 +909,7 @@ def allocate_node_plan(
         "cardano_measurement_traces": bool(
             normalized.get("cardano_measurement_traces")
         ),
+        "cardano_observability_traces": bool(normalized.get("cardano_observability_traces")),
         "cardano_experimental_protocols": normalized.get("cardano_experimental_protocols"),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
         "amaru_txsubmission_trace": bool(

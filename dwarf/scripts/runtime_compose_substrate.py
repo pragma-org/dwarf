@@ -387,6 +387,29 @@ CARDANO_MEASUREMENT_TRACE_SEVERITIES = {"KeepAlive.Remote": "Debug", "Mempool": 
 CARDANO_MEASUREMENT_NODE_SETTINGS = {"TxSubmissionLogicVersion": "TxSubmissionLogicV2"}
 
 
+CARDANO_OBSERVABILITY_TRACE_NAMESPACES = (
+    "Net.ConnectionManager",
+    "Net.PeerSelection",
+    "Net.Peers.LocalRoot",
+    "Net.Peers.PublicRoot",
+)
+
+
+def _enable_cardano_observability_traces(config_path: Path) -> dict:
+    """Debug peer-selection and connection-manager traces for profiles that observe them (F107)."""
+    body = json.loads(config_path.read_text(encoding="utf-8"))
+    options = body.get("TraceOptions")
+    if not isinstance(options, dict):
+        options = {}
+    for namespace in CARDANO_OBSERVABILITY_TRACE_NAMESPACES:
+        configured = dict(options.get(namespace)) if isinstance(options.get(namespace), dict) else {}
+        configured.update({"severity": "Debug", "detail": "DDetailed"})
+        options[namespace] = configured
+    body["TraceOptions"] = options
+    config_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
+    return {"enabled": True, "namespaces": sorted(CARDANO_OBSERVABILITY_TRACE_NAMESPACES), "config_path": str(config_path)}
+
+
 def _enable_cardano_measurement_traces(config_path: Path) -> dict:
     """Enable audited machine namespaces only for an opt-in measurement profile."""
     body = json.loads(config_path.read_text(encoding="utf-8"))
@@ -1567,6 +1590,11 @@ def _compose_substrate_docker(
             if plan.get("cardano_measurement_traces") is True
             else {"enabled": False, "namespaces": []}
         )
+        observability_trace_config = (
+            _enable_cardano_observability_traces(env_root / "configuration.yaml")
+            if plan.get("cardano_observability_traces") is True
+            else {"enabled": False, "namespaces": []}
+        )
         for node in haskell_nodes:
             node["socket_path"] = str(env_root / "socket" / node["id"] / "sock")
             node["db_dir"] = str(env_root / "node-data" / f"node{node['slot_index']}" / "db")
@@ -1748,6 +1776,7 @@ def _compose_substrate_docker(
         "era_transition": {},
         "version_provenance": build_version_provenance(plan, metadata_nodes),
         "cardano_measurement_traces": measurement_trace_config if haskell_nodes and not public_network else {"enabled": False, "namespaces": []},
+        "cardano_observability_traces": observability_trace_config if haskell_nodes and not public_network else {"enabled": False, "namespaces": []},
         "amaru_txsubmission_trace": bool(
             plan.get("amaru_txsubmission_trace", False)
         ),
