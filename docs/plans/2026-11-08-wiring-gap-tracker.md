@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 06:02 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 06:25 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,34 +8,41 @@ Generated 2026-11-09 06:02 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 1 |
-| fail | 26 |
-| pass | 91 |
+| fail | 23 |
+| pass | 95 |
 | prepare-failed | 2 |
 
 | Status | Group | Count |
 |---|---|---|
-| void-pass | resource-abuse fake observation | 3 |
+| void-pass | weak proxy fault modes | 7 |
 | rerun-pending | CBOR dataset | 1 |
-| rerun-pending | block-fetch range read timing | 1 |
-| rerun-pending | resource-abuse fake observation | 1 |
-| rerun-pending | wire probe loopback endpoint | 5 |
+| rerun-pending | bootstrap trustable count | 1 |
+| rerun-pending | byzantine block-fetch | 1 |
 | open | block-apply bridge | 3 |
+| open | duplex hard limit | 1 |
 | open | profile prepare failures | 2 |
+| open | weak proxy fault modes | 1 |
 | review | known upstream-fixed Amaru bugs | 1 |
-| review | review list | 2 |
-| review | smoke-scenario assertion verdicts | 7 |
+| review | review | 2 |
+| review | review list | 1 |
+| review | smoke-scenario assertion verdicts | 6 |
 | declared-gap | byzantine/amaru tmux relaunch | 1 |
 | declared-gap | superseded | 1 |
 | removed | removed from the repo | 4 |
 
-## void-pass: resource-abuse fake observation
+## void-pass: weak proxy fault modes
 
-Cause: VOID PASS: runtime_resource_abuse_fault merged fake observation overrides (tips "resource-abuse-tip-0" slot 0, topology-copied peer edges, one fake tip group) into observation-summary.json; the passing assertions read them
-Fix: F128 (a266fdee): fake overrides removed, proxy routed on docker substrates; rerun pending
+Cause: VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set "rejected" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants
+Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection
 
-- `consensus-threshold-delay-probe` (pass, run 20261108T144838Z-f91a0c51): pass
-- `runtime-substrate-resource-disk-full-during-sync-example-smoke` (pass, run 20261108T154717Z-fbc1f1aa): pass
-- `runtime-substrate-resource-slow-loris-chainsync-example-smoke` (pass, run 20261108T154819Z-cb9bbcbd): pass
+- `runtime-substrate-blockfetch-continuity-failure-example-smoke` (pass, run 20261108T190424Z-49954d02): pass
+- `runtime-substrate-blockfetch-invalid-block-cbor-example-smoke` (pass, run 20261108T190510Z-758382b1): pass
+  - Fix: F130 (e7a9218b): only MsgBlock corrupted; rejection = target drops the connection; rerun pending
+- `runtime-substrate-blockfetch-invalid-range-example-smoke` (pass, run 20261108T190555Z-1ba0e315): pass
+- `runtime-substrate-blockfetch-range-mismatch-example-smoke` (pass, run 20261108T190640Z-9d2f3cdb): pass
+- `runtime-substrate-chainsync-nonincrementing-height-example-smoke` (pass, run 20261108T190853Z-27f8174e): pass
+- `runtime-substrate-chainsync-nonmonotonic-slot-example-smoke` (pass, run 20261108T190938Z-7e1ed1e1): pass
+- `runtime-substrate-chainsync-parent-discontinuity-example-smoke` (pass, run 20261108T191023Z-2a8f0763): pass
 
 ## rerun-pending: CBOR dataset
 
@@ -44,38 +51,19 @@ Fix: building cardano-cbor-dataset:a7561cd on the box from Dockerfile.dwarf (sna
 
 - `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261109T082945Z-88c52cd5): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
 
-## rerun-pending: block-fetch range read timing
+## rerun-pending: bootstrap trustable count
 
-Cause: proxy counters read at the first segment: range request seen, block reply not yet
-Fix: F127; rerun pending
+Cause: producer never wrote trustable_peer_count; the assertion read 0 (minimum 2)
+Fix: F129: count trustable localRoots access points + bootstrapPeers from the node topology file; rerun pending
 
-- `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261109T103313Z-30109fb5): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
+- `runtime-substrate-bootstrap-topology-concentration-example-smoke` (fail, run 20261109T103431Z-6a8c5682): topology_bootstrap_diversity_preserved: expected bootstrap topology to preserve the minimum honest peer diversity floor
 
-## rerun-pending: resource-abuse fake observation
+## rerun-pending: byzantine block-fetch
 
-Cause: same fake overrides (real_tip_count 0) + proxy advertised at 127.0.0.1 and forwarding to a host port (0 bytes)
-Fix: F128; rerun pending
+Cause: design fixed (option a)
+Fix: F130: node3 serves corrupted blocks via the proxy to node1/node2; per-node drop within 10 s; rerun pending
 
-- `runtime-substrate-resource-sync-bandwidth-throttle-example-smoke` (fail, run 20261109T103834Z-a0c0ee9e): substrate_quorum_observed: expected quorum_fraction >= 1.0 with real non-zero tip evidence
-
-## rerun-pending: wire probe loopback endpoint
-
-Cause: panic path probe used the loopback endpoint (panic_avoided false); bootstrap_assumptions_safe: devnet config pins no genesis hashes, still to judge
-Fix: F126; rerun pending, then read the bootstrap verdict
-
-- `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261109T103113Z-99416899): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
-- `runtime-substrate-compound-parser-overlay-forging-example-smoke` (fail, run 20261109T103204Z-6669ac47): parser_bounds_enforced: expected parser and deserialization bounds to be enforced before unbounded work
-  - Cause: parser bounds probe connect-failed: loopback endpoint
-  - Fix: F126; rerun pending
-- `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261109T103529Z-31385ebd): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
-  - Cause: probe connected to 127.0.0.1:<host port> from the controller
-  - Fix: F126; rerun pending
-- `runtime-substrate-local-submit-stress-example-smoke` (fail, run 20261109T103622Z-2efeed85): local_submit_availability_preserved: expected local-submit stress to preserve node availability and queue limits
-  - Cause: 84950 connect failures, 0 handshakes: loopback endpoint
-  - Fix: F126; rerun pending
-- `runtime-substrate-mux-ingress-overrun-example-smoke` (fail, run 20261109T103736Z-ca0090fc): mux_ingress_overrun_scoped: expected mux ingress overrun to be scoped to the offending bearer
-  - Cause: probe connected to 127.0.0.1:<host port> from the controller
-  - Fix: F126; rerun pending
+- `runtime-substrate-byzantine-blockfetch-example-smoke` (fail, run 20261109T103017Z-090eaeec): peer_eviction_within_seconds: expected honest nodes to evict byzantine peers within the allowed window
 
 ## open: block-apply bridge
 
@@ -90,6 +78,13 @@ Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply
   - Cause: same deferred forge/serve bridge
   - Fix: same as above
 
+## open: duplex hard limit
+
+Cause: real now (F126): node accepted 24 duplex bearers vs hard_limit 8, but 8 exists only in the probe; the node runs the default AcceptedConnectionsLimit (hard 512)
+Fix: add a substrate setting that writes AcceptedConnectionsLimit into the node config; the probe reads the node limit
+
+- `runtime-substrate-duplex-promotion-pressure-example-smoke` (fail, run 20261109T111206Z-67de298e): duplex_promotion_slot_limit_enforced: expected duplex promotion pressure to respect the configured hard limit
+
 ## open: profile prepare failures
 
 Cause: F109 works: profile-g now deploys. But profile-g ("haskell-preview2-proof") runs on the PUBLIC preview network, so readiness stays semantic_health_not_ready (cold nodes cannot sync): same class F96 fixed for scenarios
@@ -98,6 +93,13 @@ Fix: Option A (kept as a public-preview profile; moving it to a private devnet w
 - `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
 - `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
 
+## open: weak proxy fault modes
+
+Cause: after F127: 0 range requests went through the proxy (target fetched elsewhere); observed_peak_blocks_in_memory is a constant
+Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection; measure per-batch peak from the proxy
+
+- `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261109T111035Z-cde1dc3e): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
+
 ## review: known upstream-fixed Amaru bugs
 
 Cause: NOT NOVEL: Amaru 10.11.20260918 (aedfe797, 2026-09-18) aborts with "thread 'ledger' has overflowed its stack" on the Delay^28000 vector; upstream fixed it in d9bb18e7 "fix: decode uplc with smaller stack" (2026-09-19), first in v10.11.20260925. DWARF detects the pre-fix build correctly (evidence: run 90c557db, F104 node log + exit 134)
@@ -105,22 +107,28 @@ Fix: rerun against a post-0925 Amaru to prove the fix; scenario should report "t
 
 - `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node` (fail, run 20261109T034926Z-90c557db): uplc_deep_delay_stack_safety_matches: UPLC deep-delay evidence is incomplete or inconclusive
 
+## review: review
+
+Cause: real now (F128): with network delay the 2 nodes show 2 tip groups at the sample instant (0.1 s slots)
+Fix: decide: compare tips with a slot tolerance / converge after the delay window
+
+- `consensus-threshold-delay-probe` (fail, run 20261109T110754Z-10828fa2): chain_select_consistent: expected every observed node to chain-select the same tip
+- `runtime-substrate-compound-panic-bootstrap-example-smoke` (fail, run 20261109T110550Z-45748a3b): bootstrap_assumptions_safe: expected bootstrap assumptions to remain explicit and downgrade-free
+  - Cause: panic path now contained (F126); bootstrap_assumptions_safe fails on DWARF devnet config: genesis hashes not pinned, unsafe defaults detected, version-negotiation downgrade seen
+  - Fix: decide: pin genesis hashes in the generated devnet config, or scope the check to public networks
+
 ## review: review list
 
 Cause: regression reproduces the known Amaru coin-overflow DoS on 10.11.20260918: after the i64-max+1 case the Amaru submit API stops answering ("fresh-funded value-overflow security finding observed"). The scenario fails because the bug is still present, not because DWARF is broken
 Fix: none in DWARF; decide whether this regression should report "finding still present" as its own outcome. F104 keeps the Amaru log on the next run
 
 - `ledger-submit-value-coin-i64-overflow-regression-latest-amaru` (fail, run 20261109T035625Z-9592c658): value_coin_overflow_regression_passed: fresh-funded value-overflow security finding observed
-- `runtime-substrate-byzantine-blockfetch-example-smoke` (fail, run 20261109T103017Z-090eaeec): peer_eviction_within_seconds: expected honest nodes to evict byzantine peers within the allowed window
-  - Cause: node3 design of the smoke scenario questioned
-  - Fix: none yet
 
 ## review: smoke-scenario assertion verdicts
 
 Cause: the scenario ran and an assertion failed; decide whether the node, the scenario or the assertion is wrong
 Fix: none yet
 
-- `runtime-substrate-bootstrap-topology-concentration-example-smoke` (fail, run 20261109T103431Z-6a8c5682): topology_bootstrap_diversity_preserved: expected bootstrap topology to preserve the minimum honest peer diversity floor
 - `runtime-substrate-compound-eclipse-recovery-example-smoke` (fail, run 20261109T085452Z-bd242424): reconnection_clean: expected the reconnected node to rejoin and match the honest quorum tip with non-trivial connectivity and real reconnect telemetry
 - `runtime-substrate-compound-local-query-recovery-example-smoke` (fail, run 20261109T003112Z-310d139c): k_bound_rollback_recovered: expected a within-k rollback to recover consistently with non-trivial connectivity and observed slot transitions
 - `runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke` (fail, run 20261109T004846Z-627ca532): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
@@ -159,7 +167,3 @@ Fix: none yet
 - **prepare-availability-before-deploy** (with profile prepare failures): run/prepare deploys a profile (~15 min) and only then reports availability requires-build; the availability check should run before the deploy.
 - **txsubmission-window-cardano-node** (after the controller volume action): runtime_txsubmission_probe window_pressure never receives MsgRequestTxIds from a cardano-node target (3 scenarios: eclipse-txsubmission, snapshot-pause-txsubmission, snapshot-mid-run-corrupt), even after the init delay (F119, run 0571a907: waited 47 s, then 2 s timeout). The same mode passes against Amaru, and unexpected_body passes against cardano-node, so the connection works. Next: enable Net.ConnectionManager/InboundGovernor/TxSubmission traces for one run and read the release's ouroboros-network tx-submission inbound logic (unpromoted inbound peer / TxSubmissionLogicV2) before changing the probe.
 - **epoch-and-ledger-producers** (after the easier groups): 13 unwired assertions in 5 scenarios (3 epoch-boundary compound smokes, eclipse-topology ledger peers, local-query chain switch). runtime_epoch_boundary_probe.py measures Amaru (snapshot / pots.dump log lines) but returns observation_overrides unchanged and uses other keys than the assertions read; it has no cardano-node path. Plan: one producer contract writing the assertion keys (epoch_boundary, stake_snapshot, reward_calculation, leadership_schedule) with source + per-node results; cardano-node via its own image cardano-cli LSQ (tip+genesis epochLength, stake-snapshot hashes, ADA conservation from ledger-state, leadership-schedule twice); Amaru via its log lines mapped to the same keys; Amaru leadership = adopted blocks came from elected leaders (header-validation VRF, already tapped); boundaries are observed naturally on testnet_42 (short epochs). Then switch the 5 scenarios to resolved-plan.
-
-## not yet run (no ledger row; usually in the current rerun)
-
-- `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive`

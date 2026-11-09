@@ -2,11 +2,88 @@
  "_about": "Hand-kept causes and statuses for the wiring-campaign gap tracker. Rules are matched in order; the first match wins. 'match' is a scenario-id prefix or an exact id. Statuses: rerun-pending (fix deployed, not re-run yet), open (cause known, no fix yet), investigate (cause not yet known), review (verdict needs a human look), declared-gap (accepted limitation), removed.",
  "rules": [
   {
-   "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
-   "group": "scenario design question",
+   "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
+   "group": "review",
    "status": "review",
-   "cause": "DESIGN: node3 is an ordinary honest node; the malformed block-fetch comes from the DWARF shim sent TO node3 (node3 replied MsgNoBlocks, the known LOW G4 leniency). The assertions expect node1/node2 to evict node3, which never misbehaved. Also pinned to 10.7.1 (must be resolved-plan)",
-   "fix": "needs a decision: make node3 really byzantine (runtime_byzantine_peer proxy mutating block-fetch toward node1/node2), or assert what is measured (node3 contains the shim, honest quorum of 3)"
+   "cause": "panic path now contained (F126); bootstrap_assumptions_safe fails on DWARF devnet config: genesis hashes not pinned, unsafe defaults detected, version-negotiation downgrade seen",
+   "fix": "decide: pin genesis hashes in the generated devnet config, or scope the check to public networks"
+  },
+  {
+   "match": "consensus-threshold-delay-probe",
+   "group": "review",
+   "status": "review",
+   "cause": "real now (F128): with network delay the 2 nodes show 2 tip groups at the sample instant (0.1 s slots)",
+   "fix": "decide: compare tips with a slot tolerance / converge after the delay window"
+  },
+  {
+   "match": "runtime-substrate-duplex-promotion-pressure-example-smoke",
+   "group": "duplex hard limit",
+   "status": "open",
+   "cause": "real now (F126): node accepted 24 duplex bearers vs hard_limit 8, but 8 exists only in the probe; the node runs the default AcceptedConnectionsLimit (hard 512)",
+   "fix": "add a substrate setting that writes AcceptedConnectionsLimit into the node config; the probe reads the node limit"
+  },
+  {
+   "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
+   "group": "byzantine block-fetch",
+   "status": "rerun-pending",
+   "cause": "design fixed (option a)",
+   "fix": "F130: node3 serves corrupted blocks via the proxy to node1/node2; per-node drop within 10 s; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-blockfetch-range-pressure-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "open",
+   "cause": "after F127: 0 range requests went through the proxy (target fetched elsewhere); observed_peak_blocks_in_memory is a constant",
+   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection; measure per-batch peak from the proxy"
+  },
+  {
+   "match": "runtime-substrate-blockfetch-invalid-block-cbor-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "void-pass",
+   "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
+   "fix": "F130 (e7a9218b): only MsgBlock corrupted; rejection = target drops the connection; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-chainsync-parent-discontinuity-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "void-pass",
+   "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
+   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+  },
+  {
+   "match": "runtime-substrate-chainsync-nonmonotonic-slot-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "void-pass",
+   "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
+   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+  },
+  {
+   "match": "runtime-substrate-chainsync-nonincrementing-height-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "void-pass",
+   "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
+   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+  },
+  {
+   "match": "runtime-substrate-blockfetch-range-mismatch-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "void-pass",
+   "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
+   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+  },
+  {
+   "match": "runtime-substrate-blockfetch-invalid-range-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "void-pass",
+   "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
+   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
+  },
+  {
+   "match": "runtime-substrate-blockfetch-continuity-failure-example-smoke",
+   "group": "weak proxy fault modes",
+   "status": "void-pass",
+   "cause": "VOID PASS (weak mode): runtime_chainsync_blockfetch_fault flipped the last byte of the first segment of ANY protocol (usually the handshake) and set \"rejected\" = node healthy + any proxy traffic; the semantic fields (slot/height deltas, served_blocks, candidate_chain_advanced) were constants",
+   "fix": "craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection"
   },
   {
    "match": "runtime-substrate-bootstrap-topology-concentration-example-smoke",
@@ -14,20 +91,6 @@
    "status": "rerun-pending",
    "cause": "producer never wrote trustable_peer_count; the assertion read 0 (minimum 2)",
    "fix": "F129: count trustable localRoots access points + bootstrapPeers from the node topology file; rerun pending"
-  },
-  {
-   "match": "runtime-substrate-blockfetch-range-pressure-example-smoke",
-   "group": "block-fetch range read timing",
-   "status": "rerun-pending",
-   "cause": "proxy counters read at the first segment: range request seen, block reply not yet",
-   "fix": "F127; rerun pending"
-  },
-  {
-   "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
-   "group": "wire probe loopback endpoint",
-   "status": "rerun-pending",
-   "cause": "panic path probe used the loopback endpoint (panic_avoided false); bootstrap_assumptions_safe: devnet config pins no genesis hashes, still to judge",
-   "fix": "F126; rerun pending, then read the bootstrap verdict"
   },
   {
    "match": "runtime-substrate-compound-parser-overlay-forging-example-smoke",
@@ -51,13 +114,6 @@
    "fix": "F126; rerun pending"
   },
   {
-   "match": "runtime-substrate-duplex-promotion-pressure-example-smoke",
-   "group": "wire probe loopback endpoint",
-   "status": "rerun-pending",
-   "cause": "probe connected to 127.0.0.1:<host port> from the controller",
-   "fix": "F126; rerun pending"
-  },
-  {
    "match": "runtime-substrate-resource-sync-bandwidth-throttle-example-smoke",
    "group": "resource-abuse fake observation",
    "status": "rerun-pending",
@@ -65,25 +121,18 @@
    "fix": "F128; rerun pending"
   },
   {
-   "match": "consensus-threshold-delay-probe",
-   "group": "resource-abuse fake observation",
-   "status": "void-pass",
-   "cause": "VOID PASS: runtime_resource_abuse_fault merged fake observation overrides (tips \"resource-abuse-tip-0\" slot 0, topology-copied peer edges, one fake tip group) into observation-summary.json; the passing assertions read them",
-   "fix": "F128 (a266fdee): fake overrides removed, proxy routed on docker substrates; rerun pending"
-  },
-  {
    "match": "runtime-substrate-resource-disk-full-during-sync-example-smoke",
    "group": "resource-abuse fake observation",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS: runtime_resource_abuse_fault merged fake observation overrides (tips \"resource-abuse-tip-0\" slot 0, topology-copied peer edges, one fake tip group) into observation-summary.json; the passing assertions read them",
-   "fix": "F128 (a266fdee): fake overrides removed, proxy routed on docker substrates; rerun pending"
+   "fix": "F128: real pass in rerun #23 (no fake tips; real tips and edges)"
   },
   {
    "match": "runtime-substrate-resource-slow-loris-chainsync-example-smoke",
    "group": "resource-abuse fake observation",
-   "status": "void-pass",
+   "status": "fixed",
    "cause": "VOID PASS: runtime_resource_abuse_fault merged fake observation overrides (tips \"resource-abuse-tip-0\" slot 0, topology-copied peer edges, one fake tip group) into observation-summary.json; the passing assertions read them",
-   "fix": "F128 (a266fdee): fake overrides removed, proxy routed on docker substrates; rerun pending"
+   "fix": "F128: real pass in rerun #23 (no fake tips; real tips and edges)"
   },
   {
    "match": "phase3-runtime-profile-a-copied-state-",
@@ -308,20 +357,6 @@
    "status": "review",
    "cause": "regression reproduces the known Amaru coin-overflow DoS on 10.11.20260918: after the i64-max+1 case the Amaru submit API stops answering (\"fresh-funded value-overflow security finding observed\"). The scenario fails because the bug is still present, not because DWARF is broken",
    "fix": "none in DWARF; decide whether this regression should report \"finding still present\" as its own outcome. F104 keeps the Amaru log on the next run"
-  },
-  {
-   "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
-   "group": "review list",
-   "status": "review",
-   "cause": "bootstrap_assumptions_safe verdict needs a human look",
-   "fix": null
-  },
-  {
-   "match": "runtime-substrate-byzantine-blockfetch-example-smoke",
-   "group": "review list",
-   "status": "review",
-   "cause": "node3 design of the smoke scenario questioned",
-   "fix": null
   },
   {
    "match": "runtime-substrate-praos-header-assertion-example-smoke",
