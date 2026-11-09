@@ -453,6 +453,12 @@ def normalize_substrate(substrate: dict) -> dict:
                 raise ValueError("substrate.network and substrate.network_magic must describe the same testnet")
         elif network.startswith("testnet_"):
             network_magic = int(network.split("_", 1)[1])
+    if "edges" not in topology and network not in PUBLIC_NETWORK_MAGIC and len(seen_ids) > 1:
+        # F118: no declared topology on a private devnet means a full mesh, as the observation
+        # assumes; without it every node is left without peers (public networks bootstrap instead).
+        # An explicit empty edge list stays empty.
+        ordered = [str(node.get("id")) for node in substrate.get("nodes") or [] if node.get("id") in seen_ids]
+        normalized_edges = [{"from": left, "to": right} for left in ordered for right in ordered if left != right]
     version_policy = substrate.get("version_policy")
     version_policy_source = substrate.get("version_policy_source")
     version_status = substrate.get("version_status")
