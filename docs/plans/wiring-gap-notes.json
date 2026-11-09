@@ -60,16 +60,16 @@
   {
    "match": "phase3-runtime-profile-a-pcap-capture-primitive",
    "group": "host-model helpers on container profiles",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "sudo tcpdump on the controller; host-era ports 33001-33003",
-   "fix": "F113 daa7c868: capture-tools image in the controller namespace, container endpoints from runtime metadata"
+   "fix": "F113+F115+F115b: PASS (run 4cafe134)"
   },
   {
    "match": "phase3-runtime-profile-a-syscall-trace-primitive",
    "group": "host-model helpers on container profiles",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "sudo strace against a host pid",
-   "fix": "F113: capture-tools image in the node pid namespace, SYS_PTRACE only; trace window emitted"
+   "fix": "F113: PASS (run 2c7316fd)"
   },
   {
    "match": "m3-runtime-blockfetch-port-drop-",
@@ -95,16 +95,16 @@
   {
    "match": "phase3-runtime-generated-haskell3-connection-state-freeze-rollup-capability-demo",
    "group": "host-model helpers on container profiles",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "lsof/ss on the controller against a host pid",
-   "fix": "F112 7bbfd464: reuse the in-container ss of runtime_multi_node_observation"
+   "fix": "F112: PASS (run e3db7c36)"
   },
   {
    "match": "phase3-runtime-generated-haskell3-gc-capture-primitive",
    "group": "host-model helpers on container profiles",
-   "status": "rerun-pending",
+   "status": "fixed",
    "cause": "tmux restart with GHCRTS=-s and a host pid wait",
-   "fix": "F114 666e2b40: live Resources trace counters, no restart (user approved; bytes copied / max pause reported None)"
+   "fix": "F114+F115: PASS (run fcc56ae6)"
   },
   {
    "match": "m3-runtime-node2-copied-state-recovery",

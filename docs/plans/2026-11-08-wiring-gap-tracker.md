@@ -1,6 +1,6 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 02:11 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 03:05 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
@@ -8,19 +8,18 @@ Generated 2026-11-09 02:11 EST from the campaign ledger and the run bundles. Han
 | Outcome | Scenarios |
 |---|---|
 | error | 2 |
-| fail | 40 |
-| pass | 76 |
+| fail | 35 |
+| pass | 81 |
 | prepare-failed | 3 |
 
 | Status | Group | Count |
 |---|---|---|
-| rerun-pending | profile prepare failures | 1 |
 | investigate | checkpoint evidence | 1 |
 | open | CBOR dataset | 1 |
 | open | LSQ extract scenario | 1 |
 | open | block-apply bridge | 3 |
 | open | external topology | 1 |
-| open | host-model helpers on container profiles | 7 |
+| open | host-model helpers on container profiles | 3 |
 | open | profile prepare failures | 2 |
 | review | known upstream-fixed Amaru bugs | 1 |
 | review | profile-a behaviour verdicts | 1 |
@@ -29,13 +28,6 @@ Generated 2026-11-09 02:11 EST from the campaign ledger and the run bundles. Han
 | declared-gap | byzantine/amaru tmux relaunch | 1 |
 | declared-gap | superseded | 1 |
 | removed | removed from the repo | 4 |
-
-## rerun-pending: profile prepare failures
-
-Cause: adapters built (Amaru + cardano-node Plutus); the run then failed two completeness checks because the workload double-spend probes (rejected, no lock tx) were counted as spends
-Fix: F111 e03e8a8d
-
-- `client-example-plutus-vm-amaru-portable-20260918` (fail, run 20261109T062732Z-f0c5c32f): plutus_live_outcomes_observed: Live Plutus outcomes were incomplete
 
 ## investigate: checkpoint evidence
 
@@ -80,28 +72,12 @@ Fix: give it a self-composed mixed testnet_42 substrate, or declare it Antithesi
 
 ## open: host-model helpers on container profiles
 
-Cause: runtime_connection_state.py needs lsof/ss and host pids; the controller has neither the tools nor the node pid namespace
-Fix: read connection state from inside the node container (docker exec ss) or from the taps
+Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
+Fix: port the copy/stop steps to the controller container lifecycle
 
-- `phase3-runtime-generated-haskell3-connection-state-freeze-rollup-capability-demo` (fail, run 20261109T020449Z-e57722f2): load_events_are_ok: fail
-- `phase3-runtime-generated-haskell3-gc-capture-primitive` (fail, run 20261109T020619Z-5f7f0c94): load_events_are_ok: fail
-  - Cause: runtime_haskell_gc_capture.py restarts the node through tmux and waits on a host pid (timed out on pid 3810297)
-  - Fix: restart through the controller container lifecycle; read GC stats from the container
 - `phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive` (fail, run 20261109T040526Z-fa691ea6): load_events_are_ok: fail
-  - Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
-  - Fix: port the copy/stop steps to the controller container lifecycle
 - `phase3-runtime-profile-a-copied-state-divergence-primitive` (fail, run 20261109T040613Z-db7d59b9): load_events_are_ok: fail
-  - Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
-  - Fix: port the copy/stop steps to the controller container lifecycle
 - `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (error, run none): preflight_failed
-  - Cause: runtime_profile_recovery_check.py copied-state modes: "stale source node1 is not behind node2: 3119 >= 3119"; the stale-copy setup (replace_node_db on env_root/node-data) does not act on container nodes
-  - Fix: port the copy/stop steps to the controller container lifecycle
-- `phase3-runtime-profile-a-pcap-capture-primitive` (fail, run 20261109T040714Z-14c6cc22): load_events_are_ok: fail
-  - Cause: runtime_pcap_capture.py calls sudo
-  - Fix: capture in the node netns via the F99 helper pattern (tcpdump with NET_RAW only)
-- `phase3-runtime-profile-a-syscall-trace-primitive` (fail, run 20261109T040826Z-50e6f54c): load_events_are_ok: fail
-  - Cause: runtime_syscall_trace.py calls sudo
-  - Fix: trace from a helper sharing the node pid namespace (SYS_PTRACE only)
 
 ## open: profile prepare failures
 
