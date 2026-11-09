@@ -2,8 +2,8 @@
   "schema_version": "v1",
   "left_run_id": "20260427T064030Z-33297ed4",
   "right_run_id": "20260427T075729Z-9262386a",
-  "left_run_dir": "/home/nigel/dwarf-fw/runs/20260427T064030Z-33297ed4",
-  "right_run_dir": "/home/nigel/dwarf-fw/runs/20260427T075729Z-9262386a",
+  "left_run_dir": "/home/dwarf/dwarf-fw/runs/20260427T064030Z-33297ed4",
+  "right_run_dir": "/home/dwarf/dwarf-fw/runs/20260427T075729Z-9262386a",
   "compared_relpaths": [
     "outputs/runtime-cardano-lsq-extract/result.json"
   ],
@@ -14,8 +14,8 @@
       "left_exists": true,
       "right_exists": true,
       "verdict": "diff",
-      "left_sha256": "c61ed4efdfc1384baf4d48ef5e9d5b56bb7d0c6c7e1ade9c5661bc92d80fdbd0",
-      "right_sha256": "bdacc51e3dcea56a445db97b36969e681392065035f97cad0d6c0d6c8b2f7f53",
+      "left_sha256": "053b223a5d27037f1c939cc34aa047dc2d1282f2bb6466b3945f24d26e15d182",
+      "right_sha256": "36e61cd93d8a06496212727701a8491be1f27886d682433c207bae535f2d3bf2",
       "normalized_equal": false,
       "left_normalized": {
         "snapshot_path": "<run_dir>/outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor",

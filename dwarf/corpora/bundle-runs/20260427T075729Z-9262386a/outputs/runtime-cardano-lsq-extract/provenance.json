@@ -1,9 +1,9 @@
 {
   "era": 6,
-  "extractor_crate": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+  "extractor_crate": "/home/dwarf/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
   "network_magic": 42,
-  "raw_response_path": "/home/nigel/dwarf-fw/runs/20260427T075729Z-9262386a/outputs/runtime-cardano-lsq-extract/raw-response.bin",
-  "result_json_path": "/home/nigel/dwarf-fw/runs/20260427T075729Z-9262386a/outputs/runtime-cardano-lsq-extract/result.json",
-  "snapshot_path": "/home/nigel/dwarf-fw/runs/20260427T075729Z-9262386a/outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor",
+  "raw_response_path": "/home/dwarf/dwarf-fw/runs/20260427T075729Z-9262386a/outputs/runtime-cardano-lsq-extract/raw-response.bin",
+  "result_json_path": "/home/dwarf/dwarf-fw/runs/20260427T075729Z-9262386a/outputs/runtime-cardano-lsq-extract/result.json",
+  "snapshot_path": "/home/dwarf/dwarf-fw/runs/20260427T075729Z-9262386a/outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor",
   "socket_path": "/tmp/ada2-testnet42-socket/node1.sock"
 }

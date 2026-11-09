@@ -13,7 +13,7 @@
   "load": [
     {
       "primitive": "runtime_coverage_report",
-      "runs_dir": "/home/nigel/dwarf-fw/runs",
+      "runs_dir": "/home/dwarf/dwarf-fw/runs",
       "aggregate_bundle_id": "20260427T082846Z-b99d9f9e",
       "output_dir": "outputs/coverage-report",
       "timeout_seconds": 120

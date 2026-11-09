@@ -9,7 +9,7 @@
         "diff_relpath": "outputs/bundle-diff/diff.json",
         "expected_helper_exit": 0,
         "helper_exit_code": 0,
-        "helper_script": "/home/nigel/dwarf-fw/scripts/runtime_bundle_diff.py",
+        "helper_script": "/home/dwarf/dwarf-fw/scripts/runtime_bundle_diff.py",
         "left_run_id": "20260427T064030Z-33297ed4",
         "outcome": "ok",
         "python_bin": "python3",
@@ -31,7 +31,7 @@
                 "snapshot_size": 10509,
                 "socket_path": "/tmp/ada2-testnet42-socket/node1.sock"
               },
-              "left_sha256": "c61ed4efdfc1384baf4d48ef5e9d5b56bb7d0c6c7e1ade9c5661bc92d80fdbd0",
+              "left_sha256": "053b223a5d27037f1c939cc34aa047dc2d1282f2bb6466b3945f24d26e15d182",
               "normalized_equal": false,
               "relpath": "outputs/runtime-cardano-lsq-extract/result.json",
               "right_exists": true,
@@ -45,19 +45,19 @@
                 "snapshot_size": 10509,
                 "socket_path": "/tmp/ada2-testnet42-socket/node1.sock"
               },
-              "right_sha256": "bdacc51e3dcea56a445db97b36969e681392065035f97cad0d6c0d6c8b2f7f53",
+              "right_sha256": "36e61cd93d8a06496212727701a8491be1f27886d682433c207bae535f2d3bf2",
               "verdict": "diff"
             }
           ],
           "diffed_at_utc": "2026-04-27T08:26:05Z",
-          "left_run_dir": "/home/nigel/dwarf-fw/runs/20260427T064030Z-33297ed4",
+          "left_run_dir": "/home/dwarf/dwarf-fw/runs/20260427T064030Z-33297ed4",
           "left_run_id": "20260427T064030Z-33297ed4",
-          "right_run_dir": "/home/nigel/dwarf-fw/runs/20260427T075729Z-9262386a",
+          "right_run_dir": "/home/dwarf/dwarf-fw/runs/20260427T075729Z-9262386a",
           "right_run_id": "20260427T075729Z-9262386a",
           "schema_version": "v1"
         },
         "right_run_id": "20260427T075729Z-9262386a",
-        "runs_dir": "/home/nigel/dwarf-fw/runs",
+        "runs_dir": "/home/dwarf/dwarf-fw/runs",
         "stderr": "",
         "stdout": "left_run_id=20260427T064030Z-33297ed4 right_run_id=20260427T075729Z-9262386a comparison_verdict=diff diff_relpath=outputs/bundle-diff/diff.json\n",
         "timed_out": false,

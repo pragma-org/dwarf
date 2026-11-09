@@ -1,1 +1,1 @@
-wrote_debug_epoch_state era=6 chunks=1 bytes=10509 out=/home/nigel/dwarf-fw/runs/20260427T064030Z-33297ed4/outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor
+wrote_debug_epoch_state era=6 chunks=1 bytes=10509 out=/home/dwarf/dwarf-fw/runs/20260427T064030Z-33297ed4/outputs/runtime-cardano-lsq-extract/debug-epoch-state.cbor

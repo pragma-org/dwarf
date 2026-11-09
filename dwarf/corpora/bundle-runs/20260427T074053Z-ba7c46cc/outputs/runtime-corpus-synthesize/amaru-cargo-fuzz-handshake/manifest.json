@@ -63,12 +63,12 @@
       "size": 13
     }
   ],
-  "grammar_dict": "/home/nigel/dwarf-fw/grammars/amaru-cargo-fuzz-handshake/dict.txt",
+  "grammar_dict": "/home/dwarf/dwarf-fw/grammars/amaru-cargo-fuzz-handshake/dict.txt",
   "rng_seed": 1234,
   "strategy": "structure",
   "strategy_counts": {
     "structure": 10
   },
-  "structure_spec": "/home/nigel/dwarf-fw/grammars/amaru-cargo-fuzz-handshake/structure.json",
+  "structure_spec": "/home/dwarf/dwarf-fw/grammars/amaru-cargo-fuzz-handshake/structure.json",
   "target_id": "amaru-cargo-fuzz-handshake"
 }

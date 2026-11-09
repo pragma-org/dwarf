@@ -13,7 +13,7 @@
   "load": [
     {
       "primitive": "runtime_coverage_report",
-      "runs_dir": "/home/nigel/dwarf-fw/runs",
+      "runs_dir": "/home/dwarf/dwarf-fw/runs",
       "merge_mode": "file-level",
       "aflpp_bundle_ids": [
         "20260427T062629Z-28996282",

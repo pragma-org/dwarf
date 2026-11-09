@@ -5,7 +5,7 @@
         "active_profile_id": "profile-a-haskell-peersharing-disabled",
         "artifact_summary": {
           "has_attestation": true,
-          "output_dir": "/home/nigel/dwarf-fw/runs/20260427T091106Z-3bce7cb4/outputs/attestation"
+          "output_dir": "/home/dwarf/dwarf-fw/runs/20260427T091106Z-3bce7cb4/outputs/attestation"
         },
         "helper_exit_code": 0,
         "outcome": "ok",
@@ -31,7 +31,7 @@
             "scenario_yaml_sha256": "4f6c942ce33ae5a9c0cbeac0425e4d191b71c63fc5b4ac9b28db34d3e4c7fdc1",
             "tooling_versions": {
               "amaru": "Amaru 0.1.2 (060001d)",
-              "cardano-cli": "cardano-cli 10.15.1.0 - linux-x86_64 - ghc-9.6",
+              "cardano-cli": "cardano-cli 192.0.2.0 - linux-x86_64 - ghc-9.6",
               "cardano-node": "cardano-node 10.7.1 - linux-x86_64 - ghc-9.6",
               "dwarf": "source-sha256:87237de3056483fc35cd1aac3c1e43b56cb10c24d107a58628e05205c3b449b7"
             }

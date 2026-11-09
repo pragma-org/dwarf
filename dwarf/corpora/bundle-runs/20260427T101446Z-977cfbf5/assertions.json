@@ -6,13 +6,13 @@
           "has_findings": true,
           "has_stderr": true,
           "has_stdout": true,
-          "output_dir": "/home/nigel/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny"
+          "output_dir": "/home/dwarf/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny"
         },
-        "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+        "crate_dir": "/home/dwarf/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
         "expected_helper_exit": 0,
         "findings_count": 0,
         "helper_exit_code": 0,
-        "helper_script": "/home/nigel/dwarf-fw/scripts/runtime_static_analysis.py",
+        "helper_script": "/home/dwarf/dwarf-fw/scripts/runtime_static_analysis.py",
         "outcome": "ok",
         "python_bin": "python3",
         "result": {
@@ -23,16 +23,16 @@
             "--format",
             "json"
           ],
-          "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+          "crate_dir": "/home/dwarf/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
           "executed_at_utc": "2026-04-27T10:14:46Z",
           "findings": [],
           "findings_count": 0,
-          "findings_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/findings.json",
+          "findings_relpath": "/home/dwarf/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/findings.json",
           "parse_error": null,
           "raw": null,
           "schema_version": "v1",
-          "stderr_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/stderr.log",
-          "stdout_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/stdout.log",
+          "stderr_relpath": "/home/dwarf/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/stderr.log",
+          "stdout_relpath": "/home/dwarf/dwarf-fw/runs/20260427T101446Z-977cfbf5/outputs/static-analysis-deny/stdout.log",
           "tool": "deny",
           "tool_exit_code": 2,
           "tool_status": "findings"

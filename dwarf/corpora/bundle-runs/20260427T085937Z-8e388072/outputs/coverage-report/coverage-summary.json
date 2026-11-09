@@ -30,7 +30,7 @@
       "coverage_metric": "bitmap_cvg",
       "coverage_score": 54.7,
       "source_type": "bundle",
-      "source_path": "/home/nigel/dwarf-fw/runs/20260427T062629Z-28996282"
+      "source_path": "/home/dwarf/dwarf-fw/runs/20260427T062629Z-28996282"
     },
     {
       "target_label": "20260427T075930Z-e25c696f:handshake-aflpp",
@@ -48,7 +48,7 @@
       "coverage_metric": "bitmap_cvg",
       "coverage_score": 54.7,
       "source_type": "campaign-subcampaign",
-      "source_path": "/home/nigel/dwarf-fw/runs/20260427T075930Z-e25c696f/outputs/fuzz-campaign/subcampaigns/handshake-aflpp"
+      "source_path": "/home/dwarf/dwarf-fw/runs/20260427T075930Z-e25c696f/outputs/fuzz-campaign/subcampaigns/handshake-aflpp"
     },
     {
       "target_label": "20260427T073010Z-164377c7",
@@ -66,7 +66,7 @@
       "coverage_metric": "bitmap_cvg",
       "coverage_score": 25.87,
       "source_type": "bundle",
-      "source_path": "/home/nigel/dwarf-fw/runs/20260427T073010Z-164377c7"
+      "source_path": "/home/dwarf/dwarf-fw/runs/20260427T073010Z-164377c7"
     },
     {
       "target_label": "20260427T075930Z-e25c696f:handshake-cargo-fuzz",
@@ -84,7 +84,7 @@
       "coverage_metric": "none",
       "coverage_score": 0.0,
       "source_type": "campaign-subcampaign",
-      "source_path": "/home/nigel/dwarf-fw/runs/20260427T075930Z-e25c696f/outputs/fuzz-campaign/subcampaigns/handshake-cargo-fuzz"
+      "source_path": "/home/dwarf/dwarf-fw/runs/20260427T075930Z-e25c696f/outputs/fuzz-campaign/subcampaigns/handshake-cargo-fuzz"
     }
   ]
 }

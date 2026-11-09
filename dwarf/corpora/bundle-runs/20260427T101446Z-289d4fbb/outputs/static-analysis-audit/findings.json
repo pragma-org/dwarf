@@ -2,7 +2,7 @@
   "schema_version": "v1",
   "executed_at_utc": "2026-04-27T10:14:48Z",
   "tool": "audit",
-  "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+  "crate_dir": "/home/dwarf/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
   "command": [
     "cargo",
     "audit",
@@ -11,9 +11,9 @@
   "tool_exit_code": 0,
   "tool_status": "clean",
   "parse_error": null,
-  "stdout_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/stdout.log",
-  "stderr_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/stderr.log",
-  "findings_relpath": "/home/nigel/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/findings.json",
+  "stdout_relpath": "/home/dwarf/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/stdout.log",
+  "stderr_relpath": "/home/dwarf/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/stderr.log",
+  "findings_relpath": "/home/dwarf/dwarf-fw/runs/20260427T101446Z-289d4fbb/outputs/static-analysis-audit/findings.json",
   "raw": {
     "database": {
       "advisory-count": 1058,

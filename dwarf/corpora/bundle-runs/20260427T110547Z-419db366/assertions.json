@@ -5,7 +5,7 @@
         "artifact_summary": {
           "has_timeline_json": true,
           "has_timeline_markdown": true,
-          "output_dir": "/home/nigel/dwarf-fw/runs/20260427T110547Z-419db366/outputs/bundle-timeline"
+          "output_dir": "/home/dwarf/dwarf-fw/runs/20260427T110547Z-419db366/outputs/bundle-timeline"
         },
         "exit_code": 0,
         "outcome": "ok",

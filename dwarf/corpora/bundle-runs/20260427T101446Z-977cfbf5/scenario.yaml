@@ -10,7 +10,7 @@
   "load": [
     {
       "primitive": "runtime_static_analysis_deny",
-      "crate_dir": "/home/nigel/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
+      "crate_dir": "/home/dwarf/dwarf-fw/extractors/cardano-debug-epoch-state-extractor",
       "output_dir": "outputs/static-analysis-deny",
       "timeout_seconds": 300,
       "expected_helper_exit": 0

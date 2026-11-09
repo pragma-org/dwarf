@@ -8,7 +8,7 @@
           "has_coverage_html": false,
           "has_coverage_markdown": false,
           "has_coverage_summary": false,
-          "output_dir": "/home/nigel/dwarf-fw/runs/20260427T105341Z-0b24e9a8/outputs/coverage-report"
+          "output_dir": "/home/dwarf/dwarf-fw/runs/20260427T105341Z-0b24e9a8/outputs/coverage-report"
         },
         "exit_code": 0,
         "merge_mode": "file-level",
@@ -22,7 +22,7 @@
               "novel_edge_count": 26,
               "queue_count": 176,
               "status": "ok",
-              "target_binary": "/home/nigel/dwarf-fw/targets/amaru/target/release/amaru-afl-handshake",
+              "target_binary": "/home/dwarf/dwarf-fw/targets/amaru/target/release/amaru-afl-handshake",
               "target_slug": "handshake",
               "unique_edges_observed": 29
             },
@@ -33,7 +33,7 @@
               "novel_edge_count": 26,
               "queue_count": 103,
               "status": "ok",
-              "target_binary": "/home/nigel/dwarf-fw/targets/amaru/target/release/amaru-afl-blockfetch",
+              "target_binary": "/home/dwarf/dwarf-fw/targets/amaru/target/release/amaru-afl-blockfetch",
               "target_slug": "blockfetch",
               "unique_edges_observed": 29
             },
@@ -44,7 +44,7 @@
               "novel_edge_count": 29,
               "queue_count": 647,
               "status": "ok",
-              "target_binary": "/home/nigel/dwarf-fw/targets/amaru/target/release/amaru-afl-txsubmission",
+              "target_binary": "/home/dwarf/dwarf-fw/targets/amaru/target/release/amaru-afl-txsubmission",
               "target_slug": "txsubmission",
               "unique_edges_observed": 29
             }
@@ -54,7 +54,7 @@
           "merge_mode": "file-level",
           "processed_bundle_count": 3,
           "requested_bundle_count": 3,
-          "runs_dir": "/home/nigel/dwarf-fw/runs",
+          "runs_dir": "/home/dwarf/dwarf-fw/runs",
           "schema_version": "v1",
           "tool_availability": {
             "afl_showmap": true
