@@ -2,6 +2,76 @@
  "_about": "Hand-kept causes and statuses for the wiring-campaign gap tracker. Rules are matched in order; the first match wins. 'match' is a scenario-id prefix or an exact id. Statuses: rerun-pending (fix deployed, not re-run yet), open (cause known, no fix yet), investigate (cause not yet known), review (verdict needs a human look), declared-gap (accepted limitation), removed.",
  "rules": [
   {
+   "match": "runtime-substrate-blockfetch-range-pressure-example-smoke",
+   "group": "block-fetch range read timing",
+   "status": "rerun-pending",
+   "cause": "proxy counters read at the first segment: range request seen, block reply not yet",
+   "fix": "F127; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-compound-panic-bootstrap-example-smoke",
+   "group": "wire probe loopback endpoint",
+   "status": "rerun-pending",
+   "cause": "panic path probe used the loopback endpoint (panic_avoided false); bootstrap_assumptions_safe: devnet config pins no genesis hashes, still to judge",
+   "fix": "F126; rerun pending, then read the bootstrap verdict"
+  },
+  {
+   "match": "runtime-substrate-compound-parser-overlay-forging-example-smoke",
+   "group": "wire probe loopback endpoint",
+   "status": "rerun-pending",
+   "cause": "parser bounds probe connect-failed: loopback endpoint",
+   "fix": "F126; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-local-submit-stress-example-smoke",
+   "group": "wire probe loopback endpoint",
+   "status": "rerun-pending",
+   "cause": "84950 connect failures, 0 handshakes: loopback endpoint",
+   "fix": "F126; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-mux-ingress-overrun-example-smoke",
+   "group": "wire probe loopback endpoint",
+   "status": "rerun-pending",
+   "cause": "probe connected to 127.0.0.1:<host port> from the controller",
+   "fix": "F126; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-duplex-promotion-pressure-example-smoke",
+   "group": "wire probe loopback endpoint",
+   "status": "rerun-pending",
+   "cause": "probe connected to 127.0.0.1:<host port> from the controller",
+   "fix": "F126; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-resource-sync-bandwidth-throttle-example-smoke",
+   "group": "resource-abuse fake observation",
+   "status": "rerun-pending",
+   "cause": "same fake overrides (real_tip_count 0) + proxy advertised at 127.0.0.1 and forwarding to a host port (0 bytes)",
+   "fix": "F128; rerun pending"
+  },
+  {
+   "match": "consensus-threshold-delay-probe",
+   "group": "resource-abuse fake observation",
+   "status": "void-pass",
+   "cause": "VOID PASS: runtime_resource_abuse_fault merged fake observation overrides (tips \"resource-abuse-tip-0\" slot 0, topology-copied peer edges, one fake tip group) into observation-summary.json; the passing assertions read them",
+   "fix": "F128 (a266fdee): fake overrides removed, proxy routed on docker substrates; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-resource-disk-full-during-sync-example-smoke",
+   "group": "resource-abuse fake observation",
+   "status": "void-pass",
+   "cause": "VOID PASS: runtime_resource_abuse_fault merged fake observation overrides (tips \"resource-abuse-tip-0\" slot 0, topology-copied peer edges, one fake tip group) into observation-summary.json; the passing assertions read them",
+   "fix": "F128 (a266fdee): fake overrides removed, proxy routed on docker substrates; rerun pending"
+  },
+  {
+   "match": "runtime-substrate-resource-slow-loris-chainsync-example-smoke",
+   "group": "resource-abuse fake observation",
+   "status": "void-pass",
+   "cause": "VOID PASS: runtime_resource_abuse_fault merged fake observation overrides (tips \"resource-abuse-tip-0\" slot 0, topology-copied peer edges, one fake tip group) into observation-summary.json; the passing assertions read them",
+   "fix": "F128 (a266fdee): fake overrides removed, proxy routed on docker substrates; rerun pending"
+  },
+  {
    "match": "phase3-runtime-profile-a-copied-state-",
    "group": "copied-state behaviour verdicts",
    "status": "review",
