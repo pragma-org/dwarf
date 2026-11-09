@@ -760,6 +760,15 @@ def _honest_peer_topology(observed_edges, node_ids: list[str], metadata: dict | 
     }
 
 
+# Keys the observation measures; an override never supplies them (F133), measured this run or not.
+OBSERVATION_MEASUREMENT_KEYS = frozenset({
+    "chain_eventually_consistent", "chain_select_consistent", "expected_peer_edge_count", "expected_peer_edges",
+    "latest_common_tip", "latest_tips", "missing_peer_edge_count", "missing_peer_edges", "node_count",
+    "observed_peer_edge_count", "observed_peer_edges", "per_node_connectivity", "quorum_count", "quorum_fraction",
+    "quorum_tip", "responsive_node_count", "responsive_nodes", "tip_group_count", "tip_groups", "topology",
+})
+
+
 def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metadata: dict | None = None) -> dict:
     latest_tips = {}
     responsive_nodes = []
@@ -851,10 +860,19 @@ def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metad
     for key in ("hf_boundary", "transition_window", "genesis_mode"):
         if key in era_transition:
             summary[key] = era_transition[key]
+    # F133: an override may fill a key the observation did not measure (e.g. node_lifecycle, epoch
+    # sections), never replace a measured one; fabricated overrides used to win over real data.
     observation_overrides = (metadata or {}).get("observation_overrides") or {}
+    applied, rejected = [], []
     if isinstance(observation_overrides, dict):
         for key, value in observation_overrides.items():
-            summary[key] = value
+            if key in summary or key in OBSERVATION_MEASUREMENT_KEYS:
+                rejected.append(key)
+            else:
+                summary[key] = value
+                applied.append(key)
+    summary["observation_overrides_applied"] = sorted(applied)
+    summary["observation_overrides_rejected"] = sorted(rejected)
     return summary
 
 

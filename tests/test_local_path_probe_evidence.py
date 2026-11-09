@@ -128,7 +128,9 @@ class _WindowNode(threading.Thread):
             self.server.close()
 
 
-def test_substrate_runtime_mode_uses_the_container_endpoint_over_the_published_port(tmp_path):
+def test_substrate_runtime_mode_uses_the_container_endpoint_over_the_published_port(tmp_path, monkeypatch):
+    # Endpoint choice only; the F124 init-delay lookup (node startup log) is not under test here.
+    monkeypatch.setattr(probe, "_first_request_timeout_seconds", lambda node, default: default)
     node = _WindowNode(); node.start()
     runtime = tmp_path / "runtime.json"
     runtime.write_text(json.dumps({"network_magic": 42, "haskell_nodes": [{

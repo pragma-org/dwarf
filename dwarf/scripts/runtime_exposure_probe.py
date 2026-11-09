@@ -939,18 +939,9 @@ def _run_bootstrap_assumption_probe(*, metadata: dict, config: dict) -> dict:
 
 
 def apply_exposure_mode(*, metadata: dict, mode: str, config: dict) -> dict:
-    real_wire_mode = mode in {"mux_ingress_overrun", "duplex_promotion_pressure"}
+    # F133: no fabricated observation values (full-mesh connectivity, responsive count, chain-select
+    # consistency used to be written here); the observation measures them.
     overrides = None
-    if not real_wire_mode:
-        node_ids = _node_ids(metadata)
-        overrides = dict(metadata.get("observation_overrides") or {})
-        overrides.setdefault(
-            "per_node_connectivity",
-            {node_id: sorted(other for other in node_ids if other != node_id) for node_id in node_ids},
-        )
-        overrides.setdefault("responsive_node_count", len(node_ids))
-        overrides.setdefault("chain_select_consistent", True)
-
     if mode == "bootstrap_topology_concentration":
         result = _run_bootstrap_topology_concentration(metadata=metadata, config=config)
     elif mode == "local_query_stress":
