@@ -276,8 +276,12 @@ def normalize_substrate(substrate: dict) -> dict:
             )
         measurement_identity: dict[str, str] = {"target_mode": target_mode}
         local_identity_fields = LOCAL_ARTIFACT_IDENTITY_FIELDS
+        # A patched measurement target carries executable_digest as its own identity (checked
+        # below); only operator-registration fields mark an operator-registered local image (F108).
         local_identity_supplied = any(
-            node.get(field) is not None for field in local_identity_fields
+            node.get(field) is not None
+            for field in local_identity_fields
+            if not (target_mode == "patched" and field == "executable_digest")
         )
         if local_identity_supplied:
             missing = [field for field in local_identity_fields if not node.get(field)]
