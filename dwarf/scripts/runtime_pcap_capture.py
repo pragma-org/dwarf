@@ -165,7 +165,9 @@ def run_container_capture(*, runtime_metadata_path: Path, target_nodes: list[str
         endpoints.append((str(entry["container_ip"]), int(address.rsplit(":", 1)[1])))
     output_dir.mkdir(parents=True, exist_ok=True)
     pcap_path = output_dir / "capture.pcap"
-    tool = ["tcpdump", "-i", "any", "-n", "-s", "0", "-U", "-w", "-", "tcp"]
+    # -Z root keeps tcpdump in the helper's root (switching to its own user needs SETUID/SETGID,
+    # which the helper does not have); -p because the "any" device has no promiscuous mode.
+    tool = ["tcpdump", "-Z", "root", "-p", "-i", "any", "-n", "-s", "0", "-U", "-w", "-", "tcp"]
     argv = common.capture_tools_command(tool, network_container=os.environ.get("HOSTNAME") or "",
                                         capabilities=("NET_RAW", "NET_ADMIN"))
     connect_successes = 0

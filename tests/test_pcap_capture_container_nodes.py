@@ -70,7 +70,8 @@ def test_container_capture_uses_the_controller_namespace_and_container_endpoints
                                            settle_seconds=0)
     argv = seen["argv"]
     assert "net=controllerid" in argv and "NET_RAW,NET_ADMIN" in argv and "sudo" not in argv
-    assert argv[-10:] == ["tcpdump", "-i", "any", "-n", "-s", "0", "-U", "-w", "-", "tcp"]
+    # -Z root: no switch to the tcpdump user (needs SETUID/SETGID, dropped); -p: "any" has no promiscuous mode
+    assert argv[-13:] == ["tcpdump", "-Z", "root", "-p", "-i", "any", "-n", "-s", "0", "-U", "-w", "-", "tcp"]
     assert connects == [("10.9.0.2", 3001), ("10.9.0.3", 3001)] * 2
     assert result["packet_count"] == 4 and result["connect_successes"] == 4 and result["mechanism"] == "controller-netns"
     assert result["workload_exit_code"] == 0
