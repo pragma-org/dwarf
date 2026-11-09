@@ -434,10 +434,24 @@ def _observe_connection_state(
         )
         try:
             host_pid = int((inspect_proc.stdout or "").strip())
-        except ValueError as exc:
-            raise RuntimeError("multi-node observation could not resolve docker host pid") from exc
+        except ValueError:
+            host_pid = 0
         if inspect_proc.returncode != 0 or host_pid <= 0:
-            raise RuntimeError("multi-node observation could not resolve docker host pid")
+            # F143: an exited container is a node that is down (often the finding itself), not an
+            # observation failure; record it instead of aborting the whole observation.
+            return {
+                "node_id": node.get("id"),
+                "container_name": container_name,
+                "container_running": False,
+                "connect_scope": "container-not-running",
+                "connect_successes": 0,
+                "connect_failures": connect_attempts,
+                "peer_nodes_connected": [],
+                "responsive": False,
+                "responsiveness_basis": ["container-not-running"],
+                "inspect_returncode": inspect_proc.returncode,
+                "inspect_stderr": (inspect_proc.stderr or "")[-300:],
+            }
         connect_successes = 0
         connect_failures = 0
         for _ in range(connect_attempts):

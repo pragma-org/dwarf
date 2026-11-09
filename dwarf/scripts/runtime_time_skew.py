@@ -12,7 +12,6 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from runtime_resource_abuse_fault import (
-    _default_observation_overrides,
     _ensure_tmux_session_absent,
     _find_node,
     _kill_tmux_session,
@@ -100,9 +99,7 @@ def apply_time_skew(
     _launch_skewed_haskell_node(node, skew_seconds=skew_seconds, libfaketime_path=libfaketime_path)
     health = wait_for_nodes_healthy([node], timeout_seconds=healthy_timeout_seconds)
     node_healthy = bool(health and health[0].get("healthy"))
-    overrides = dict(metadata.get("observation_overrides") or {})
-    overrides.update(_default_observation_overrides(metadata))
-    metadata["observation_overrides"] = overrides
+    # F143: no fabricated observation values (the helper was removed in F128).
     apply_time = _utc_now()
     result_path = output_dir / "result.json"
     report = {
