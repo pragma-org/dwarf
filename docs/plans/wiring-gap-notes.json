@@ -257,9 +257,9 @@
  },
  "followups": [
   {
-   "id": "plutus-tap-samples",
+   "id": "self-compose-taps-missing",
    "priority": "after scenarios work",
-   "note": "The 4 plutus-onchain differentials pass, but their resolved taps recorded zero samples, so the plutus-execution rows in node-measurements-v1.yaml stay missing. Debug the tap/resolver path; do not add taps per scenario (the resolver attaches them)."
+   "note": "Corrected 2026-11-08: the runs carry NO measurements/ folder at all. Taps are not attached on self-compose substrates: 0 taps in 18 passing self-compose-cardano, 5 self-compose-amaru, 4 plutus-onchain runs (profile runs do carry them). Also: 9 catalog taps never ran in a passing run (all 5 cardano-patched, 2 coverage-production-paths, amaru-patched-header-validation, cardano-stock-header-validation); cardano-external-restart-readiness ran 21 times, always unavailable."
   },
   {
    "id": "loopback-probe-audit",
