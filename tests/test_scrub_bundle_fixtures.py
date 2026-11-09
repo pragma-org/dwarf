@@ -50,3 +50,35 @@ def test_scrub_is_idempotent(tmp_path):
     root = _fixture(tmp_path)
     scrub.scrub_tree(root, hosts=["example-box"], subnets=["10.99.7"])
     assert scrub.scrub_tree(root, hosts=["example-box"], subnets=["10.99.7"])["files_changed"] == 0
+
+
+def test_mac_homes_private_addresses_and_signing_keys_are_masked(tmp_path):
+    """Campaign bundles for dwarf/examples (2026-11-09): Mac home paths, RFC 1918 addresses and devnet
+    signing keys are masked; public addresses and version numbers are left alone."""
+    import json
+
+    from scripts import scrub_bundle_fixtures as scrub
+
+    run = tmp_path / "run1"
+    (run / "outputs").mkdir(parents=True)
+    log = run / "outputs" / "log.txt"
+    log.write_text("bundle at /Users/alice/work/x; peers 10.192.7.4:3001 172.20.0.3 192.168.30.16 "
+                   "public 172.233.144.9 version 10.11.20261029 node 11.1.2\n", encoding="utf-8")
+    key = run / "outputs" / "utxo.skey"
+    key.write_text(json.dumps({"type": "PaymentSigningKeyShelley_ed25519", "description": "Payment Signing Key",
+                               "cborHex": "5820" + "ab" * 32}), encoding="utf-8")
+    vkey = run / "outputs" / "utxo.vkey"
+    vkey.write_text(json.dumps({"type": "PaymentVerificationKeyShelley_ed25519", "description": "",
+                                "cborHex": "5820" + "cd" * 32}), encoding="utf-8")
+
+    assert scrub.remaining_host_details(tmp_path, private_ips=True, signing_keys=True)
+    scrub.scrub_tree(tmp_path, private_ips=True, signing_keys=True)
+    text = log.read_text(encoding="utf-8")
+    assert "/Users/alice" not in text and "/home/dwarf/work/x" in text
+    assert "10.192.7.4" not in text and "172.20.0.3" not in text and "192.168.30.16" not in text
+    assert "192.0.2.4:3001" in text
+    assert "172.233.144.9" in text and "10.11.20261029" in text and "11.1.2" in text
+    body = json.loads(key.read_text(encoding="utf-8"))
+    assert body["type"] == "PaymentSigningKeyShelley_ed25519" and "ab" * 32 not in body["cborHex"]
+    assert json.loads(vkey.read_text(encoding="utf-8"))["cborHex"] == "5820" + "cd" * 32
+    assert scrub.remaining_host_details(tmp_path, private_ips=True, signing_keys=True) == []

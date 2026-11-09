@@ -38,16 +38,31 @@ DEFAULT_ROOT = SCRIPT_DIR.parent / "corpora" / "bundle-runs"
 # DWARF_SCRUB_HOSTS / DWARF_SCRUB_SUBNETS (comma separated). Subnets become the documentation-only
 # range 192.0.2.0/24 (RFC 5737).
 _HOME = re.compile(r"/home/(?!dwarf(?:/|\b))[a-z_][a-z0-9_-]*")
+_MAC_HOME = re.compile(r"/Users/(?!Shared(?:/|\b))[A-Za-z0-9._-]+")
+# Any RFC 1918 address (10/8, 172.16/12, 192.168/16); the last octet is kept so peers stay distinct.
+_PRIVATE_IP = re.compile(
+    r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.(\d{1,3})(?!\.?\d)")
+# The key bytes of a cardano-cli signing-key envelope (type ...SigningKey...), in either field order.
+_SIGNING_KEY = re.compile(
+    r'("type"\s*:\s*"[A-Za-z0-9_]*SigningKey[A-Za-z0-9_]*"[^{}]*?"cborHex"\s*:\s*")[0-9a-fA-F]+(")')
+_SIGNING_KEY_REVERSED = re.compile(
+    r'("cborHex"\s*:\s*")[0-9a-fA-F]+("[^{}]*?"type"\s*:\s*"[A-Za-z0-9_]*SigningKey[A-Za-z0-9_]*")')
 NEUTRAL_HOST = "dwarf-host"
 NEUTRAL_SUBNET = "192.0.2."
+REDACTED_KEY = "redacted-by-dwarf"
 
 
-def _replacements(hosts=(), subnets=()) -> list[tuple[re.Pattern, str]]:
+def _replacements(hosts=(), subnets=(), *, private_ips=False, signing_keys=False) -> list[tuple[re.Pattern, str]]:
     hosts = [h for h in [*hosts, *os.environ.get("DWARF_SCRUB_HOSTS", "").split(",")] if h.strip()]
     subnets = [n for n in [*subnets, *os.environ.get("DWARF_SCRUB_SUBNETS", "").split(",")] if n.strip()]
-    rules = [(_HOME, "/home/dwarf")]
+    rules = [(_HOME, "/home/dwarf"), (_MAC_HOME, "/home/dwarf")]
     rules += [(re.compile(re.escape(h.strip())), NEUTRAL_HOST) for h in hosts]
     rules += [(re.compile(re.escape(n.strip().rstrip(".") + ".")), NEUTRAL_SUBNET) for n in subnets]
+    if private_ips:
+        rules.append((_PRIVATE_IP, NEUTRAL_SUBNET + r"\1"))
+    if signing_keys:
+        rules += [(_SIGNING_KEY, r"\g<1>" + REDACTED_KEY + r"\g<2>"),
+                  (_SIGNING_KEY_REVERSED, r"\g<1>" + REDACTED_KEY + r"\g<2>")]
     return rules
 
 
@@ -72,8 +87,8 @@ def _text_files(root: Path) -> list[Path]:
     return files
 
 
-def remaining_host_details(root: Path, *, hosts=(), subnets=()) -> list[str]:
-    rules = _replacements(hosts, subnets)
+def remaining_host_details(root: Path, *, hosts=(), subnets=(), private_ips=False, signing_keys=False) -> list[str]:
+    rules = _replacements(hosts, subnets, private_ips=private_ips, signing_keys=signing_keys)
     hits = []
     for path in sorted(root.rglob("*")):
         if path.is_file() and not path.is_symlink():
@@ -134,9 +149,9 @@ def _resign(run_dir: Path) -> bool:
     return path.read_bytes() != before
 
 
-def scrub_tree(root: Path = DEFAULT_ROOT, *, hosts=(), subnets=()) -> dict:
+def scrub_tree(root: Path = DEFAULT_ROOT, *, hosts=(), subnets=(), private_ips=False, signing_keys=False) -> dict:
     root = Path(root)
-    rules = _replacements(hosts, subnets)
+    rules = _replacements(hosts, subnets, private_ips=private_ips, signing_keys=signing_keys)
     files = _text_files(root)
     original = {path: path.read_bytes() for path in files}
     changed: set[Path] = set()
@@ -173,7 +188,8 @@ def scrub_tree(root: Path = DEFAULT_ROOT, *, hosts=(), subnets=()) -> dict:
             resigned += 1
             changed.add(run_dir / _ATTESTATION)
     return {"files_changed": len(changed), "attestations_resigned": resigned,
-            "remaining": remaining_host_details(root, hosts=hosts, subnets=subnets)}
+            "remaining": remaining_host_details(root, hosts=hosts, subnets=subnets,
+                                                private_ips=private_ips, signing_keys=signing_keys)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -181,13 +197,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--host", action="append", default=[], help="host name to neutralise (repeatable)")
     parser.add_argument("--subnet", action="append", default=[], help="subnet prefix to neutralise, e.g. 10.1.2 (repeatable)")
+    parser.add_argument("--private-ips", action="store_true", help="mask every RFC 1918 address (last octet kept)")
+    parser.add_argument("--signing-keys", action="store_true", help="redact the key bytes of signing-key envelopes")
     parser.add_argument("--check", action="store_true", help="report remaining host details, change nothing")
     args = parser.parse_args(argv)
+    extra = {"private_ips": args.private_ips, "signing_keys": args.signing_keys}
     if args.check:
-        remaining = remaining_host_details(args.root, hosts=args.host, subnets=args.subnet)
+        remaining = remaining_host_details(args.root, hosts=args.host, subnets=args.subnet, **extra)
         print(json.dumps({"remaining": remaining}, indent=2))
         return 1 if remaining else 0
-    report = scrub_tree(args.root, hosts=args.host, subnets=args.subnet)
+    report = scrub_tree(args.root, hosts=args.host, subnets=args.subnet, **extra)
     print(json.dumps(report, indent=2))
     return 1 if report["remaining"] else 0
 
