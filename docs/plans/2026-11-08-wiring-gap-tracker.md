@@ -1,24 +1,23 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 04:38 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 05:27 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
 
 | Outcome | Scenarios |
 |---|---|
-| error | 2 |
-| fail | 32 |
-| pass | 84 |
-| prepare-failed | 3 |
+| error | 1 |
+| fail | 33 |
+| pass | 85 |
+| prepare-failed | 2 |
 
 | Status | Group | Count |
 |---|---|---|
 | rerun-pending | CBOR dataset | 1 |
 | open | block-apply bridge | 3 |
-| open | external topology | 1 |
-| open | host-model helpers on container profiles | 3 |
 | open | profile prepare failures | 2 |
+| review | copied-state behaviour verdicts | 3 |
 | review | known upstream-fixed Amaru bugs | 1 |
 | review | profile-a behaviour verdicts | 1 |
 | review | review list | 3 |
@@ -47,22 +46,6 @@ Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply
   - Cause: same deferred forge/serve bridge
   - Fix: same as above
 
-## open: external topology
-
-Cause: attaches (runtime_attach_topology) to an outside topology "cardano_amaru" (the Antithesis mixed devnet) that does not run on the box; readiness semantic_health_not_ready, health {}
-Fix: give it a self-composed mixed testnet_42 substrate, or declare it Antithesis-only
-
-- `consensus-chainhold-upstream-differential` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
-
-## open: host-model helpers on container profiles
-
-Cause: runtime_profile_recovery_check.py stops/starts the whole devnet through tmux, copies node db directories on the host (env/node-data/<node>/db) and expects node1 to be behind node2 at baseline (a host-devnet accident). Container profiles keep each db in a controller-owned Docker volume
-Fix: needs a controller lifecycle action: stop node, snapshot/copy its volume, start; the controller already snapshots volumes for apply rollback, and the snapshot capture/restore smoke scenarios need the same action — design once for both
-
-- `phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive` (fail, run 20261109T040526Z-fa691ea6): load_events_are_ok: fail
-- `phase3-runtime-profile-a-copied-state-divergence-primitive` (fail, run 20261109T040613Z-db7d59b9): load_events_are_ok: fail
-- `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (error, run none): preflight_failed
-
 ## open: profile prepare failures
 
 Cause: F109 works: profile-g now deploys. But profile-g ("haskell-preview2-proof") runs on the PUBLIC preview network, so readiness stays semantic_health_not_ready (cold nodes cannot sync): same class F96 fixed for scenarios
@@ -70,6 +53,15 @@ Fix: move profile-g to a private devnet (as F96) or keep it as a declared previe
 
 - `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
 - `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (prepare-failed, run none): readiness blocked: {"stage": "blocked", "reason_code": "semantic_health_not_ready", "availability_state": "ready", "semantic_health": false, "topology_identity": false}
+
+## review: copied-state behaviour verdicts
+
+Cause: F121/F121b: container stop/start and stale-snapshot creation now work. On the private devnet (0.1 s slots) the copied stale node catches up within seconds, so the scenarios that expect it to stay behind fail: "expected bounded divergence with node2 behind node3, saw 4956 and 4956" (d95ecf3e); m3 node2 recovery "unexpectedly recovered within the bounded window" (02a175a4)
+Fix: decide what a copied stale state should show on a fast devnet: bounded non-recovery (needs a longer stale gap or slower slots) or prompt recovery as the pass condition
+
+- `phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive` (fail, run 20261109T100922Z-83ba04a6): load_events_are_ok: fail
+- `phase3-runtime-profile-a-copied-state-divergence-primitive` (fail, run 20261109T094646Z-d95ecf3e): load_events_are_ok: fail
+- `phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive` (fail, run 20261109T101708Z-894c22b4): load_events_are_ok: fail
 
 ## review: known upstream-fixed Amaru bugs
 
@@ -80,10 +72,10 @@ Fix: rerun against a post-0925 Amaru to prove the fix; scenario should report "t
 
 ## review: profile-a behaviour verdicts
 
-Cause: helper raised "node2 unexpectedly recovered to slot 4826 within the bounded window": the node recovered faster than the scenario expects
+Cause: same as copied-state behaviour verdicts: node recovers within seconds on the fast devnet
 Fix: decide: is fast recovery a pass, or must the window be tighter
 
-- `m3-runtime-node2-copied-state-recovery` (fail, run 20261109T014538Z-e25ae015): load_events_are_ok: fail
+- `m3-runtime-node2-copied-state-recovery` (fail, run 20261109T094156Z-02a175a4): load_events_are_ok: fail
 
 ## review: review list
 
@@ -150,3 +142,4 @@ Fix: none yet
 - **loopback-probe-audit** (with host-model helpers): runtime_topology_fault.py:169 connect_ex(127.0.0.1, port) may have the same unreachable-loopback problem as F106; check it when porting host-model helpers.
 - **prepare-availability-before-deploy** (with profile prepare failures): run/prepare deploys a profile (~15 min) and only then reports availability requires-build; the availability check should run before the deploy.
 - **txsubmission-window-cardano-node** (after the controller volume action): runtime_txsubmission_probe window_pressure never receives MsgRequestTxIds from a cardano-node target (3 scenarios: eclipse-txsubmission, snapshot-pause-txsubmission, snapshot-mid-run-corrupt), even after the init delay (F119, run 0571a907: waited 47 s, then 2 s timeout). The same mode passes against Amaru, and unexpected_body passes against cardano-node, so the connection works. Next: enable Net.ConnectionManager/InboundGovernor/TxSubmission traces for one run and read the release's ouroboros-network tx-submission inbound logic (unpromoted inbound peer / TxSubmissionLogicV2) before changing the probe.
+- **epoch-and-ledger-producers** (after the easier groups): 13 unwired assertions in 5 scenarios (3 epoch-boundary compound smokes, eclipse-topology ledger peers, local-query chain switch). runtime_epoch_boundary_probe.py measures Amaru (snapshot / pots.dump log lines) but returns observation_overrides unchanged and uses other keys than the assertions read; it has no cardano-node path. Plan: one producer contract writing the assertion keys (epoch_boundary, stake_snapshot, reward_calculation, leadership_schedule) with source + per-node results; cardano-node via its own image cardano-cli LSQ (tip+genesis epochLength, stake-snapshot hashes, ADA conservation from ledger-state, leadership-schedule twice); Amaru via its log lines mapped to the same keys; Amaru leadership = adopted blocks came from elected leaders (header-validation VRF, already tapped); boundaries are observed naturally on testnet_42 (short epochs). Then switch the 5 scenarios to resolved-plan.

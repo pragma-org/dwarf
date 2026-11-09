@@ -39,9 +39,9 @@
   {
    "match": "consensus-chainhold-upstream-differential",
    "group": "external topology",
-   "status": "open",
-   "cause": "attaches (runtime_attach_topology) to an outside topology \"cardano_amaru\" (the Antithesis mixed devnet) that does not run on the box; readiness semantic_health_not_ready, health {}",
-   "fix": "give it a self-composed mixed testnet_42 substrate, or declare it Antithesis-only"
+   "status": "fixed",
+   "cause": "attached to the upstream Antithesis cardano_amaru topology",
+   "fix": "F122: self-composed mixed testnet_42 devnet, PASS (run 49b5ff20); F123: chain_select_differential runs in the Antithesis package, so the package keeps (and improves) its Antithesis use"
   },
   {
    "match": "phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo",
