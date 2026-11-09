@@ -2502,7 +2502,7 @@
       "class": "RuntimePraosHeaderAssertionProbe",
       "family": "load",
       "module": "profile_manager.primitives",
-      "params_schema": "primitives/load/runtime_hardening_probe.schema.json",
+      "params_schema": "primitives/load/runtime_chainsync_blockfetch_fault.schema.json",
       "runtimes": [
         "devnet"
       ],

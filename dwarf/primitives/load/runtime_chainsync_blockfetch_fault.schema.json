@@ -10,6 +10,7 @@
     "configured_limit": { "type": "integer", "minimum": 1 },
     "healthy_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "activity_timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "resync_from_empty_db": { "type": "boolean", "description": "range pressure: restart the target with an empty chain DB so it fetches the chain through the proxy (default true)" },
     "output_dir": { "type": "string", "minLength": 1 },
     "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
     "expect_exit": { "type": "integer", "minimum": 0 }

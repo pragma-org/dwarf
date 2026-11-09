@@ -12,9 +12,13 @@ def test_range_pressure_is_not_ready_on_the_request_alone():
 
 
 def test_range_pressure_is_ready_once_a_block_passed():
+    # F144: one whole batch (StartBatch .. BatchDone) must also be measured.
+    assert not fault.proxy_activity_ready(mode="blockfetch_range_pressure",
+                                          stats={"intercepted_segments": 9, "block_range_requests_observed": 1,
+                                                 "blocks_fetched": 1})
     assert fault.proxy_activity_ready(mode="blockfetch_range_pressure",
                                       stats={"intercepted_segments": 9, "block_range_requests_observed": 1,
-                                             "blocks_fetched": 1})
+                                             "blocks_fetched": 1, "blockfetch_batches": [{"blocks": 1}]})
 
 
 def test_other_modes_keep_the_first_segment_rule():

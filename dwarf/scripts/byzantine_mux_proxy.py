@@ -59,6 +59,68 @@ def _read_cbor_head(data: bytes, offset: int = 0) -> tuple[int, int, int] | None
     return None
 
 
+_CBOR_WIDTHS = {24: 1, 25: 2, 26: 4, 27: 8}
+
+
+def cbor_item_end(data, offset: int = 0) -> int | None:
+    """Offset just past the CBOR item at ``offset``; None while the item is incomplete (F144).
+
+    Lets the proxy split a mini-protocol byte stream into whole messages: a mux segment can carry
+    several messages (coalesced StartBatch/Block/BatchDone) or part of one (a large block)."""
+    if offset >= len(data):
+        return None
+    initial = data[offset]
+    major, info = initial >> 5, initial & 0x1F
+    if info == 31:
+        if major not in (2, 3, 4, 5):
+            raise ValueError("unexpected CBOR break / indefinite head")
+        position = offset + 1
+        while True:
+            if position >= len(data):
+                return None
+            if data[position] == 0xFF:
+                return position + 1
+            position = cbor_item_end(data, position)
+            if position is None:
+                return None
+            if major == 5:
+                position = cbor_item_end(data, position)
+                if position is None:
+                    return None
+    if info < 24:
+        argument, position = info, offset + 1
+    elif info in _CBOR_WIDTHS:
+        width = _CBOR_WIDTHS[info]
+        if offset + 1 + width > len(data):
+            return None
+        argument, position = int.from_bytes(data[offset + 1:offset + 1 + width], "big"), offset + 1 + width
+    else:
+        raise ValueError("reserved CBOR additional information")
+    if major in (0, 1, 7):
+        return position
+    if major in (2, 3):
+        return position + argument if position + argument <= len(data) else None
+    if major in (4, 5):
+        for _ in range(argument * (2 if major == 5 else 1)):
+            position = cbor_item_end(data, position)
+            if position is None:
+                return None
+        return position
+    return cbor_item_end(data, position)  # major 6: one tagged item
+
+
+def split_messages(buffer: bytearray) -> list[bytes]:
+    """Pop every complete CBOR message off the front of ``buffer``; a partial tail stays (F144)."""
+    messages = []
+    while buffer:
+        end = cbor_item_end(buffer, 0)
+        if end is None:
+            break
+        messages.append(bytes(buffer[:end]))
+        del buffer[:end]
+    return messages
+
+
 def classify_segment_message(*, protocol: int, payload: bytes) -> str | None:
     if _normalize_protocol_id(protocol) == CHAINSYNC_PROTOCOL_ID:
         head = _read_cbor_head(payload, 0)
@@ -211,13 +273,20 @@ class ProxyState:
             "mutation_message": mutation_message or None,
             "connections": [],
             "replays": [],
+            # F144: per-message block-fetch measurement and the real injections' evidence.
+            "blockfetch_batches": [],
+            "peak_blocks_per_batch": None,
+            "peak_outstanding_range_requests": None,
+            "fork_switches": [],
+            "header_corruptions": [],
         }
+        self._streams: dict[tuple, bytearray] = {}
+        self._blockfetch: dict = {}
+        self._header_corrupt_seen = 0
+        self._header_corrupt_done = False
         self.events_path = output_dir / "proxy-events.ndjson"
         self.stats_path = output_dir / "proxy-stats.json"
         self._pending_inbound_chainsync_rollbacks = 0
-        self._chainsync_fork_switch_saw_find_intersect = False
-        self._chainsync_fork_switch_saw_intersect_found = False
-        self._chainsync_fork_switch_mutate_next_inbound = False
         self._chainsync_fork_switch_triggered = False
 
     def note_connection(self) -> dict:
@@ -276,6 +345,76 @@ class ProxyState:
                 )
             self._write_stats_locked()
 
+    def _count_message_locked(self, *, direction: str, protocol: int, message_kind: str | None) -> None:
+        if message_kind is None:
+            return
+        normalized_protocol = _normalize_protocol_id(protocol)
+        if normalized_protocol == CHAINSYNC_PROTOCOL_ID:
+            self.stats["chainsync_messages_observed"] += 1
+            if message_kind == "roll_backward":
+                self.stats["chainsync_roll_backward_count"] += 1
+                if direction == "inbound":
+                    self._pending_inbound_chainsync_rollbacks += 1
+            elif message_kind == "roll_forward":
+                self.stats["chainsync_roll_forward_count"] += 1
+                if direction == "inbound" and self._pending_inbound_chainsync_rollbacks > 0:
+                    self.stats["rollback_then_forward_count"] += 1
+                    self._pending_inbound_chainsync_rollbacks -= 1
+        elif normalized_protocol == BLOCKFETCH_PROTOCOL_ID:
+            self.stats["blockfetch_messages_observed"] += 1
+            if message_kind == "request_range":
+                self.stats["block_range_requests_observed"] += 1
+            elif message_kind == "block":
+                self.stats["blocks_fetched"] += 1
+
+    def split_stream(self, *, record: dict | None, direction: str, header: dict, payload: bytes) -> list[bytes] | None:
+        """Whole messages this segment completed on its (connection, direction, protocol word) stream.
+
+        None when the stream does not frame as CBOR (its buffer is dropped); callers then fall back
+        to the first-message classification of the segment (F144)."""
+        key = ((record or {}).get("id"), direction, header.get("raw_protocol", header["protocol"]))
+        with self.lock:
+            buffer = self._streams.setdefault(key, bytearray())
+            buffer.extend(payload)
+            try:
+                return split_messages(buffer)
+            except (ValueError, IndexError):
+                buffer.clear()
+                return None
+
+    def _observe_blockfetch_locked(self, *, record: dict | None, direction: str, message_kind: str | None,
+                                   message: bytes) -> None:
+        """Per-connection batch accounting: blocks served between StartBatch and BatchDone (F144)."""
+        connection_id = (record or {}).get("id")
+        conn = self._blockfetch.setdefault(connection_id, {"open": None, "ranges": [], "outstanding": 0})
+        if direction == "outbound" and message_kind == "request_range":
+            span = decode_range_request(message) or {}
+            conn["ranges"].append(span)
+            conn["outstanding"] += 1
+            self.stats["peak_outstanding_range_requests"] = max(
+                self.stats.get("peak_outstanding_range_requests") or 0, conn["outstanding"])
+            for corruption in self.stats["header_corruptions"]:
+                if corruption.get("connection_id") == connection_id and corruption.get(
+                        "corrupted_header_hash") in {span.get("from_hash"), span.get("to_hash")}:
+                    corruption["block_requested"] = True
+            return
+        if direction != "inbound":
+            return
+        if message_kind == "start_batch":
+            conn["open"] = 0
+        elif message_kind == "block" and conn["open"] is not None:
+            conn["open"] += 1
+        elif message_kind in {"batch_done", "no_blocks"}:
+            span = conn["ranges"].pop(0) if conn["ranges"] else {}
+            conn["outstanding"] = max(0, conn["outstanding"] - 1)
+            if message_kind == "batch_done" and conn["open"] is not None:
+                blocks = conn["open"]
+                self.stats["blockfetch_batches"] = (self.stats["blockfetch_batches"] + [{
+                    "connection_id": connection_id, "blocks": blocks,
+                    "from_slot": span.get("from_slot"), "to_slot": span.get("to_slot")}])[-256:]
+                self.stats["peak_blocks_per_batch"] = max(self.stats.get("peak_blocks_per_batch") or 0, blocks)
+            conn["open"] = None
+
     def note_segment_message(
         self,
         *,
@@ -285,6 +424,8 @@ class ProxyState:
         mutated: bool,
         message_kind: str | None,
         original_message_kind: str | None = None,
+        messages: list[tuple[str | None, bytes]] | None = None,
+        record: dict | None = None,
     ) -> None:
         with self.lock:
             self.stats["intercepted_segments"] += 1
@@ -292,25 +433,15 @@ class ProxyState:
             self.stats[key] += 1
             if mutated:
                 self.stats["mutated_segments"] += 1
-            if message_kind is not None:
-                normalized_protocol = _normalize_protocol_id(protocol)
-                if normalized_protocol == CHAINSYNC_PROTOCOL_ID:
-                    self.stats["chainsync_messages_observed"] += 1
-                    if message_kind == "roll_backward":
-                        self.stats["chainsync_roll_backward_count"] += 1
-                        if direction == "inbound":
-                            self._pending_inbound_chainsync_rollbacks += 1
-                    elif message_kind == "roll_forward":
-                        self.stats["chainsync_roll_forward_count"] += 1
-                        if direction == "inbound" and self._pending_inbound_chainsync_rollbacks > 0:
-                            self.stats["rollback_then_forward_count"] += 1
-                            self._pending_inbound_chainsync_rollbacks -= 1
-                elif normalized_protocol == BLOCKFETCH_PROTOCOL_ID:
-                    self.stats["blockfetch_messages_observed"] += 1
-                    if message_kind == "request_range":
-                        self.stats["block_range_requests_observed"] += 1
-                    elif message_kind == "block":
-                        self.stats["blocks_fetched"] += 1
+            if messages is None:
+                self._count_message_locked(direction=direction, protocol=protocol, message_kind=message_kind)
+            else:
+                # F144: every whole message the segment completed, not only its first one.
+                for kind, body in messages:
+                    self._count_message_locked(direction=direction, protocol=protocol, message_kind=kind)
+                    if _normalize_protocol_id(protocol) == BLOCKFETCH_PROTOCOL_ID:
+                        self._observe_blockfetch_locked(record=record, direction=direction, message_kind=kind,
+                                                        message=body)
             self.events_path.parent.mkdir(parents=True, exist_ok=True)
             event = {
                 "ts": time.time(),
@@ -324,35 +455,13 @@ class ProxyState:
             }
             if message_kind is not None:
                 event["message_kind"] = message_kind
+            if messages is not None and len(messages) != 1:
+                event["message_kinds"] = [kind for kind, _body in messages]
             if original_message_kind is not None:
                 event["original_message_kind"] = original_message_kind
             with self.events_path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(event, sort_keys=True) + "\n")
             self._write_stats_locked()
-
-    def _observe_chainsync_fork_switch(self, *, direction: str, protocol: int, message_kind: str | None) -> None:
-        if self.mutation_mode != "chainsync_fork_switch_once":
-            return
-        if _normalize_protocol_id(protocol) != CHAINSYNC_PROTOCOL_ID:
-            return
-        if self._chainsync_fork_switch_triggered:
-            return
-        if direction == "outbound" and message_kind == "find_intersect":
-            self._chainsync_fork_switch_saw_find_intersect = True
-            return
-        if (
-            direction == "inbound"
-            and message_kind == "intersect_found"
-            and self._chainsync_fork_switch_saw_find_intersect
-        ):
-            self._chainsync_fork_switch_saw_intersect_found = True
-            return
-        if (
-            direction == "outbound"
-            and message_kind == "request_next"
-            and self._chainsync_fork_switch_saw_intersect_found
-        ):
-            self._chainsync_fork_switch_mutate_next_inbound = True
 
     def should_mutate(self, *, direction: str, protocol: int, message_kind: str | None = None) -> bool:
         if self.mutation_mode == "pass_through":
@@ -368,17 +477,8 @@ class ProxyState:
                 return False
             self._flip_done = True
             return True
-        if self.mutation_mode == "chainsync_fork_switch_once":
-            if _normalize_protocol_id(protocol) != CHAINSYNC_PROTOCOL_ID:
-                return False
-            if direction != "inbound":
-                return False
-            if self._chainsync_fork_switch_triggered:
-                return False
-            if self._chainsync_fork_switch_mutate_next_inbound:
-                self._chainsync_fork_switch_mutate_next_inbound = False
-                self._chainsync_fork_switch_triggered = True
-                return True
+        if self.mutation_mode in {"chainsync_fork_switch_once", "corrupt_header_signature"}:
+            # F144: these inject through ForkSwitchSession / _corrupt_header_signature, never a byte flip.
             return False
         return (self.stats["intercepted_segments"] + 1) >= self.mutate_after_segments
 
@@ -444,15 +544,73 @@ def _replay_earlier(state: ProxyState, *, segment: bytes, header: dict, message_
     return _rebuild_segment(segment, replayed), info
 
 
+def decode_range_request(payload: bytes) -> dict | None:
+    """Slots and hashes of a BlockFetch MsgRequestRange [0, point, point] (F144)."""
+    cbor2 = _cbor()
+    if cbor2 is None:
+        return None
+    try:
+        msg = cbor2.loads(payload)
+        lower, upper = msg[1], msg[2]
+        return {"from_slot": int(lower[0]), "from_hash": bytes(lower[1]).hex(),
+                "to_slot": int(upper[0]), "to_hash": bytes(upper[1]).hex()}
+    except Exception:  # noqa: BLE001 - a non-decodable request is reported as None
+        return None
+
+
+def _corrupt_header_signature(state: ProxyState, *, segment: bytes, record: dict | None) -> tuple[bytes, bool]:
+    """Flip the last byte of the embedded header of a genuine RollForward, once (F144).
+
+    A Shelley-era header is [header_body, kes_signature]; its last byte belongs to the KES
+    signature, so the header body (slot, VRF, opcert) stays genuine and the CBOR shape and length
+    are unchanged. Praos header validation must reject it; the hashes are recorded so the target's
+    log and any block request for the corrupted header can be matched."""
+    payload = segment[HEADER_LENGTH:]
+    try:
+        end = cbor_item_end(payload, 0)
+    except (ValueError, IndexError):
+        return segment, False
+    first = payload[:end] if end else payload
+    if classify_segment_message(protocol=CHAINSYNC_PROTOCOL_ID, payload=first) != "roll_forward":
+        return segment, False
+    with state.lock:
+        if state._header_corrupt_done:
+            return segment, False
+        state._header_corrupt_seen += 1
+        if state._header_corrupt_seen < max(1, state.mutate_after_segments):
+            return segment, False
+    cbor2 = _cbor()
+    info = decode_roll_forward(first)
+    if cbor2 is None or info is None:
+        return segment, False
+    msg = cbor2.loads(first)
+    wrapped = msg[1]
+    header_bytes = bytes(_unwrap_tag24(wrapped[1] if isinstance(wrapped, list) else wrapped))
+    start = payload.find(header_bytes)
+    if start < 0:
+        return segment, False
+    corrupted = bytearray(header_bytes)
+    corrupted[-1] ^= 0x01
+    new_payload = payload[:start] + bytes(corrupted) + payload[start + len(header_bytes):]
+    with state.lock:
+        state._header_corrupt_done = True
+        state.stats["header_corruptions"].append({
+            "connection_id": (record or {}).get("id"),
+            "at": time.time(),
+            "slot": info["slot"],
+            "block_no": info["block_no"],
+            "original_header_hash": info["header_hash"],
+            "corrupted_header_hash": hashlib.blake2b(bytes(corrupted), digest_size=32).hexdigest(),
+            "corrupted_field": "kes_signature_last_byte",
+            "block_requested": False,
+        })
+    return segment[:HEADER_LENGTH - 2] + len(new_payload).to_bytes(2, "big") + new_payload, True
+
+
 def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str, record: dict | None = None) -> tuple[bytes, bool]:
     header = parse_mux_segment_header(segment[:HEADER_LENGTH])
     original_payload = segment[HEADER_LENGTH:]
     original_message_kind = classify_segment_message(protocol=header["protocol"], payload=original_payload)
-    state._observe_chainsync_fork_switch(
-        direction=direction,
-        protocol=header["protocol"],
-        message_kind=original_message_kind,
-    )
     # F142: what the upstream answered to a corrupted range request on this connection.
     if (record is not None and record.get("range_request_corrupted") and direction == "inbound"
             and _normalize_protocol_id(header["protocol"]) == BLOCKFETCH_PROTOCOL_ID):
@@ -469,6 +627,9 @@ def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str, record
                 and (state.mutation_message is None or original_message_kind == state.mutation_message)):
             segment, info = _replay_earlier(state, segment=segment, header=header, message_kind=original_message_kind)
             mutated = info is not None
+    elif state.mutation_mode == "corrupt_header_signature":
+        if direction == "inbound" and header["protocol"] == CHAINSYNC_PROTOCOL_ID and not header["initiator"]:
+            segment, mutated = _corrupt_header_signature(state, segment=segment, record=record)
     elif (
         state.should_mutate(
             direction=direction,
@@ -487,6 +648,11 @@ def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str, record
     if mutated:
         state.note_mutation(record)
     message_kind = classify_segment_message(protocol=header["protocol"], payload=segment[HEADER_LENGTH:])
+    messages = None
+    if header["protocol"] in (CHAINSYNC_PROTOCOL_ID, BLOCKFETCH_PROTOCOL_ID):
+        split = state.split_stream(record=record, direction=direction, header=header, payload=segment[HEADER_LENGTH:])
+        if split is not None:
+            messages = [(classify_segment_message(protocol=header["protocol"], payload=m), m) for m in split]
     state.note_segment_message(
         direction=direction,
         protocol=header["protocol"],
@@ -494,12 +660,210 @@ def _mutate_segment(segment: bytes, *, state: ProxyState, direction: str, record
         mutated=mutated,
         message_kind=message_kind,
         original_message_kind=original_message_kind,
+        messages=messages,
+        record=record,
     )
     return segment, mutated
 
 
-def _relay_segments(source: socket.socket, target: socket.socket, *, state: ProxyState, direction: str,
-                    record: dict | None = None) -> None:
+MAX_SEGMENT_PAYLOAD = 12288
+
+
+def _frames(header_prefix: bytes, payload: bytes) -> bytes:
+    """Mux segments carrying ``payload`` under a 6-byte timestamp+protocol-word prefix."""
+    out = bytearray()
+    for start in range(0, max(1, len(payload)), MAX_SEGMENT_PAYLOAD):
+        chunk = payload[start:start + MAX_SEGMENT_PAYLOAD]
+        out += header_prefix[:6] + len(chunk).to_bytes(2, "big") + chunk
+    return bytes(out)
+
+
+class ForkSwitchSession:
+    """A real ChainSync fork switch on one proxied connection (F144).
+
+    After the follower (the downstream node's ChainSync client) has taken ``depth`` consecutive
+    genuine headers from the upstream, the proxy answers the next RollForward with a RollBackward
+    to the point ``depth`` headers back, serves the genuine headers it already relayed again and
+    then the displaced one. The follower's extra requests are answered from that queue (not
+    forwarded), so the upstream session stays consistent. What the follower does next -- keeps
+    requesting, or drops the connection -- is the measurement.
+    """
+
+    TERMINAL = {"roll_forward", "roll_backward", "intersect_found", "intersect_not_found"}
+
+    def __init__(self, state: ProxyState, record: dict, *, send_downstream, send_upstream) -> None:
+        self.state = state
+        self.record = record
+        self.send_downstream = send_downstream
+        self.send_upstream = send_upstream
+        self.lock = threading.Lock()
+        self.depth = max(1, int(state.mutate_after_segments))
+        self.client_buffer = bytearray()
+        self.server_buffer = bytearray()
+        self.client_prefix = b"\x00" * 4 + CHAINSYNC_PROTOCOL_ID.to_bytes(2, "big")
+        self.server_prefix = b"\x00" * 4 + (CHAINSYNC_PROTOCOL_ID | RESPONDER_PROTOCOL_BIT).to_bytes(2, "big")
+        self.credit = 0                # follower requests not yet answered
+        self.swallow = 0               # follower requests answered from the queue instead of the upstream
+        self.queue: list[tuple[bytes, str]] = []
+        self.anchor = None             # decoded point of the last intersection / rollback
+        self.chain: list[dict] = []    # consecutive headers relayed since the anchor
+        self.evidence: dict | None = None
+
+    @staticmethod
+    def handles(direction: str, header: dict) -> bool:
+        if header["protocol"] != CHAINSYNC_PROTOCOL_ID:
+            return False
+        # The follower is the downstream initiator; its server is the upstream responder.
+        return bool(header["initiator"]) if direction == "outbound" else not header["initiator"]
+
+    def on_segment(self, direction: str, segment: bytes) -> None:
+        payload = segment[HEADER_LENGTH:]
+        with self.lock:
+            if direction == "outbound":
+                self.client_prefix = segment[:6]
+                self.client_buffer.extend(payload)
+                for message in split_messages(self.client_buffer):
+                    self._on_client_message(message)
+            else:
+                self.server_prefix = segment[:6]
+                self.server_buffer.extend(payload)
+                for message in split_messages(self.server_buffer):
+                    self._on_server_message(message)
+            self._drain()
+
+    def _note(self, direction: str, message: bytes, *, mutated: bool = False) -> None:
+        kind = classify_segment_message(protocol=CHAINSYNC_PROTOCOL_ID, payload=message)
+        self.state.note_segment_message(direction=direction, protocol=CHAINSYNC_PROTOCOL_ID,
+                                        payload_length=len(message), mutated=mutated, message_kind=kind,
+                                        messages=[(kind, message)], record=self.record)
+
+    def _on_client_message(self, message: bytes) -> None:
+        kind = classify_segment_message(protocol=CHAINSYNC_PROTOCOL_ID, payload=message)
+        if kind in {"request_next", "find_intersect"}:
+            self.credit += 1
+        if self.evidence is not None and kind == "request_next":
+            if self.evidence["rollback_delivered_at"] is not None:
+                self.evidence["requests_after_rollback"] += 1
+            if self.evidence["displaced_delivered_at"] is not None:
+                self.evidence["requests_after_displaced"] += 1
+        if kind == "request_next" and self.swallow > 0:
+            self.swallow -= 1
+            self.evidence["swallowed_requests"] += 1
+            self._note("outbound", message)
+            return
+        self.send_upstream(_frames(self.client_prefix, message))
+        self._note("outbound", message)
+
+    def _on_server_message(self, message: bytes) -> None:
+        kind = classify_segment_message(protocol=CHAINSYNC_PROTOCOL_ID, payload=message)
+        cbor2 = _cbor()
+        if kind in {"intersect_found", "roll_backward"} and cbor2 is not None:
+            try:
+                point = list(cbor2.loads(message)[1])
+            except Exception:  # noqa: BLE001
+                point = None
+            kept = [i for i, h in enumerate(self.chain) if point == [h["slot"], h["hash_bytes"]]]
+            if kept:
+                self.chain = self.chain[: kept[-1] + 1]
+            else:
+                self.anchor, self.chain = point, []
+        elif kind == "roll_forward":
+            info = decode_roll_forward(message)
+            if self.chain:
+                parent = self.chain[-1]["hash"]
+            elif isinstance(self.anchor, list) and len(self.anchor) == 2:
+                parent = bytes(self.anchor[1]).hex()
+            else:
+                parent = None
+            if info is not None and parent is not None and info["prev_hash"] == parent:
+                if self._should_inject():
+                    self._inject(message, info, cbor2.loads(message)[2])
+                    self.chain.append(self._entry(info, message))
+                    return
+                self.chain = (self.chain + [self._entry(info, message)])[-64:]
+            else:
+                # Not consecutive with what was followed (or from origin): start a new run here.
+                self.anchor, self.chain = None, ([self._entry(info, message)] if info else [])
+        self.queue.append((message, "upstream"))
+
+    @staticmethod
+    def _entry(info: dict, message: bytes) -> dict:
+        return {"slot": info["slot"], "block_no": info["block_no"], "hash": info["header_hash"],
+                "hash_bytes": bytes.fromhex(info["header_hash"]), "message": message}
+
+    def _should_inject(self) -> bool:
+        if self.state._chainsync_fork_switch_triggered or len(self.chain) < self.depth:
+            return False
+        return len(self.chain) > self.depth or self.anchor is not None
+
+    def _inject(self, displaced: bytes, info: dict, tip) -> None:
+        cbor2 = _cbor()
+        replayed = self.chain[-self.depth:]
+        if len(self.chain) > self.depth:
+            base = self.chain[-self.depth - 1]
+            point = [base["slot"], base["hash_bytes"]]
+        else:
+            point = list(self.anchor)
+        self.state._chainsync_fork_switch_triggered = True
+        self.queue.append((cbor2.dumps([3, point, tip]), "rollback"))
+        self.queue.extend((entry["message"], "replay") for entry in replayed)
+        self.queue.append((displaced, "displaced"))
+        self.swallow += self.depth + 1
+        self.evidence = {
+            "connection_id": self.record.get("id"),
+            "injected_at": time.time(),
+            "rollback_depth": self.depth,
+            "rollback_point": {"slot": int(point[0]), "hash": bytes(point[1]).hex()},
+            "replayed": [{"slot": e["slot"], "block_no": e["block_no"], "hash": e["hash"]} for e in replayed],
+            "displaced": {"slot": info["slot"], "block_no": info["block_no"], "hash": info["header_hash"]},
+            "rollback_delivered_at": None,
+            "replays_delivered": 0,
+            "displaced_delivered_at": None,
+            "requests_after_rollback": 0,
+            "requests_after_displaced": 0,
+            "forwards_after_rollback": 0,
+            "swallowed_requests": 0,
+        }
+        with self.state.lock:
+            self.state.stats["fork_switches"].append(self.evidence)
+        self.state.note_mutation(self.record)
+
+    def _drain(self) -> None:
+        while self.queue and self.credit > 0:
+            message, origin = self.queue.pop(0)
+            kind = classify_segment_message(protocol=CHAINSYNC_PROTOCOL_ID, payload=message)
+            if kind in self.TERMINAL:
+                self.credit -= 1
+            self.send_downstream(_frames(self.server_prefix, message))
+            ev = self.evidence
+            if ev is not None:
+                now = time.time()
+                if origin == "rollback":
+                    ev["rollback_delivered_at"] = now
+                elif kind == "roll_forward" and ev["rollback_delivered_at"] is not None:
+                    ev["forwards_after_rollback"] += 1
+                    if origin == "replay":
+                        ev["replays_delivered"] += 1
+                    elif origin == "displaced":
+                        ev["displaced_delivered_at"] = now
+            self._note("inbound", message, mutated=origin == "rollback")
+
+
+class _LockedSender:
+    """sendall on one socket from both relay threads (the fork switch answers from either side)."""
+
+    def __init__(self, sock: socket.socket) -> None:
+        self.sock = sock
+        self.lock = threading.Lock()
+
+    def __call__(self, data: bytes) -> None:
+        with self.lock:
+            self.sock.sendall(data)
+
+
+def _relay_segments(source: socket.socket, target, *, state: ProxyState, direction: str,
+                    record: dict | None = None, session: ForkSwitchSession | None = None) -> None:
+    send = target if callable(target) else target.sendall
     buffer = bytearray()
     while not state.stop_event.is_set():
         try:
@@ -517,10 +881,13 @@ def _relay_segments(source: socket.socket, target: socket.socket, *, state: Prox
                 break
             segment = bytes(buffer[:total_length])
             del buffer[:total_length]
+            if session is not None and session.handles(direction, header):
+                session.on_segment(direction, segment)
+                continue
             segment, mutated = _mutate_segment(segment, state=state, direction=direction, record=record)
-            target.sendall(segment)
+            send(segment)
     if buffer:
-        target.sendall(bytes(buffer))
+        send(bytes(buffer))
 
 
 class MuxProxyHandler(socketserver.BaseRequestHandler):
@@ -538,10 +905,16 @@ class MuxProxyHandler(socketserver.BaseRequestHandler):
             upstream.settimeout(1.0)
             self.request.settimeout(1.0)
             stop = threading.Event()
+            senders = {"outbound": _LockedSender(upstream), "inbound": _LockedSender(self.request)}
+            session = None
+            if state.mutation_mode == "chainsync_fork_switch_once":
+                session = ForkSwitchSession(state, record, send_downstream=senders["inbound"],
+                                            send_upstream=senders["outbound"])
 
             def pump(source: socket.socket, target: socket.socket, direction: str) -> None:
                 try:
-                    _relay_segments(source, target, state=state, direction=direction, record=record)
+                    _relay_segments(source, senders[direction], state=state, direction=direction, record=record,
+                                    session=session)
                 except (ConnectionError, OSError):
                     pass
                 finally:

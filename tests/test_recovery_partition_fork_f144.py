@@ -1,0 +1,148 @@
+"""F144: force_rollback / chain_switch_inject drive a real fork by partitioning a node, then measure.
+
+Live 397146f4: both were "not_applicable substrate-walled" no-ops written for an old Amaru
+substrate, so k_bound_rollback_recovered saw rollback_status "" and chain_switch_consistent an
+empty target tip. On a cardano-node devnet the fork is real: the partitioned node builds its own
+branch, the majority a longer one, and after the heal the partitioned node rolls back.
+"""
+from __future__ import annotations
+
+from scripts import runtime_recovery_fault as rf
+
+NODES = [{"id": f"node{i}", "impl": "cardano-node", "container_name": f"c-node{i}"} for i in (1, 2, 3)]
+
+
+class FakeSubstrate:
+    """Three nodes on one chain; a partitioned node forges its own branch; heal -> the longer wins."""
+
+    def __init__(self, *, isolated_forges=True, majority_forges=True, switch_logged=True, utxo_equal=True,
+                 wire=True):
+        self.t = 0.0
+        self.chain = [("g", 0)]                  # majority chain: (hash, slot)
+        self.fork = None                         # isolated node's own blocks
+        self.isolated = None
+        self.healed_at = None
+        self.isolated_forges = isolated_forges
+        self.majority_forges = majority_forges
+        self.switch_logged = switch_logged
+        self.utxo_equal = utxo_equal
+        self.wire = wire
+        self.events = []
+
+    # ops interface ---------------------------------------------------------
+    def now(self):
+        return self.t
+
+    def sleep(self, seconds):
+        self.t += seconds
+        if self.majority_forges and int(self.t) % 2 == 0:
+            self.chain.append((f"m{len(self.chain)}", int(self.t * 10)))
+        if self.isolated and self.fork is not None and self.isolated_forges and int(self.t) % 5 == 0:
+            self.fork.append((f"f{len(self.fork)}", int(self.t * 10)))
+        if self.healed_at is not None and self.fork is not None and self.t - self.healed_at >= 2:
+            self.fork = None                     # the isolated node adopted the longer chain
+
+    def _blocks(self, node):
+        if node["id"] == self.isolated and self.fork is not None:
+            return self.base + self.fork
+        return self.chain
+
+    def on_chain(self, node, tip):
+        if not self.wire:
+            return None
+        return any(h == tip["hash"] for h, _slot in self._blocks(node))
+
+    def tip(self, node):
+        blocks = self._blocks(node)
+        h, slot = blocks[-1]
+        return {"ok": True, "hash": h, "slot": slot, "block": len(blocks) - 1}
+
+    def disconnect(self, node):
+        self.isolated = node["id"]
+        self.base = list(self.chain)
+        self.fork = []
+        self.events.append(("disconnect", node["id"]))
+        return {"ok": True, "network": "net", "aliases": [node["id"]], "ip": "10.0.0.3"}
+
+    def connect(self, node, partition):
+        self.healed_at = self.t
+        self.events.append(("connect", node["id"], tuple(partition["aliases"])))
+        return {"ok": True}
+
+    def log_lines_since(self, node, since):
+        if node["id"] == self.isolated and self.switch_logged:
+            return ['{"ns":"ChainDB.AddBlockEvent.SwitchedToAFork","data":{"newtip":"x@1"}}']
+        return ['{"ns":"ChainDB.AddBlockEvent.AddedToCurrentChain","data":{"newtip":"y@2"}}']
+
+    def ledger_digest(self, node):
+        return {"ok": True, "digest": "same" if (self.utxo_equal or node["id"] != self.isolated) else "other",
+                "utxo_count": 7}
+
+
+def _run(fake, mode="force_rollback", k=10, **config):
+    cfg = {"target_node": "node2", "partition_max_seconds": 60, "converge_timeout_seconds": 30,
+           "requested_rollback_slots": 5, "security_parameter_k": 10, **config}
+    return rf.partition_fork_and_heal(nodes=NODES, target_id=cfg["target_node"], config=cfg, ops=fake,
+                                      security_parameter_k=k, mode=mode)
+
+
+def test_a_partitioned_node_rolls_back_its_own_branch_within_k():
+    fake = FakeSubstrate()
+    out = _run(fake)
+    assert out["fork_formed"] is True
+    assert out["observed_rollback_depth_blocks"] >= 1
+    assert out["observed_rollback_depth_blocks"] <= 10
+    assert out["rollback_status"] == "recovered"
+    assert out["switch_logged_by_target"] is True
+    assert out["ledger_state_consistent_post_rollback"] is True
+    assert out["converged"] is True
+    assert ("connect", "node2", ("node2",)) in fake.events      # aliases restored on heal
+
+
+def test_no_own_block_while_partitioned_is_no_rollback():
+    out = _run(FakeSubstrate(isolated_forges=False), partition_max_seconds=20)
+    assert out["fork_formed"] is False
+    assert out["rollback_status"] == "no_fork_formed"
+    assert out["observed_rollback_depth_blocks"] in (0, None)
+
+
+def test_the_rollback_is_proved_on_the_wire_or_by_the_node_log():
+    out = _run(FakeSubstrate(switch_logged=False))
+    assert out["abandoned_fork_tip_on_target_chain"] is False and out["rollback_status"] == "recovered"
+    out = _run(FakeSubstrate(wire=False))
+    assert out["abandoned_fork_tip_on_target_chain"] is None and out["rollback_status"] == "recovered"
+    out = _run(FakeSubstrate(switch_logged=False, wire=False))
+    assert out["rollback_status"] == "unconfirmed"
+
+
+def test_ledger_mismatch_after_rollback_is_reported():
+    out = _run(FakeSubstrate(utxo_equal=False))
+    assert out["ledger_state_consistent_post_rollback"] is False
+
+
+def test_chain_switch_records_the_majority_tip_as_target_and_who_reached_it():
+    fake = FakeSubstrate()
+    out = _run(fake, mode="chain_switch_inject", target_node="node3")
+    assert out["target_tip_hash"] and out["target_tip_slot"] is not None
+    assert sorted(out["nodes_on_target_chain"]) == ["node1", "node2", "node3"]
+    assert out["chain_switch_status"] == "switched"
+
+
+def test_genesis_k_is_read_from_the_node_config(tmp_path):
+    (tmp_path / "shelley-genesis.json").write_text('{"securityParam": 7, "activeSlotsCoeff": 0.1}')
+    (tmp_path / "configuration.yaml").write_text('ShelleyGenesisFile: shelley-genesis.json\n')
+    assert rf.genesis_security_parameter({"config_path": str(tmp_path / "configuration.yaml")}) == 7
+    (tmp_path / "configuration.yaml").write_text('{"ShelleyGenesisFile": "shelley-genesis.json"}')
+    assert rf.genesis_security_parameter({"config_path": str(tmp_path / "configuration.yaml")}) == 7
+    assert rf.genesis_security_parameter({}) is None
+
+
+def test_switch_lines_are_found_in_node_logs():
+    lines = ['x', '{"ns":"ChainDB.AddBlockEvent.SwitchedToAFork","data":{}}']
+    assert rf.count_fork_switches(lines) == 1
+
+
+def test_modes_are_no_longer_not_applicable():
+    import inspect
+    source = inspect.getsource(rf.apply_recovery_mode)
+    assert "substrate-walled" not in source

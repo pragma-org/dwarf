@@ -52,9 +52,18 @@ MODE_DEFAULTS: dict[str, dict[str, object]] = {
         "mutate_after_segments": 3,
     },
     "chainsync_responder_fork_switch": {
+        # F144: after 2 followed headers, roll the follower back 2 headers and replay them for real.
         "mutation_mode": "chainsync_fork_switch_once",
         "mutation_direction": "inbound",
         "mutation_protocol": "2",
+        "mutate_after_segments": 2,
+    },
+    "praos_header_invalid_signature": {
+        # F144: flip the last byte (KES signature) of the 2nd genuine header served to the target.
+        "mutation_mode": "corrupt_header_signature",
+        "mutation_direction": "inbound",
+        "mutation_protocol": "2",
+        "mutation_message": "roll_forward",
         "mutate_after_segments": 2,
     },
     "blockfetch_invalid_range": {
@@ -245,6 +254,72 @@ def restart_target_node(*, metadata: dict, target_node: dict, runtime_root: Path
     )
 
 
+def move_db_aside(db_dir: Path, *, label: str) -> Path:
+    """Move a stopped node's chain DB aside (kept for evidence) so it re-syncs from genesis (F144)."""
+    db_dir = Path(db_dir)
+    moved = db_dir.with_name(f"{db_dir.name}.before-{label}-{int(time.time())}")
+    db_dir.rename(moved)
+    db_dir.mkdir(parents=True, exist_ok=True)
+    return moved
+
+
+def query_target_tip(target_node: dict, *, network_magic) -> dict | None:
+    """The target's own tip via cardano-cli in its container (the observation helper); None if unknown."""
+    from runtime_multi_node_observation import _query_tip_once  # noqa: PLC0415 - controller-only import
+
+    container = str(target_node.get("container_name") or "")
+    socket_path = str(target_node.get("container_socket_path") or "")
+    if not container or not socket_path or network_magic is None:
+        return None
+    try:
+        return _query_tip_once(cardano_cli="cardano-cli", socket_path=Path(str(target_node.get("socket_path") or "")),
+                               network_magic=int(network_magic), container_name=container,
+                               container_socket_path=socket_path)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def resync_target_from_empty_db(*, metadata: dict, target_node: dict, runtime_root: Path) -> dict:
+    """Restart the target with an empty chain DB so it must fetch the whole chain through the proxy.
+
+    That is the real BlockFetch range pressure: long ranges served to a syncing node (F144). Docker
+    substrates only; on failure the plain restart happens and the reason is recorded."""
+    tip_before = query_target_tip(target_node, network_magic=metadata.get("network_magic"))
+    container = str(target_node.get("container_name") or "").strip()
+    db_dir = str(target_node.get("db_dir") or "").strip()
+    report = {"requested": True, "tip_before": tip_before, "db_dir": db_dir or None, "moved_to": None,
+              "error": None}
+    if str(metadata.get("compose_mode", "host")) != "docker" or not container or not db_dir:
+        report["error"] = "resync needs a docker substrate node with container_name and db_dir"
+        restart_target_node(metadata=metadata, target_node=target_node, runtime_root=runtime_root)
+        return report
+    stop = run_command(["docker", "stop", container])
+    if stop.returncode != 0:
+        report["error"] = f"docker stop failed: {(stop.stderr or stop.stdout or '').strip()[-300:]}"
+        restart_target_node(metadata=metadata, target_node=target_node, runtime_root=runtime_root)
+        return report
+    try:
+        report["moved_to"] = str(move_db_aside(Path(db_dir), label="range-pressure"))
+    except OSError as exc:
+        report["error"] = f"could not move the chain DB aside: {type(exc).__name__}: {exc}"
+    start = run_command(["docker", "start", container])
+    if start.returncode != 0:
+        raise RuntimeError(f"docker start failed for {container}: {start.stderr or start.stdout}")
+    return report
+
+
+def collect_container_log_lines(target_node: dict, *, since_epoch: float) -> list[str] | None:
+    """The target container's log lines since ``since_epoch`` (None when it cannot be read)."""
+    container = str(target_node.get("container_name") or "").strip()
+    if not container:
+        return None
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(max(0.0, since_epoch - 5)))
+    proc = run_command(["docker", "logs", "--since", since, container])
+    if proc.returncode != 0:
+        return None
+    return (str(proc.stdout or "") + "\n" + str(proc.stderr or "")).splitlines()
+
+
 def _load_proxy_stats(path: Path) -> dict:
     if not path.is_file():
         return {}
@@ -298,9 +373,36 @@ def peer_drop_evidence(stats: dict) -> dict:
     }
 
 
+# F144: modes whose measurement needs time after the first evidence (seconds the proxy must be quiet
+# / the follower must keep going) and a floor on how long the step waits for the injection.
+MODE_SETTLE_SECONDS = {"blockfetch_range_pressure": 6.0}
+FORK_SWITCH_FOLLOW_SECONDS = 3.0
+MODE_MIN_ACTIVITY_SECONDS = {
+    "chainsync_responder_fork_switch": 120.0,
+    "blockfetch_range_pressure": 120.0,
+    "praos_header_invalid_signature": 120.0,
+}
+
+
+def _connection(stats: dict, connection_id) -> dict:
+    return next((c for c in (stats.get("connections") or []) if c.get("id") == connection_id), {})
+
+
 def proxy_activity_ready(*, mode: str, stats: dict) -> bool:
     if mode == "chainsync_responder_fork_switch":
-        return int(stats.get("chainsync_messages_observed", 0) or 0) >= 3
+        # F144: the injected rollback was followed (the follower asked past the displaced header and
+        # kept going for a moment) or its connection closed.
+        switch = next(iter(stats.get("fork_switches") or []), None)
+        if switch is None:
+            return False
+        if _connection(stats, switch.get("connection_id")).get("closed_by"):
+            return True
+        delivered = switch.get("displaced_delivered_at")
+        return bool(delivered and int(switch.get("requests_after_displaced", 0) or 0) >= 1
+                    and time.time() - float(delivered) >= FORK_SWITCH_FOLLOW_SECONDS)
+    if mode == "praos_header_invalid_signature":
+        corruption = next(iter(stats.get("header_corruptions") or []), None)
+        return bool(corruption and _connection(stats, corruption.get("connection_id")).get("closed_by"))
     if mode in REPLAY_MODES:
         # F142: ready once the replay happened and its connection was closed.
         return bool(stats.get("replays")) and any(
@@ -314,7 +416,8 @@ def proxy_activity_ready(*, mode: str, stats: dict) -> bool:
                    for c in (stats.get("connections") or []))
     if mode == "blockfetch_range_pressure":
         # F127: the range request alone is not the measurement; wait for a block reply.
-        return int(stats.get("blocks_fetched", 0) or 0) >= 1
+        # F144: and for one whole batch (StartBatch .. BatchDone) measured on the wire.
+        return int(stats.get("blocks_fetched", 0) or 0) >= 1 and bool(stats.get("blockfetch_batches"))
     return int(stats.get("intercepted_segments", 0) or 0) >= 1
 
 
@@ -325,10 +428,20 @@ def _wait_for_proxy_stats(path: Path, *, timeout_seconds: float) -> dict:
 def _wait_for_mode_proxy_stats(path: Path, *, mode: str, timeout_seconds: float) -> dict:
     deadline = time.time() + timeout_seconds
     latest = {}
+    settle = MODE_SETTLE_SECONDS.get(mode, 0.0)
+    quiet_since = None
+    last_blocks = None
     while time.time() < deadline:
         latest = _load_proxy_stats(path)
         if proxy_activity_ready(mode=mode, stats=latest):
-            return latest
+            if not settle:
+                return latest
+            # F144: keep reading until no block has passed for ``settle`` seconds (the sync is done).
+            blocks = int(latest.get("blocks_fetched", 0) or 0)
+            if blocks != last_blocks:
+                last_blocks, quiet_since = blocks, time.time()
+            elif time.time() - quiet_since >= settle:
+                return latest
         time.sleep(0.5)
     return latest
 
@@ -381,23 +494,119 @@ def _chainsync_replay_result(stats: dict, target_healthy: bool) -> dict:
     }
 
 
+def _fork_switch_result(stats: dict, target_healthy: bool) -> dict:
+    """F144: the injected rollback-then-forward, judged by what the follower did with it.
+
+    The follower followed when it asked for more after the displaced header (it took the rollback,
+    the replayed genuine headers and the displaced one). Session-start rollbacks are not counted."""
+    switch = next(iter(stats.get("fork_switches") or []), None)
+    conn = _connection(stats, (switch or {}).get("connection_id")) if switch else {}
+    dropped = conn.get("closed_by") == "downstream"
+    followed = bool(switch and switch.get("rollback_delivered_at") and switch.get("displaced_delivered_at")
+                    and int(switch.get("requests_after_displaced", 0) or 0) >= 1)
+    depth = int((switch or {}).get("rollback_depth", 0) or 0)
+    rewritten = bool(followed and int(switch.get("requests_after_rollback", 0) or 0) >= depth + 1
+                     and int(switch.get("replays_delivered", 0) or 0) == depth)
+    count = 1 if followed else 0
+    return {
+        "rollback_then_forward_sequence_observed": bool(target_healthy and count >= 1),
+        "follower_state_rewritten": bool(target_healthy and rewritten),
+        "rollback_then_forward_count": count,
+        "chainsync_messages_observed": int(stats.get("chainsync_messages_observed", 0) or 0),
+        "chainsync_roll_backward_count": int(stats.get("chainsync_roll_backward_count", 0) or 0),
+        "chainsync_roll_forward_count": int(stats.get("chainsync_roll_forward_count", 0) or 0),
+        "rollback_depth": depth or None,
+        "rollback_point": (switch or {}).get("rollback_point"),
+        "follower_dropped_connection": dropped if switch else None,
+        "drop_seconds": conn.get("drop_seconds") if dropped else None,
+        "fork_switch": switch,
+        "violation_crafted": switch is not None,
+        "mutation": "rollback_to_earlier_point_then_replay_genuine_headers",
+    }
+
+
+def _range_pressure_result(stats: dict, target_healthy: bool, configured_limit: int, resync: dict | None) -> dict:
+    """F144: the peak is the most blocks served in one StartBatch..BatchDone on the proxied connection."""
+    batches = list(stats.get("blockfetch_batches") or [])
+    peak = stats.get("peak_blocks_per_batch")
+    peak = int(peak) if peak is not None and batches else None
+    return {
+        "resource_bound_ok": bool(target_healthy and peak is not None and 1 <= peak <= int(configured_limit)),
+        "observed_peak_blocks_per_batch": peak,
+        "configured_limit": configured_limit,
+        "configured_limit_source": "scenario parameter (cardano-node does not expose its in-flight block limit)",
+        "batches_completed": len(batches),
+        "batch_block_counts": [int(b.get("blocks", 0) or 0) for b in batches][-64:],
+        "peak_outstanding_range_requests": stats.get("peak_outstanding_range_requests"),
+        "blocks_fetched": int(stats.get("blocks_fetched", 0) or 0),
+        "block_range_requests_observed": int(stats.get("block_range_requests_observed", 0) or 0),
+        "resync": resync,
+        "measure": "blocks between StartBatch and BatchDone per range request, read on the proxied connection",
+    }
+
+
+HEADER_ERROR_REASONS = (
+    "InvalidKesSignatureOCERT", "InvalidSignatureOCERT", "VRFKeyBadProof", "VRFLeaderValueTooBig",
+    "VRFKeyUnknown", "VRFKeyWrongVRFKey", "KESBeforeStartOCERT", "KESAfterEndOCERT", "CounterTooSmallOCERT",
+    "CounterOverIncrementedOCERT", "NoCounterForKeyHashOCERT", "HeaderProtVerTooHigh", "InvalidKesSignature",
+)
+
+
+def scan_header_rejection(lines, *, corrupted_hash: str) -> dict:
+    """What the target's own log says about the corrupted header (F144).
+
+    ``matched``: a line names the corrupted header hash together with a header-validation error;
+    ``adopted``: a chain-selection line made it the tip (the boundary was crossed)."""
+    matched_lines, reason, adopted = [], None, False
+    for line in lines:
+        text = str(line)
+        if corrupted_hash not in text:
+            continue
+        if "AddedToCurrentChain" in text or "SwitchedToAFork" in text:
+            adopted = True
+            continue
+        if "HeaderError" in text or any(r in text for r in HEADER_ERROR_REASONS) or "InvalidBlock" in text:
+            matched_lines.append(text[-2000:])
+            reason = reason or next((r for r in HEADER_ERROR_REASONS if r in text), None)
+    return {"matched": bool(matched_lines), "lines": matched_lines[:5], "reason": reason, "adopted": adopted}
+
+
+def _praos_header_result(stats: dict, target_healthy: bool, log_evidence: dict | None) -> dict:
+    corruption = next(iter(stats.get("header_corruptions") or []), None)
+    conn = _connection(stats, (corruption or {}).get("connection_id")) if corruption else {}
+    dropped = conn.get("closed_by") == "downstream"
+    log = log_evidence or {}
+    rejected = bool(target_healthy and corruption and dropped and not log.get("adopted"))
+    return {
+        "header_rejected": rejected,
+        # Rejected at header validation: the target never asked for the block behind the header
+        # and never selected it.
+        "assertion_boundary_preserved": bool(rejected and not corruption.get("block_requested")
+                                             and not log.get("adopted")),
+        "rejection_reason": log.get("reason"),
+        "rejection_logged": bool(log.get("matched")) if log_evidence is not None else None,
+        "rejection_log_lines": log.get("lines") or [],
+        "dropped_by_target": dropped if corruption else None,
+        "drop_seconds": conn.get("drop_seconds") if dropped else None,
+        "block_requested_for_corrupted_header": (corruption or {}).get("block_requested"),
+        "corrupted_header_hash": (corruption or {}).get("corrupted_header_hash"),
+        "original_header_hash": (corruption or {}).get("original_header_hash"),
+        "corrupted_slot": (corruption or {}).get("slot"),
+        "corrupted_field": (corruption or {}).get("corrupted_field"),
+        "violation_crafted": corruption is not None,
+        "mutation": "flip_last_byte_of_genuine_header_kes_signature",
+    }
+
+
 def build_result_body(
     *,
     mode: str,
     stats: dict,
     target_healthy: bool,
     configured_limit: int = 64,
+    resync: dict | None = None,
+    log_evidence: dict | None = None,
 ) -> dict:
-    intercepted = int(stats.get("intercepted_segments", 0) or 0)
-    mutated = int(stats.get("mutated_segments", 0) or 0)
-    connections = int(stats.get("connections_seen", 0) or 0)
-    chainsync_messages_observed = int(stats.get("chainsync_messages_observed", 0) or 0)
-    rollback_then_forward_count = int(stats.get("rollback_then_forward_count", 0) or 0)
-    chainsync_roll_backward_count = int(stats.get("chainsync_roll_backward_count", 0) or 0)
-    chainsync_roll_forward_count = int(stats.get("chainsync_roll_forward_count", 0) or 0)
-    blocks_fetched = int(stats.get("blocks_fetched", 0) or 0)
-    block_range_requests_observed = int(stats.get("block_range_requests_observed", 0) or 0)
-    activity = max(intercepted, connections)
     if mode == "chainsync_parent_discontinuity":
         return _chainsync_replay_result(stats, target_healthy)
     if mode == "chainsync_nonincrementing_height":
@@ -405,14 +614,9 @@ def build_result_body(
     if mode == "chainsync_nonmonotonic_slot":
         return _chainsync_replay_result(stats, target_healthy)
     if mode == "chainsync_responder_fork_switch":
-        return {
-            "rollback_then_forward_sequence_observed": bool(target_healthy and rollback_then_forward_count >= 1),
-            "follower_state_rewritten": bool(target_healthy and chainsync_roll_backward_count >= 1 and chainsync_roll_forward_count >= 1),
-            "rollback_then_forward_count": rollback_then_forward_count,
-            "chainsync_messages_observed": chainsync_messages_observed,
-            "chainsync_roll_backward_count": chainsync_roll_backward_count,
-            "chainsync_roll_forward_count": chainsync_roll_forward_count,
-        }
+        return _fork_switch_result(stats, target_healthy)
+    if mode == "praos_header_invalid_signature":
+        return _praos_header_result(stats, target_healthy, log_evidence)
     if mode == "blockfetch_invalid_range":
         conn = next((c for c in (stats.get("connections") or []) if c.get("range_request_corrupted")), None)
         answer = (conn or {}).get("range_response") or ((conn or {}).get("closed_by") and "closed")
@@ -425,13 +629,7 @@ def build_result_body(
             "mutation": "flip_last_byte_of_range_request",
         }
     if mode == "blockfetch_range_pressure":
-        return {
-            "resource_bound_ok": bool(target_healthy and activity >= 1),
-            "observed_peak_blocks_in_memory": min(max(activity, 1), configured_limit),
-            "configured_limit": configured_limit,
-            "blocks_fetched": blocks_fetched,
-            "block_range_requests_observed": block_range_requests_observed,
-        }
+        return _range_pressure_result(stats, target_healthy, configured_limit, resync)
     if mode == "blockfetch_invalid_block_cbor":
         evidence = peer_drop_evidence(stats)
         return {
@@ -468,6 +666,7 @@ def apply_mode(
     healthy_timeout_seconds: float,
     activity_timeout_seconds: float,
     configured_limit: int,
+    resync_from_empty_db: bool = True,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     runtime_metadata_path, metadata = load_runtime_metadata(runtime_metadata_path)
@@ -529,24 +728,41 @@ def apply_mode(
         template=topology_template,
         access_points=access_points,
     )
-    restart_target_node(metadata=metadata, target_node=target_node, runtime_root=runtime_root)
+    resync = None
+    restarted_at = time.time()
+    if mode == "blockfetch_range_pressure" and resync_from_empty_db:
+        # F144: a node at the tip fetches one block at a time; an empty DB makes it fetch the chain.
+        resync = resync_target_from_empty_db(metadata=metadata, target_node=target_node, runtime_root=runtime_root)
+    else:
+        restart_target_node(metadata=metadata, target_node=target_node, runtime_root=runtime_root)
 
     health = wait_for_nodes_healthy([target_node], timeout_seconds=healthy_timeout_seconds)
     target_healthy = bool(health and health[0].get("healthy"))
     stats = _wait_for_mode_proxy_stats(
         Path(proxy_info["stats_path"]),
         mode=mode,
-        timeout_seconds=activity_timeout_seconds,
+        timeout_seconds=max(float(activity_timeout_seconds), MODE_MIN_ACTIVITY_SECONDS.get(mode, 0.0)),
     )
     event_summary = summarize_proxy_events(Path(proxy_info["events_path"]))
     for key, value in event_summary.items():
         if int(stats.get(key, 0) or 0) < int(value):
             stats[key] = value
+    if resync is not None:
+        resync["tip_after"] = query_target_tip(target_node, network_magic=metadata.get("network_magic"))
+    log_evidence = None
+    if mode == "praos_header_invalid_signature":
+        corruption = next(iter(stats.get("header_corruptions") or []), None)
+        if corruption:
+            lines = collect_container_log_lines(target_node, since_epoch=restarted_at)
+            if lines is not None:
+                log_evidence = scan_header_rejection(lines, corrupted_hash=str(corruption["corrupted_header_hash"]))
     result_body = build_result_body(
         mode=mode,
         stats=stats,
         target_healthy=target_healthy,
         configured_limit=configured_limit,
+        resync=resync,
+        log_evidence=log_evidence,
     )
 
     metadata.setdefault("aux_sessions", []).append(
@@ -624,6 +840,7 @@ def main(argv: list[str] | None = None) -> int:
         healthy_timeout_seconds=float(config.get("healthy_timeout_seconds", 90)),
         activity_timeout_seconds=float(config.get("activity_timeout_seconds", 15)),
         configured_limit=int(config.get("configured_limit", 64)),
+        resync_from_empty_db=bool(config.get("resync_from_empty_db", True)),
     )
     print(
         " ".join(

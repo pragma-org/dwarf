@@ -5471,6 +5471,7 @@ class _RuntimeChainsyncBlockfetchFaultPrimitive(LoadPrimitive):
             "healthy_timeout_seconds": float(self.params.get("healthy_timeout_seconds", 90)),
             "activity_timeout_seconds": float(self.params.get("activity_timeout_seconds", 15)),
             "configured_limit": int(self.params.get("configured_limit", 64)),
+            "resync_from_empty_db": bool(self.params.get("resync_from_empty_db", True)),
         }
 
     def run(self, handle, rng):
@@ -5914,6 +5915,9 @@ class _RuntimeRecoveryFaultPrimitive(LoadPrimitive):
         for key in ("requested_rollback_slots", "security_parameter_k"):
             if key in self.params:
                 config[key] = int(self.params[key])
+        for key in ("partition_max_seconds", "converge_timeout_seconds"):
+            if key in self.params:
+                config[key] = float(self.params[key])
         return config
 
     def run(self, handle, rng):
@@ -6556,9 +6560,12 @@ class _RuntimeHardeningProbePrimitive(LoadPrimitive):
         )
 
 
-class RuntimePraosHeaderAssertionProbe(_RuntimeHardeningProbePrimitive):
+class RuntimePraosHeaderAssertionProbe(_RuntimeChainsyncBlockfetchFaultPrimitive):
+    """F144: a genuine header with a corrupted KES signature is served to the target through the
+    mux proxy; the target's header validation must reject it before fetching the block."""
+
     primitive_name = "runtime_praos_header_assertion_probe"
-    mode_name = "praos_header_assertion_probe"
+    mode_name = "praos_header_invalid_signature"
 
 
 class RuntimeMalformedInputDifferential(_RuntimeHardeningProbePrimitive):
@@ -21503,7 +21510,9 @@ class BlockfetchRangePressureBounded(AssertionPrimitive):
         latest, payload = _latest_completed_payload(handle, phase="load", primitive="runtime_blockfetch_range_pressure")
         result_body = payload.get("result") or {}
         resource_bound_ok = bool(result_body.get("resource_bound_ok", False))
-        observed_peak = int(result_body.get("observed_peak_blocks_in_memory", 0) or 0)
+        # F144: the most blocks served in one StartBatch..BatchDone, measured on the proxied wire.
+        observed_peak_value = result_body.get("observed_peak_blocks_per_batch")
+        observed_peak = int(observed_peak_value) if observed_peak_value is not None else None
         configured_limit = int(result_body.get("configured_limit", 0) or 0)
         blocks_fetched = int(result_body.get("blocks_fetched", 0) or 0)
         block_range_requests_observed = int(result_body.get("block_range_requests_observed", 0) or 0)
@@ -21514,7 +21523,8 @@ class BlockfetchRangePressureBounded(AssertionPrimitive):
             and payload.get("outcome") == "ok"
             and resource_bound_ok
             and configured_limit >= 1
-            and observed_peak <= configured_limit
+            and observed_peak is not None
+            and 1 <= observed_peak <= configured_limit
             and blocks_fetched >= min_blocks_fetched
             and block_range_requests_observed >= min_block_range_requests_observed
         )
@@ -21526,7 +21536,7 @@ class BlockfetchRangePressureBounded(AssertionPrimitive):
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
                 "resource_bound_ok": resource_bound_ok,
-                "observed_peak_blocks_in_memory": observed_peak,
+                "observed_peak_blocks_per_batch": observed_peak,
                 "configured_limit": configured_limit,
                 "blocks_fetched": blocks_fetched,
                 "block_range_requests_observed": block_range_requests_observed,
@@ -22260,12 +22270,17 @@ class KBoundRollbackRecovered(AssertionPrimitive):
         )
         observed_peer_edge_count = int(summary.get("observed_peer_edge_count", 0) or 0)
         slot_transition_nodes = _tip_state_slot_transition_count(result_body)
+        # F144: the rollback the partitioned node actually performed (blocks), k from its genesis.
+        observed_depth = rollback_result.get("observed_rollback_depth_blocks")
+        observed_depth = int(observed_depth) if observed_depth is not None else None
         enough = (
             rollback_latest is not None
             and rollback_payload.get("outcome") == "ok"
             and requested_slots > 0
             and security_parameter_k >= 1
             and requested_slots <= security_parameter_k
+            and observed_depth is not None
+            and 1 <= observed_depth <= security_parameter_k
             and rollback_status in {"applied", "succeeded", "recovered"}
             and ledger_state_consistent
             and observed_peer_edge_count >= 2
@@ -22286,6 +22301,7 @@ class KBoundRollbackRecovered(AssertionPrimitive):
                 "rollback_seen": rollback_latest is not None,
                 "requested_rollback_slots": requested_slots,
                 "security_parameter_k": security_parameter_k,
+                "observed_rollback_depth_blocks": observed_depth,
                 "rollback_status": rollback_status,
                 "ledger_state_consistent_post_rollback": ledger_state_consistent,
                 "observed_peer_edge_count": observed_peer_edge_count,
@@ -22352,12 +22368,22 @@ class ChainSwitchConsistent(AssertionPrimitive):
         target_slot = switch_result.get("target_tip_slot", switch_payload.get("target_tip_slot"))
         target_slot = int(target_slot) if target_slot is not None else None
         honest_node_ids = [str(node_id) for node_id in self.params.get("honest_node_ids", [])] or sorted(latest_tips.keys())
-        matching_honest_nodes = sorted(
-            node_id
-            for node_id in honest_node_ids
-            if (latest_tips.get(node_id) or {}).get("hash") == target_hash
-            and (target_slot is None or int((latest_tips.get(node_id) or {}).get("slot", -1)) == target_slot)
-        )
+        # F144: the target is the majority tip at heal; the chain keeps growing, so a node reached it
+        # when the producer found the target on its chain (ChainSync FindIntersect) and its latest
+        # observed tip is at or past the target slot -- or its latest tip is the target itself.
+        on_target_chain = {str(node_id) for node_id in (switch_result.get("nodes_on_target_chain") or [])}
+
+        def _reached(node_id: str) -> bool:
+            tip = latest_tips.get(node_id) or {}
+            if tip.get("hash") == target_hash and (target_slot is None or int(tip.get("slot", -1)) == target_slot):
+                return True
+            try:
+                tip_slot = int(tip.get("slot"))
+            except (TypeError, ValueError):
+                return False
+            return node_id in on_target_chain and target_slot is not None and tip_slot >= target_slot
+
+        matching_honest_nodes = sorted(node_id for node_id in honest_node_ids if bool(target_hash) and _reached(node_id))
         enough = (
             switch_latest is not None
             and switch_payload.get("outcome") == "ok"
