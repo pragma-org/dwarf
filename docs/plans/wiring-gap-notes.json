@@ -20,7 +20,7 @@
    "group": "profile prepare failures",
    "status": "open",
    "cause": "F109 works: profile-g now deploys. But profile-g (\"haskell-preview2-proof\") runs on the PUBLIC preview network, so readiness stays semantic_health_not_ready (cold nodes cannot sync): same class F96 fixed for scenarios",
-   "fix": "move profile-g to a private devnet (as F96) or keep it as a declared preview-only profile"
+   "fix": "Option A (kept as a public-preview profile; moving it to a private devnet would remove its purpose): profile-g stays deployed between runs (campaign KEEP_PROFILES) and syncs the public preview chain; its 2 scenarios rerun once the node reports semantic health. 2026-11-09 10:29: syncing, slot 1.47M, epoch 18"
   },
   {
    "match": "client-example-plutus-vm-amaru-portable-20260918",

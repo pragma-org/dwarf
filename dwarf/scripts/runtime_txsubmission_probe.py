@@ -339,20 +339,32 @@ def build_result_body(
     raise ValueError(f"unsupported mode: {mode}")
 
 
-def _wait_for_txsubmission_init_delay(node: dict) -> None:
-    """cardano-node requests transactions only ncTxSubmissionInitDelay after startup (F119).
+FIRST_REQUEST_MARGIN_SECONDS = 15.0
+# Inside the Antithesis package the node log and docker inspect are unavailable, so the logged delay
+# cannot be read; the first request is awaited for this budget, inside the 240 s step timeout.
+PACKAGE_FIRST_REQUEST_BUDGET_SECONDS = 180.0
 
-    Reuses the F97c gate: the delay is read from the node's own startup log, never assumed, and the
-    wait is bounded by it. Amaru has no such delay.
+
+def _first_request_timeout_seconds(node: dict, default: float) -> float:
+    """How long to wait for the node's first MsgRequestTxIds after MsgInit (F124).
+
+    ouroboros-network's tx-submission server (Inbound V1 and V2) sleeps TxSubmissionInitDelay when it
+    starts on each connection, before its first request. For cardano-node the delay is read from the
+    node's own startup log (the F97c gate), never a release default. Amaru has no such delay.
     """
     if str(node.get("impl") or node.get("implementation") or "") != "cardano-node":
-        return
+        return default
+    if node.get("observation_transport") == "antithesis-package" and not node.get("log_path"):
+        return max(default, PACKAGE_FIRST_REQUEST_BUDGET_SECONDS)
     try:
         from scripts import runtime_redeemer_container_live_controls as live
     except ImportError:  # pragma: no cover - helper subprocess path
         import runtime_redeemer_container_live_controls as live
     gate = live._reference_tx_submission_propagation_gate(node, inspect_container=live._inspect_container)
-    live.wait_for_target_propagation_eligibility(gate)
+    delay = (gate or {}).get("tx_submission_init_delay_seconds")
+    if not isinstance(delay, (int, float)) or isinstance(delay, bool) or delay < 0:
+        raise ValueError("cardano-node target lacks the logged tx_submission_init_delay_seconds")
+    return max(default, float(delay) + FIRST_REQUEST_MARGIN_SECONDS)
 
 
 def run_probe(
@@ -388,8 +400,9 @@ def run_probe(
         network_magic = int(runtime_metadata.get("network_magic", 42))
         node = _load_runtime_node(runtime_metadata_path, target_node)
         target_host, port = _node_endpoint(node, target_host)
-        _wait_for_txsubmission_init_delay(node)
+        first_request_timeout = _first_request_timeout_seconds(node, response_timeout_seconds)
     else:
+        first_request_timeout = response_timeout_seconds
         port = int(target_port)
         if port <= 0 or port > 65535:
             raise RuntimeError("verified target port is invalid")
@@ -435,6 +448,7 @@ def run_probe(
         if mode == "txsubmission_window_pressure":
             sock.sendall(txsubmission_init_frame)
             transcript.append({"direction": "send", "payload_hex": txsubmission_init_payload.hex()})
+            sock.settimeout(first_request_timeout)
             try:
                 valid_request_response = _recv_mux_payload(sock)
                 valid_request_response_kind = "data" if valid_request_response else "eof"
@@ -444,6 +458,7 @@ def run_probe(
                 valid_request_response_kind = "eof"
             except ConnectionResetError:
                 valid_request_response_kind = "reset"
+            sock.settimeout(response_timeout_seconds)
             if valid_request_response_kind == "data":
                 transcript.append({"direction": "recv", "payload_hex": valid_request_response.hex()})
                 request_body = _parse_request_txids(valid_request_response)
