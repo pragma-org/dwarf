@@ -68,6 +68,15 @@ def _emit_probe(*, node: str, port: int, listener_ok: bool, role: str) -> None:
     )
 
 
+def _endpoint(node: dict) -> tuple[str, int]:
+    """Container nodes publish only on the host loopback, which the controller cannot reach; it
+    joins the run network, so use the container address and port (F106). Host nodes keep loopback."""
+    address = str(node.get("container_listen_address") or "")
+    if node.get("container_ip") and ":" in address:
+        return str(node["container_ip"]), int(address.rsplit(":", 1)[1])
+    return "127.0.0.1", int(node["port"])
+
+
 def run_node_port_drop_check(*, runtime_root: Path, blocked_node: str, healthy_nodes: list[str]) -> int:
     nodes = _runtime_json_nodes(runtime_root)
     if blocked_node not in nodes:
@@ -77,7 +86,7 @@ def run_node_port_drop_check(*, runtime_root: Path, blocked_node: str, healthy_n
         raise RuntimeError(f"healthy node(s) missing from runtime metadata: {missing_healthy}")
 
     blocked = nodes[blocked_node]
-    blocked_ok = _listener_ok("127.0.0.1", int(blocked["port"]))
+    blocked_ok = _listener_ok(*_endpoint(blocked))
     _emit_probe(node=blocked_node, port=int(blocked["port"]), listener_ok=blocked_ok, role="blocked")
     if blocked_ok:
         raise RuntimeError(f"expected blocked node {blocked_node} listener to fail on port {blocked['port']}")
@@ -85,7 +94,7 @@ def run_node_port_drop_check(*, runtime_root: Path, blocked_node: str, healthy_n
     healthy_passes = 0
     for name in healthy_nodes:
         node = nodes[name]
-        listener_ok = _listener_ok("127.0.0.1", int(node["port"]))
+        listener_ok = _listener_ok(*_endpoint(node))
         _emit_probe(node=name, port=int(node["port"]), listener_ok=listener_ok, role="healthy")
         if not listener_ok:
             raise RuntimeError(f"expected healthy node {name} listener to remain reachable on port {node['port']}")
