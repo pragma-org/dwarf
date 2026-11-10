@@ -22,10 +22,13 @@ def classify_run_backends(scenario, *, local_confirmed=False):
         "reason": "No manual GitHub workflow preserves this selected scenario's execution contract.",
         "action": None,
     }
+    substrate_nodes = list((scenario.substrate or {}).get("nodes") or []) if isinstance(scenario.substrate, dict) else []
     if (
         scenario.runtime == "devnet"
         and scenario.target.get("implementation") == "cardano-node"
         and scenario.substrate is not None
+        # the devnet smoke workflow provisions cardano-node only; a mixed devnet (Amaru nodes) is not covered
+        and all(str(node.get("impl") or "cardano-node") == "cardano-node" for node in substrate_nodes)
     ):
         github = {
             "id": "github-actions",

@@ -149,8 +149,12 @@ def test_public_network_cardano_config_gets_the_version_policies(tmp_path):
     body = json.loads(config.read_text(encoding="utf-8"))
     assert body["TurnOnLogMetrics"] is True
     assert report["compatibility"]["required_by_versions"] == ["10.7.1"]
-    # the interop pin is a policy decision: it applies only to cardano >= 11.1 next to Amaru
-    assert report["experimental_protocols"]["pinned"] is False
+    # F138 (user decision 2026-11-09): cardano-only devnets pin the public-network default (false);
+    # substrate.cardano_experimental_protocols: true restores cardano-testnet's default
+    assert report["experimental_protocols"]["pinned"] is True
+    assert report["experimental_protocols"]["value"] is False
+    assert report["experimental_protocols"]["policy_source"] == "public-network-default"
+    assert body["ExperimentalProtocolsEnabled"] is False
     assert report["experimental_protocols"]["cardano_versions"] == ["10.7.1"]
 
 
