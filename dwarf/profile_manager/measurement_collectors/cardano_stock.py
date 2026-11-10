@@ -192,6 +192,7 @@ def _load_cardano_trace_bytes(
     ignored = Counter()
     rejected = Counter()
     seen: set[str] = set()
+    namespaces: set[str] = set()
     duplicate_count = 0
     source_count = 0
     truncated_sources: list[str] = []
@@ -213,6 +214,8 @@ def _load_cardano_trace_bytes(
             if not isinstance(record, dict):
                 rejected["non-object"] += 1
                 continue
+            if isinstance(record.get("ns"), str):
+                namespaces.add(record["ns"])
             normalized = _normalize_record(record)
             if normalized is None:
                 ignored["unsupported-event"] += 1
@@ -233,12 +236,73 @@ def _load_cardano_trace_bytes(
         "rejection_reasons": dict(rejected),
         "duplicate_record_count": duplicate_count,
         "truncated_sources": truncated_sources,
+        "observed_namespaces": sorted(namespaces),
         "_raw_sources": raw_sources,
     }
 
 
 def _unavailable(unit: str, reason: str) -> dict[str, Any]:
     return {"status": "unavailable", "unit": unit, "value": None, "reason": reason}
+
+
+# The trace namespaces whose records a counter counts. A zero is a reading only when
+# the window holds at least one record of one of them: otherwise the namespace was not
+# enabled on the node (or the node was silent there) and the zero measures nothing.
+_COUNTER_NAMESPACES = {
+    "chain_events": ("ChainSync.", "ChainDB.AddBlockEvent.", "Forge.Loop."),
+    "adopted_blocks": ("ChainDB.AddBlockEvent.", "Forge.Loop."),
+    "rollbacks": ("ChainSync.Client.", "ChainDB.AddBlockEvent."),
+    "blockfetch_bytes": ("BlockFetch.Client.",),
+    "served_blocks": ("BlockFetch.Server.",),
+    "mempool_accepted": ("Mempool.",),
+    "mempool_rejected": ("Mempool.",),
+    "transaction_outcomes": ("Mempool.",),
+    "ledger_samples": ("LedgerMetrics",),
+    "protocol_events": ("ChainSync.ServerHeader.", "BlockFetch.", "TxSubmission.", "KeepAlive."),
+}
+
+
+# The namespaces whose records carry each distribution's samples.
+_DISTRIBUTION_NAMESPACES = {
+    "blockfetch_duration": ("BlockFetch.Client.",),
+    "keepalive_rtt": ("KeepAlive.",),
+    "mempool_tx_count": ("Mempool.",),
+    "mempool_bytes": ("Mempool.",),
+    "mempool_sync_duration": ("Mempool.",),
+}
+
+
+def _namespace_names(prefixes: tuple[str, ...]) -> str:
+    return ", ".join(prefix.rstrip(".") for prefix in prefixes)
+
+
+def withhold_untraced_zero_counts(
+    measurements: dict[str, Any], observed_namespaces: Iterable[str]
+) -> dict[str, Any]:
+    observed = tuple(observed_namespaces)
+    result = dict(measurements)
+    for name, prefixes in _DISTRIBUTION_NAMESPACES.items():
+        metric = result.get(name)
+        if not isinstance(metric, dict) or metric.get("status") != "unavailable" or metric.get("reason"):
+            continue
+        if any(namespace.startswith(prefixes) for namespace in observed):
+            reason = f"{_namespace_names(prefixes)} records were traced but none carried a sample"
+        else:
+            reason = (f"the node traced no {_namespace_names(prefixes)} record in this window "
+                      "(namespace not enabled, or silent)")
+        result[name] = {**metric, "reason": reason}
+    for name, prefixes in _COUNTER_NAMESPACES.items():
+        metric = result.get(name)
+        if not isinstance(metric, dict) or metric.get("status") != "available" or metric.get("value") != 0:
+            continue
+        if any(namespace.startswith(prefixes) for namespace in observed):
+            continue
+        result[name] = _unavailable(
+            str(metric.get("unit") or "events"),
+            "the node traced no " + _namespace_names(prefixes)
+            + " record in this window (namespace not enabled, or silent); a zero would not be a reading",
+        )
+    return result
 
 
 def _count(
@@ -442,6 +506,7 @@ class CardanoStockCollector:
         measurements = withhold_without_source(
             measurements, source_record_count=loaded["source_record_count"]
         )
+        measurements = withhold_untraced_zero_counts(measurements, loaded["observed_namespaces"])
         result = {
             "schema_version": "v1",
             "measurement_id": self.measurement_id,

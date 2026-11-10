@@ -276,3 +276,44 @@ def test_docker_timestamp_prefixed_node_logs_normalize_like_plain_traces():
     assert loaded["events"][0]["timestamp"] == "2026-11-09T11:36:31.502962731Z"
     # A prefixed non-JSON startup line is rejected, not silently dropped.
     assert loaded["rejected_record_count"] == 1
+
+
+# Real records from a devnet node1 without the measurement trace namespaces
+# (run 20261109T113615Z-5b45ab96, cardano_measurement_traces false): the node traced
+# block forging and adoption, but no BlockFetch, Mempool, LedgerMetrics or KeepAlive
+# record at all. Those namespaces were not enabled, so their zeros are not readings.
+REAL_DEFAULT_CONFIG_WINDOW = (
+    '2026-11-09T11:36:31.502026191Z {"at":"2026-11-09T11:36:31.501893668Z","ns":"Forge.Loop.ForgedBlock","data":{"block":"31e24817a912dc5e32cc9f1860ecfd4ebfb4fd1ac1aab374b4ad0dbfc961910a","blockNo":0,"blockPrev":"GenesisHash","kind":"TraceForgedBlock","slot":5},"sev":"Info","thread":"41","host":"node1"}\n'
+    + REAL_DOCKER_PREFIXED.splitlines()[0] + "\n"
+    + '2026-11-09T11:36:31.503348228Z {"at":"2026-11-09T11:36:31.503112167Z","ns":"Forge.Loop.AdoptedBlock","data":{"blockHash":"31e24817a912dc5e32cc9f1860ecfd4ebfb4fd1ac1aab374b4ad0dbfc961910a","blockSize":828,"kind":"TraceAdoptedBlock","slot":5},"sev":"Info","thread":"41","host":"node1"}\n'
+)
+
+
+def test_zero_counts_from_untraced_namespaces_are_not_readings(tmp_path):
+    expected_unavailable = {
+        "cardano-stock-blockfetch": {"blockfetch_bytes", "served_blocks"},
+        "cardano-stock-txsubmission-mempool": {"mempool_accepted", "mempool_rejected"},
+        "cardano-stock-ledger-block-epoch": {"ledger_samples"},
+        "cardano-stock-plutus-execution": {"transaction_outcomes"},
+        "cardano-stock-network": {"protocol_events"},
+    }
+    for index, (measurement_id, names) in enumerate(expected_unavailable.items()):
+        result = _finalize_stock(tmp_path / str(index), measurement_id, REAL_DEFAULT_CONFIG_WINDOW.encode())
+        for name in names:
+            metric = result["measurements"][name]
+            assert metric["status"] == "unavailable", (measurement_id, name, metric)
+            assert "traced no" in metric["reason"], (measurement_id, name, metric)
+    # Empty distributions say which namespace carried no sample, instead of no reason.
+    network = _finalize_stock(tmp_path / "net", "cardano-stock-network", REAL_DEFAULT_CONFIG_WINDOW.encode())
+    assert "traced no KeepAlive" in network["measurements"]["keepalive_rtt"]["reason"]
+    responder_only = _finalize_stock(tmp_path / "resp", "cardano-stock-network", (
+        # Real responder-side pair, run 20261109T070545Z-26bb2c20 (peer addresses masked).
+        '{"at":"2026-11-09T07:05:47.040917251Z","ns":"KeepAlive.Remote.Receive.KeepAlive","data":{"kind":"Recv","msg":{"agency":"SingClient","kind":"KeepAlive"},"peer":{"connectionId":"192.0.2.2:3001 192.0.2.4:3001"}},"sev":"Debug","thread":"72","host":"node1"}\n'
+        '{"at":"2026-11-09T07:05:47.040965102Z","ns":"KeepAlive.Remote.Send.KeepAliveResponse","data":{"kind":"Send","msg":{"agency":"SingServer","kind":"KeepAliveResponse"},"peer":{"connectionId":"192.0.2.2:3001 192.0.2.4:3001"}},"sev":"Debug","thread":"72","host":"node1"}\n'
+    ).encode())
+    rtt = responder_only["measurements"]["keepalive_rtt"]
+    assert rtt["status"] == "unavailable" and "none carried a sample" in rtt["reason"]
+    chain =_finalize_stock(tmp_path / "chain", "cardano-stock-chain-lifecycle", REAL_DEFAULT_CONFIG_WINDOW.encode())
+    assert chain["measurements"]["adopted_blocks"]["value"] == 2   # AddedToCurrentChain + AdoptedBlock, as before
+    assert chain["measurements"]["chain_events"]["status"] == "available"
+    assert chain["measurements"]["rollbacks"]["status"] == "available"
