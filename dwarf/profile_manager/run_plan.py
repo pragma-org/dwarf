@@ -1348,6 +1348,54 @@ def _measurement_context(
         raise RunPlanError(str(exc), field="measurements") from exc
 
 
+@dataclass(frozen=True)
+class _SubstrateMeasurementView:
+    """The two profile facts tap resolution reads, for a self-composed substrate."""
+
+    measurement_target_mode: str
+    amaru_json_traces: bool
+
+
+def _substrate_measurement_view(scenario, preview, request) -> _SubstrateMeasurementView | None:
+    """Freeze taps at plan time for a self-composed devnet only on explicit intent.
+
+    Explicit intent (a named or ``none`` measurement profile, scenario measurement
+    entries, per-run overrides or experimental consent) is resolved and validated
+    here and frozen into the launch exactly as for a profile run.  The implicit
+    default is left to the runner, which resolves it against the composed node once
+    ``runtime_compose_substrate`` has proven it (scenario.substrate_measurement_intent).
+    Composed substrates run stock catalog images; Amaru JSON-trace taps need the
+    substrate's ``amaru_json_traces`` opt-in.
+    """
+    substrate = scenario.substrate
+    if (
+        not isinstance(substrate, dict)
+        or preview is None
+        or scenario.runtime != "devnet"
+        or scenario.target.get("implementation") not in {"amaru", "cardano-node"}
+    ):
+        return None
+    # A measurement profile named by the request is not frozen here (unchanged from
+    # before composed substrates were measured): legacy campaign launches name the
+    # per-implementation default profile plus extra taps, and on a composed Amaru
+    # without JSON traces that selection cannot resolve. The runner then binds the
+    # implicit default against the composed node instead.
+    if request.measurement_profile is not None and request.measurement_profile != "none":
+        return None
+    explicit = (
+        scenario.measurement_profile is not None
+        or bool(getattr(scenario, "measurements", []))
+        or bool(request.measurement_overrides)
+        or request.experimental_measurement_consent is not None
+    )
+    if not explicit:
+        return None
+    return _SubstrateMeasurementView(
+        measurement_target_mode="stock",
+        amaru_json_traces=substrate.get("amaru_json_traces") is True,
+    )
+
+
 def _resolve_capabilities(implementation: str, identity: dict[str, Any], profile) -> set[str]:
     """The capability set the resolve step checks taps against: the implementation's
     static set for its mode, plus, for an operator-local build, the capabilities its
@@ -1616,11 +1664,17 @@ def resolve_run_plan(
             raise RunPlanError(str(exc), field="scenario_id") from exc
     measurements = _measurement_context(
         effective_scenario,
-        profile,
+        profile if profile is not None else _substrate_measurement_view(
+            effective_scenario, preview, request
+        ),
         preview,
         run_overrides=request.measurement_overrides,
         experimental_consent=request.experimental_measurement_consent,
-        measurement_target_override=capability["measurement_target_override"],
+        # A patched measurement target is a profile deployment concept; composed
+        # substrates run their resolved stock releases.
+        measurement_target_override=(
+            capability["measurement_target_override"] if profile is not None else None
+        ),
     )
     target_bindings = _scenario_target_bindings(
         effective_scenario, measurements.get("target_identity") or {}

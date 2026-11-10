@@ -1501,6 +1501,7 @@ def _docker_compose_body(
     docker_host_runtime_root: str | None = None,
     amaru_txsubmission_trace: bool = False,
     runtime_user: str = "1000:1000",
+    amaru_json_traces: bool = False,
     amaru_environment: dict | None = None,
 ) -> dict:
     services = {}
@@ -1647,6 +1648,10 @@ def _docker_compose_body(
             if amaru_environment:
                 # opt-in local reward-window timing: the contract's global parameters
                 services[node["id"]]["environment"].update(dict(amaru_environment))
+            if amaru_json_traces:
+                # opt-in structured traces (substrate.amaru_json_traces), as the profile
+                # and Antithesis rigs run Amaru: the JSON-trace measurement taps read them
+                services[node["id"]]["environment"]["AMARU_WITH_JSON_TRACES"] = "true"
             if amaru_txsubmission_trace:
                 services[node["id"]]["environment"].update(
                     {
@@ -1985,6 +1990,7 @@ def _compose_substrate_docker(
         ),
         runtime_user=_runtime_user(runtime_root),
         amaru_environment=local_reward_window_evidence.get("amaru_environment"),
+        amaru_json_traces=bool(plan.get("amaru_json_traces", False)),
     )
     if plan.get("controller_ownership"):
         for service in compose_body["services"].values():
@@ -2101,6 +2107,9 @@ def _compose_substrate_docker(
         "amaru_txsubmission_trace": bool(
             plan.get("amaru_txsubmission_trace", False)
         ),
+        # Measurement capability fact: composed Amaru emits JSON traces only on opt-in.
+        "amaru_json_traces": bool(plan.get("amaru_json_traces", False))
+        and any(node["impl"] == "amaru" for node in metadata_nodes),
     }
     metadata_path = runtime_root / "runtime.json"
     write_json(metadata_path, metadata)

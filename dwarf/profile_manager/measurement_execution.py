@@ -663,6 +663,11 @@ def _docker_tip_probe(runtime: dict[str, Any]) -> Callable[[], dict[str, Any]]:
     container = str(service.get("container") or "")
     if not container:
         raise MeasurementExecutionError("runtime has no Amaru relay container identity")
+    return _docker_amaru_container_tip_probe(container)
+
+
+def _docker_amaru_container_tip_probe(container: str) -> Callable[[], dict[str, Any]]:
+    """Latest adopted tip from the exact Amaru container's own log."""
 
     def probe() -> dict[str, Any]:
         result = subprocess.run(
@@ -719,9 +724,37 @@ class PreparedScenarioMeasurements:
     tip_probe: Callable[[], dict[str, Any]]
     implementation: str = "amaru"
     patched_trace_paths: tuple[Path, ...] = ()
+    # Self-composed substrates: the composed node's own log is the trace source and
+    # the collectors read it live (offset at start, delta at finalize).
+    trace_paths: tuple[Path, ...] | None = None
+    peer_policy: str | None = None
 
     def build_factories(self, run_dir: str | Path) -> dict[str, Any]:
         run_path = Path(run_dir)
+        if self.implementation == "cardano-node" and self.trace_paths is not None:
+            all_factories = build_cardano_measurement_factories(
+                runtime_metadata_path=self.runtime_metadata_path,
+                target_node=self.target_node,
+                trace_paths=self.trace_paths,
+                tip_probe=self.tip_probe,
+                peer_policy=self.peer_policy or "unspecified",
+                allow_missing_trace_sources=True,
+                patched_trace_paths=self.patched_trace_paths,
+                target_identity=self.resolution["target_identity"],
+            )
+            return self._resolved_factories(all_factories)
+        if self.implementation == "amaru" and self.trace_paths is not None:
+            all_factories = build_amaru_measurement_factories(
+                runtime_metadata_path=self.runtime_metadata_path,
+                target_node=self.target_node,
+                json_trace_paths=self.trace_paths,
+                otlp_trace_paths=[],
+                tip_probe=self.tip_probe,
+                peer_policy=self.peer_policy or "unspecified",
+                target_identity=self.resolution["target_identity"],
+                allow_missing_trace_sources=True,
+            )
+            return self._resolved_factories(all_factories)
         if self.implementation == "cardano-node":
             traces = (
                 run_path
@@ -932,4 +965,215 @@ def prepare_scenario_measurements(
         patched_trace_paths=(
             patched_trace_paths if implementation == "cardano-node" else ()
         ),
+    )
+
+
+# Version sentinels a portable scenario target may still carry when it runs without a
+# launch (the composed node's own proven version is then the target version).
+_PORTABLE_TARGET_VERSIONS = frozenset({"resolved-plan", "any", ""})
+
+
+def _composed_target_node(runtime: dict[str, Any], implementation: str) -> dict[str, Any]:
+    """The measured node of a self-composed substrate (runtime_compose_substrate).
+
+    Like ``_mixed_cardano_nodes`` it uses only what the compose step proved: the first
+    non-supporting node of the scenario's target implementation, in composed order.
+    Supporting producers and the other implementation's nodes are never measured."""
+    nodes = runtime.get("nodes")
+    if not isinstance(nodes, list):
+        nodes = list(runtime.get("haskell_nodes") or []) + list(runtime.get("amaru_nodes") or [])
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        impl = str(node.get("impl") or node.get("implementation") or "")
+        if impl == implementation and node.get("supporting") is not True:
+            return node
+    raise MeasurementExecutionError(
+        f"runtime has no composed {implementation} target node"
+    )
+
+
+def _composed_node_identity(
+    node: dict[str, Any],
+    scenario,
+    *,
+    expected_identity: dict[str, Any] | None,
+    catalog_revision: str,
+) -> dict[str, Any]:
+    implementation = str(node.get("impl") or node.get("implementation") or "")
+    artifact = node.get("artifact_identity") or {}
+    version_identity = node.get("version_identity") or {}
+    running = str(artifact.get("container_image_id") or "")
+    if (
+        artifact.get("satisfied") is not True
+        or version_identity.get("satisfied") is not True
+        or not IMMUTABLE_SHA256.fullmatch(running)
+        or running != str(artifact.get("expected_image_id") or "")
+    ):
+        raise MeasurementExecutionError(
+            f"composed {implementation} identity is not proven"
+        )
+    version = str(node.get("version") or "")
+    declared = str(scenario.target.get("version") or "")
+    if declared not in _PORTABLE_TARGET_VERSIONS and declared != version:
+        raise MeasurementExecutionError(
+            f"composed {implementation} version {version or 'unknown'} does not match scenario"
+        )
+    source_revision = node.get("source_revision")
+    if node.get("operator_registration_id"):
+        # Operator-local build: its capability evidence (verified instrumentation,
+        # known incompatibilities) lives in the frozen launch identity only.
+        if not isinstance(expected_identity, dict) or (
+            expected_identity.get("identity_kind") != "operator-local-config"
+        ):
+            raise MeasurementExecutionError(
+                "operator-local composed target requires the frozen launch identity"
+            )
+        observed = {
+            "implementation": implementation,
+            "version": version,
+            "source_revision": source_revision,
+            "image_config_id": running,
+            "executable_digest": node.get("executable_digest"),
+            "platform": node.get("platform"),
+            "operator_registration_id": node.get("operator_registration_id"),
+            "controller_installation_id": node.get("controller_installation_id"),
+        }
+        if str(node.get("image_config_id") or running) != running or any(
+            expected_identity.get(field) != value for field, value in observed.items()
+        ):
+            raise MeasurementExecutionError(
+                "composed local measurement identity does not match frozen launch"
+            )
+        return json.loads(json.dumps(expected_identity))
+    digest = str(artifact.get("image_digest") or node.get("image_digest") or "")
+    image_reference = str(node.get("image_ref") or node.get("image") or "")
+    if not IMMUTABLE_SHA256.fullmatch(digest) or not image_reference.endswith("@" + digest):
+        raise MeasurementExecutionError(
+            f"composed {implementation} image reference is not digest-pinned"
+        )
+    if not SOURCE_REVISION.fullmatch(str(source_revision or "")):
+        raise MeasurementExecutionError(
+            f"composed {implementation} source revision is not an exact commit"
+        )
+    if str(node.get("target_mode") or "stock") != "stock":
+        raise MeasurementExecutionError(
+            "patched composed targets are not bound to measurements"
+        )
+    identity = {
+        "implementation": implementation,
+        "version": version,
+        "source_revision": source_revision,
+        "mode": "stock",
+        "image_reference": image_reference,
+        "image_digest": digest,
+        "executable_digest": None,
+        "version_catalog_revision": catalog_revision,
+    }
+    if isinstance(expected_identity, dict) and expected_identity:
+        mismatched = [
+            field
+            for field in ("implementation", "version", "source_revision", "mode", "image_digest")
+            if expected_identity.get(field) != identity[field]
+        ]
+        if mismatched:
+            raise MeasurementExecutionError(
+                "composed measurement identity does not match frozen launch: "
+                + ", ".join(mismatched)
+            )
+    return identity
+
+
+def prepare_substrate_measurements(
+    scenario,
+    *,
+    runtime_metadata_path: str | Path,
+    expected_resolution: dict[str, Any] | None = None,
+    tip_probe: Callable[[], dict[str, Any]] | None = None,
+) -> PreparedScenarioMeasurements:
+    """Resolve taps against the node a self-composed substrate proved it runs.
+
+    Called once ``runtime_compose_substrate`` has written its runtime.json. The tap
+    selection is the same resolver the profile path uses (default profile per
+    implementation and mode, or the scenario's frozen/override selection); only the
+    target binding differs: the composed node's verified image and version identity."""
+    implementation = scenario.target.get("implementation")
+    if implementation not in {"amaru", "cardano-node"}:
+        raise MeasurementExecutionError("runtime measurement binding is unsupported")
+    path = Path(runtime_metadata_path)
+    try:
+        runtime = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise MeasurementExecutionError(f"composed runtime is unavailable: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise MeasurementExecutionError(f"runtime metadata is invalid: {path}") from exc
+    if runtime.get("multi_host") is True:
+        # Remote nodes: no local log file, container or socket for the collectors.
+        raise MeasurementExecutionError(
+            "multi-host substrate nodes are not locally observable by the collectors"
+        )
+    if runtime.get("compose_mode") != "docker":
+        raise MeasurementExecutionError(
+            "only Docker-composed substrate nodes are bound to measurements"
+        )
+    node = _composed_target_node(runtime, implementation)
+    expected = (
+        expected_resolution
+        if isinstance(expected_resolution, dict) and expected_resolution.get("profile") is not None
+        else None
+    )
+    expected_identity = (expected or {}).get("target_identity") or None
+    identity = _composed_node_identity(
+        node,
+        scenario,
+        expected_identity=expected_identity,
+        catalog_revision=_catalog_revision(runtime),
+    )
+    target_node = str(node.get("id") or node.get("name") or "")
+    log_path = str(node.get("log_path") or "")
+    if implementation == "amaru":
+        capabilities = set(AMARU_STOCK_CAPABILITIES)
+        json_traces = runtime.get("amaru_json_traces") is True
+        if not json_traces:
+            capabilities -= AMARU_JSON_TRACE_CAPABILITIES
+        trace_paths = (Path(log_path),) if json_traces and log_path else ()
+        container = str(node.get("container_name") or "")
+        if tip_probe is None:
+            if not container:
+                raise MeasurementExecutionError("composed Amaru node has no container identity")
+            tip_probe = _docker_amaru_container_tip_probe(container)
+    else:
+        capabilities = set(CARDANO_STOCK_CAPABILITIES)
+        trace_paths = (Path(log_path),) if log_path else ()
+        if tip_probe is None:
+            tip_probe = _docker_cardano_tip_probe(runtime, node)
+    experimental_consent = None
+    if identity.get("identity_kind") == "operator-local-config":
+        instrumentation = identity.get("verified_instrumentation") or {}
+        capabilities |= set(instrumentation.get("capabilities") or [])
+        if implementation == "amaru" and runtime.get("amaru_json_traces") is not True:
+            capabilities -= AMARU_JSON_TRACE_CAPABILITIES
+        retained = (expected or {}).get("experimental_consent") or {}
+        if retained:
+            experimental_consent = {
+                "tap_ids": retained.get("tap_ids"),
+                "context_digest": retained.get("context_digest"),
+            }
+    try:
+        resolution = resolve_measurements(
+            scenario,
+            target_identity=identity,
+            capabilities=capabilities,
+            experimental_consent=experimental_consent,
+        )
+    except MeasurementResolutionError as exc:
+        raise MeasurementExecutionError(str(exc)) from exc
+    return PreparedScenarioMeasurements(
+        resolution=resolution,
+        runtime_metadata_path=path,
+        target_node=target_node,
+        tip_probe=tip_probe,
+        implementation=implementation,
+        trace_paths=trace_paths,
+        peer_policy="self-composed-substrate",
     )

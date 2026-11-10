@@ -1103,6 +1103,159 @@ def prepare_auto_measurements(scen, *, expected_resolution=None):
         return None, str(exc)
 
 
+SUBSTRATE_COMPOSE_PRIMITIVE = "runtime_compose_substrate"
+SUBSTRATE_TEARDOWN_PRIMITIVE = "runtime_teardown_substrate"
+
+
+def substrate_measurement_intent(scen, *, expected_resolution=None, env=None):
+    """How a self-composed devnet is measured: ``"explicit"``, ``"implicit"`` or ``None``.
+
+    A scenario that composes its own substrate has no deployed profile runtime before
+    it runs, so its taps bind after ``runtime_compose_substrate`` proves the nodes.
+    The intent decides whether a binding failure fails the run (explicit: the scenario
+    or the launch asked for taps) or is recorded as a skip (implicit default).
+    """
+    if env is None:
+        env = os.environ
+    if scen.substrate is None or scen.runtime != "devnet" or scen.profile:
+        return None
+    if scen.target.get("implementation") not in MEASUREMENT_AUTO_ATTACH_IMPLEMENTATIONS:
+        return None
+    if isinstance(expected_resolution, dict) and expected_resolution.get("profile") is not None:
+        # The launch froze a tap selection into the scenario (or explicit none).
+        requested = [
+            row for row in expected_resolution.get("requested") or []
+            if isinstance(row, dict) and row.get("enabled")
+        ]
+        if not requested:
+            return None
+        if all(row.get("source") == "implicit-default" for row in requested):
+            intent = "implicit"
+        else:
+            intent = "explicit"
+    elif measurement_explicitly_requested(scen):
+        intent = "explicit"
+    elif scen.measurement_profile == "none":
+        return None
+    else:
+        intent = "implicit"
+    if (
+        intent == "implicit"
+        and str(env.get("DWARF_MEASUREMENTS", "")).strip().lower() in MEASUREMENT_DISABLED_VALUES
+    ):
+        return None
+    return intent
+
+
+def measurement_not_applicable_reason(scen):
+    """Why a run has no node to measure, or ``None`` when it may have one."""
+    if scen.runtime != "devnet":
+        return (
+            f"runtime {scen.runtime} is not a devnet; taps bind only to deployed "
+            "profile or self-composed substrate nodes"
+        )
+    if not scen.profile and scen.substrate is None and not _attached_topology_id(scen):
+        return "the scenario deploys no node runtime to measure"
+    return None
+
+
+class _SubstrateMeasurementAttachment:
+    """Binds taps to a self-composed substrate for exactly its lifetime.
+
+    Collectors start after ``runtime_compose_substrate`` succeeded (its runtime.json
+    names the proven nodes) and finalize before ``runtime_teardown_substrate`` removes
+    the containers their trace, ``docker exec`` and tip probes read."""
+
+    def __init__(self, scen, handle, *, intent, expected_resolution):
+        self.scen = scen
+        self.handle = handle
+        self.intent = intent
+        self.expected_resolution = expected_resolution
+        self.runtime = None
+        self.finalized = False
+        self.phase = None
+
+    def active_runtime(self):
+        return None if self.finalized else self.runtime
+
+    def after_primitive(self, ref, shared_state):
+        if ref.primitive != SUBSTRATE_COMPOSE_PRIMITIVE or self.runtime is not None or self.finalized:
+            return
+        from profile_manager import measurement_execution
+        from profile_manager.measurement_resolution import MeasurementResolutionError
+        from profile_manager.measurement_runtime import MeasurementRuntime
+
+        metadata_path = (shared_state or {}).get("substrate_runtime_metadata_path")
+        try:
+            if not metadata_path:
+                raise measurement_execution.MeasurementExecutionError(
+                    "runtime_compose_substrate recorded no runtime metadata"
+                )
+            prepared = measurement_execution.prepare_substrate_measurements(
+                self.scen,
+                runtime_metadata_path=metadata_path,
+                expected_resolution=self.expected_resolution,
+            )
+        except (measurement_execution.MeasurementExecutionError, MeasurementResolutionError) as exc:
+            if self.intent == "explicit":
+                # Requested taps must not silently run unmeasured: fail the setup.
+                self.handle.log(
+                    phase="setup",
+                    primitive="measurement-auto-attach",
+                    level="error",
+                    event="measurement_substrate_attach_failed",
+                    payload={"reason": str(exc), "binding": "self-composed-substrate"},
+                )
+                raise
+            self.handle.log(
+                phase="setup",
+                primitive="measurement-auto-attach",
+                level="info",
+                event="measurement_auto_attach_skipped",
+                payload={"reason": str(exc), "binding": "self-composed-substrate"},
+            )
+            return
+        runtime = MeasurementRuntime(
+            run_dir=self.handle.run_dir,
+            resolution=prepared.resolution,
+            collector_factories=prepared.build_factories(self.handle.run_dir) or {},
+            scenario_id=self.scen.id,
+        )
+        runtime.prepare()
+        runtime.start()
+        self.runtime = runtime
+        self.handle._measurement_runtime = runtime
+        if self.phase is not None:
+            runtime.mark_phase(self.phase[0], "start", phase_index=self.phase[1])
+        self.handle.set_measurement_context(runtime.snapshot())
+        identity = prepared.resolution.get("target_identity") or {}
+        self.handle.log(
+            phase="setup",
+            primitive="measurement-auto-attach",
+            level="info",
+            event="measurement_substrate_attached",
+            payload={
+                "target_node": prepared.target_node,
+                "implementation": identity.get("implementation"),
+                "version": identity.get("version"),
+                "image_digest": identity.get("image_digest") or identity.get("image_config_id"),
+                "resolved": [entry["id"] for entry in prepared.resolution.get("resolved") or []],
+                "skipped": [entry.get("id") for entry in prepared.resolution.get("skipped") or []],
+                "intent": self.intent,
+            },
+        )
+
+    def before_primitive(self, ref, shared_state):
+        if ref.primitive == SUBSTRATE_TEARDOWN_PRIMITIVE:
+            self.finalize()
+
+    def finalize(self):
+        if self.runtime is None or self.finalized:
+            return
+        self.finalized = True
+        self.handle.set_measurement_context(self.runtime.finalize())
+
+
 def _resolve_framework_commit(explicit):
     if explicit is not None and str(explicit).strip():
         return str(explicit).strip()
@@ -1144,6 +1297,8 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     )
     prepared_measurements = None
     measurement_auto_skip = None
+    substrate_intent = None
+    expected_measurements = None
     if measurement_context is None and primitives.antithesis_package_mode():
         # Inside the Antithesis package there is no locally deployed profile
         # runtime to bind collectors to; the package's dwarf-measurements
@@ -1156,9 +1311,16 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         from profile_manager.launch_store import measurement_resolution_from_environment
 
         expected_measurements = measurement_resolution_from_environment()
-        prepared_measurements, measurement_auto_skip = prepare_auto_measurements(
-            scen, expected_resolution=expected_measurements
-        )
+        if scen.substrate is not None and scen.runtime == "devnet" and not scen.profile:
+            # A self-composed devnet has nothing to bind to yet: its taps attach once
+            # runtime_compose_substrate has proven the nodes (see the phase hooks).
+            substrate_intent = substrate_measurement_intent(
+                scen, expected_resolution=expected_measurements
+            )
+        else:
+            prepared_measurements, measurement_auto_skip = prepare_auto_measurements(
+                scen, expected_resolution=expected_measurements
+            )
         if prepared_measurements is not None:
             measurement_context = prepared_measurements.resolution
     seed = scen.seed if scen.seed is not None else 0
@@ -1216,6 +1378,18 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             level="info",
             event="measurement_auto_attach_skipped",
             payload={"reason": measurement_auto_skip},
+        )
+    elif (
+        measurement_context is None
+        and substrate_intent is None
+        and (not_applicable := measurement_not_applicable_reason(scen))
+    ):
+        handle.log(
+            phase="setup",
+            primitive="measurement-auto-attach",
+            level="info",
+            event="measurement_not_applicable",
+            payload={"state": "not_applicable", "reason": not_applicable},
         )
     handle.set_start_resource_snapshot(forensic.capture_local_resource_snapshot(pid=os.getpid(), data_dir=handle.run_dir))
     if (
@@ -1389,6 +1563,18 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
         measurement_runtime.start()
         handle._measurement_runtime = measurement_runtime
         handle.set_measurement_context(measurement_runtime.snapshot())
+    substrate_attachment = (
+        _SubstrateMeasurementAttachment(
+            scen, handle, intent=substrate_intent, expected_resolution=expected_measurements
+        )
+        if substrate_intent is not None and measurement_runtime is None
+        else None
+    )
+
+    def _active_measurement_runtime():
+        if measurement_runtime is not None:
+            return measurement_runtime
+        return substrate_attachment.active_runtime() if substrate_attachment is not None else None
 
     amaru_trace_capture = None
     if (
@@ -1573,8 +1759,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
 
     try:
         for index, phase_obj in enumerate(phases, start=1):
-            if measurement_runtime is not None:
-                measurement_runtime.mark_phase(
+            if substrate_attachment is not None:
+                substrate_attachment.phase = (phase_obj.id, index)
+            if _active_measurement_runtime() is not None:
+                _active_measurement_runtime().mark_phase(
                     phase_obj.id, "start", phase_index=index
                 )
             handle.log(
@@ -1589,11 +1777,13 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                 _run_phase(
                     handle, rng, registry, scen, phase_obj.setup, _phase_step(phase_obj.id, "setup"),
                     shared_state=shared_state, primitive_policy=policy,
+                    hooks=substrate_attachment,
                 )
                 active_faults = _run_faults_for_phase(phase_obj)
                 _run_phase(
                     handle, rng, registry, scen, phase_obj.load, _phase_step(phase_obj.id, "load"),
                     shared_state=shared_state, primitive_policy=policy,
+                    hooks=substrate_attachment,
                 )
                 _remove_faults_for_phase(phase_obj, active_faults)
                 active_faults = []
@@ -1628,9 +1818,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                 _run_phase(
                     handle, rng, registry, scen, phase_obj.teardown, _phase_step(phase_obj.id, "teardown"),
                     ignore_errors=True, shared_state=shared_state, primitive_policy=policy,
+                    hooks=substrate_attachment,
                 )
-                if measurement_runtime is not None:
-                    measurement_runtime.mark_phase(
+                if _active_measurement_runtime() is not None:
+                    _active_measurement_runtime().mark_phase(
                         phase_obj.id, "end", phase_index=index
                     )
                 if phase_ok:
@@ -1653,7 +1844,8 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             except Exception:
                 pass
         try:
-            _run_phase(handle, rng, registry, scen, scen.teardown, "teardown", ignore_errors=True, shared_state=shared_state, primitive_policy=policy)
+            _run_phase(handle, rng, registry, scen, scen.teardown, "teardown", ignore_errors=True, shared_state=shared_state, primitive_policy=policy,
+                       hooks=substrate_attachment)
         except Exception:
             pass
     finally:
@@ -1699,6 +1891,10 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                     event="node_trace_captured",
                     payload={**trace_summary, "ended_at": ended_at},
                 )
+        if substrate_attachment is not None:
+            # No teardown primitive ran (or it was skipped): finalize while the
+            # substrate may still be present rather than lose the evidence.
+            substrate_attachment.finalize()
         observer.stop()
         handle.set_telemetry_summary(observer.summarize())
         if measurement_runtime is not None:
@@ -2372,7 +2568,8 @@ def replay_run(run_id, *, runs_dir, state_dir, registry_path=None):
 _SKIP_STATUSES = frozenset({"unsupported", "delegated-fault"})
 
 
-def _run_phase(handle, rng, registry, scen, refs, phase, ignore_errors=False, shared_state=None, primitive_policy=None):
+def _run_phase(handle, rng, registry, scen, refs, phase, ignore_errors=False, shared_state=None, primitive_policy=None,
+               hooks=None):
     from profile_manager import primitives
     policy = primitive_policy or {}
     for ref in refs:
@@ -2380,6 +2577,12 @@ def _run_phase(handle, rng, registry, scen, refs, phase, ignore_errors=False, sh
             handle.log(phase=phase, primitive=ref.primitive, level="warning", event="primitive_skipped",
                        payload={"policy": policy[ref.primitive], "reason": "capability matrix: " + policy[ref.primitive]})
             continue
+        if hooks is not None:
+            try:
+                hooks.before_primitive(ref, shared_state)
+            except Exception as exc:  # noqa: BLE001 - measurement finalization must not block teardown
+                handle.log(phase=phase, primitive="measurement-auto-attach", level="error",
+                           event="measurement_finalize_error", payload={"message": str(exc)[:512], "type": type(exc).__name__})
         try:
             prim = primitives.instantiate(
                 registry, name=ref.primitive, params=ref.params,
@@ -2399,6 +2602,8 @@ def _run_phase(handle, rng, registry, scen, refs, phase, ignore_errors=False, sh
                 prim.run(handle, rng)
             else:
                 raise TypeError(f"primitive {ref.primitive!r} has no run() method; cannot be used in {phase}")
+            if hooks is not None:
+                hooks.after_primitive(ref, shared_state)
         except Exception as exc:
             handle.log(phase=phase, primitive=ref.primitive, level="error",
                        event="phase_error", payload={"message": str(exc), "type": type(exc).__name__})
