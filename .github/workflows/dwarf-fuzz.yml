@@ -73,6 +73,22 @@ jobs:
         working-directory: dwarf/targets/amaru
         run: cargo build --release
 
+      # The run service runs the Amaru tx-body target only from a manifest that names an exact
+      # source revision and a real binary. The committed manifest says "local"; this job built the
+      # harness from AMARU_REF, so record that revision in the workspace copy (never committed).
+      - name: Qualify the tx-body manifest for the pinned Amaru revision
+        run: |
+          [[ "$AMARU_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "AMARU_REF is not an exact revision: $AMARU_REF" >&2; exit 1; }
+          bin=dwarf/targets/amaru/target/release/amaru-cbor-decode-tx-body
+          [[ -f "$bin" && ! -L "$bin" ]] || { echo "built harness missing or a symlink: $bin" >&2; exit 1; }
+          python3 - dwarf/targets/manifests/amaru-cbor-decode-tx-body.yaml <<'PY'
+          import json, os, sys
+          path = sys.argv[1]
+          manifest = json.load(open(path, encoding="utf-8"))
+          manifest["upstream_commit"] = os.environ["AMARU_REF"]
+          open(path, "w", encoding="utf-8").write(json.dumps(manifest, separators=(",", ":")) + "\n")
+          PY
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
