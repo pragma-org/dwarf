@@ -1,103 +1,27 @@
 # Local wiring campaign: gap and failure tracker
 
-Generated 2026-11-09 13:27 EST from the campaign ledger and the run bundles. Hand-kept causes live in
+Generated 2026-11-09 19:20 EST from the campaign ledger and the run bundles. Hand-kept causes live in
 `docs/plans/wiring-gap-notes.json`; regenerate after every run. Scenarios kept out of the campaign plan as declared gaps
 (opcert frozen pins, two-release mixed minors, pcap/sudo, byzantine tmux relaunch) are listed in
 `docs/plans/2026-11-08-local-wiring-campaign-plan.md`. Latest outcome per scenario:
 
 | Outcome | Scenarios |
 |---|---|
-| error | 5 |
-| fail | 16 |
-| pass | 100 |
+| error | 4 |
+| fail | 1 |
+| pass | 116 |
 
 | Status | Group | Count |
 |---|---|---|
-| rerun-pending | CBOR dataset | 1 |
-| open | block-apply bridge | 3 |
-| open | profile-g / profile-f preview | 2 |
-| open | weak proxy fault modes | 1 |
-| review | known upstream-fixed Amaru bugs | 1 |
-| review | review list | 1 |
-| review | smoke-scenario assertion verdicts | 6 |
-| declared-gap | byzantine/amaru tmux relaunch | 1 |
-| declared-gap | superseded | 1 |
+| validated-by-detection | validated by detection | 1 |
 | removed | removed from the repo | 4 |
 
-## rerun-pending: CBOR dataset
+## validated-by-detection: validated by detection
 
-Cause: dataset is mounted, but the reference verifier image cardano-cbor-dataset:a7561cd is absent on the box
-Fix: building cardano-cbor-dataset:a7561cd on the box from Dockerfile.dwarf (snapshot apt fix, pins unchanged), 2026-11-09
+Cause: VALIDATED (user, 2026-11-09): the run fails because it correctly detects an open Amaru bug. On the latest Amaru v10.11.20261029+23031e0 a coin above i64::MAX panics the node (value.rs:337 'Lovelace exceeds i64::MAX'); earlier also on 10.11.20260912
+Fix: none in DWARF; finding still open upstream
 
-- `cardano-amaru-cbor-dataset-auxiliary-data-differential` (fail, run 20261109T151604Z-1833006a): cardano_cbor_dataset_differential_clean: expected a clean, non-vacuous pinned CBOR dataset differential run that reached the reference and candidate for every required category
-
-## open: block-apply bridge
-
-Cause: forge_block and serve_crafted_block are "deferred" stubs (external cod-forge and wire tools); fixtures are not staged into the run dir (prop3.tx not found)
-Fix: port the forge/serve bridge into DWARF; stage fixtures; 11 more block-apply scenarios are outside the campaign for the same reason
-
-- `conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node` (fail, run 20261109T153133Z-33835cf1): runtime_tx_submit_differential: [Errno 2] No such file or directory: '/var/dwarf/runs/20261109T153133Z-33835cf1/fixture/gov_scriptcontext/prop3.tx'
-- `ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node` (fail, run 20261109T153516Z-3cae5421): fail
-  - Cause: same deferred forge/serve bridge
-  - Fix: same as above
-- `ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node` (fail, run 20261109T153907Z-8fab3645): fail
-  - Cause: same deferred forge/serve bridge
-  - Fix: same as above
-
-## open: profile-g / profile-f preview
-
-Cause: profile-g synced (preview tip) and now prepares; runs fail with "missing runtime metadata: ~/cardano-profiles/<id>/runtime.json": the scenarios hard-code host-era profile paths (45 scenarios use ~/cardano-profiles/...), and phases 1-2 also drive profile-f (Amaru on public preview), which is not deployed
-Fix: map ~/cardano-profiles/<id> to the container profile runtime root (runtime_common.resolve_profile_config) in the preview primitives; deploy + sync profile-f
-
-- `phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo` (fail, run 20261109T175136Z-74b3755a): load_events_are_ok: fail
-- `phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo` (fail, run 20261109T155620Z-9c805486): load_events_are_ok: fail
-
-## open: weak proxy fault modes
-
-Cause: after F127: 0 range requests went through the proxy (target fetched elsewhere); observed_peak_blocks_in_memory is a constant
-Fix: craft the named violation with the F130 proxy: replay an earlier genuinely-signed header (chain-sync modes) or block (range/continuity), corrupt the range request; rejection = target drops the connection; measure per-batch peak from the proxy
-
-- `runtime-substrate-blockfetch-range-pressure-example-smoke` (fail, run 20261109T152553Z-3d9f5d98): blockfetch_range_pressure_bounded: expected BlockFetch range pressure to stay inside configured resource bounds
-
-## review: known upstream-fixed Amaru bugs
-
-Cause: NOT NOVEL: Amaru 10.11.20260918 (aedfe797, 2026-09-18) aborts with "thread 'ledger' has overflowed its stack" on the Delay^28000 vector; upstream fixed it in d9bb18e7 "fix: decode uplc with smaller stack" (2026-09-19), first in v10.11.20260925. DWARF detects the pre-fix build correctly (evidence: run 90c557db, F104 node log + exit 134)
-Fix: rerun against a post-0925 Amaru to prove the fix; scenario should report "target crashed" as its own outcome
-
-- `ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node` (fail, run 20261109T154257Z-9f4ac73a): uplc_deep_delay_stack_safety_matches: UPLC deep-delay evidence is incomplete or inconclusive
-
-## review: review list
-
-Cause: regression reproduces the known Amaru coin-overflow DoS on 10.11.20260912 (frozen b159172; earlier note said 0918, corrected 2026-11-09): after the i64-max+1 case the Amaru submit API stops answering ("fresh-funded value-overflow security finding observed"). The scenario fails because the bug is still present, not because DWARF is broken
-Fix: none in DWARF; decide whether this regression should report "finding still present" as its own outcome. F104 keeps the Amaru log on the next run
-
-- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru` (fail, run 20261109T155009Z-fc5026ab): value_coin_overflow_regression_passed: fresh-funded value-overflow security finding observed
-
-## review: smoke-scenario assertion verdicts
-
-Cause: the scenario ran and an assertion failed; decide whether the node, the scenario or the assertion is wrong
-Fix: none yet
-
-- `runtime-substrate-compound-eclipse-recovery-example-smoke` (fail, run 20261109T151940Z-33822761): chainsync_responder_rollback_then_forward_clean: expected producer fork-switch to yield rollback-then-forward follower behavior
-- `runtime-substrate-compound-local-query-recovery-example-smoke` (fail, run 20261109T152147Z-397146f4): k_bound_rollback_recovered: expected a within-k rollback to recover consistently with non-trivial connectivity and observed slot transitions
-- `runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke` (fail, run 20261109T152725Z-59a5e4f8): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
-- `runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke` (fail, run 20261109T151824Z-b2e095be): stake_snapshot_freeze_consistent: expected stake snapshot to remain byte-stable across the freeze window
-- `runtime-substrate-compound-time-skew-epoch-boundary-example-smoke` (fail, run 20261109T153021Z-ac6916db): epoch_boundary_timing_within_bounds: expected epoch boundary to occur within the configured slot window
-- `runtime-substrate-eclipse-topology-example-smoke` (fail, run 20261109T152341Z-c20e9221): ledger_peer_stake_weight_preserved: expected stake-weight delta <= 0.05
-
-## declared-gap: byzantine/amaru tmux relaunch
-
-Cause: needs the host tmux Amaru relaunch model
-Fix: none yet
-
-- `phase1-runtime-live-amaru-parity-baseline` (error, run none): controller run failed
-
-## declared-gap: superseded
-
-Cause: assertion deliberately superseded by the opcert header scenarios
-Fix: remove or repoint the smoke scenario
-
-- `runtime-substrate-praos-header-assertion-example-smoke` (fail, run 20261109T152923Z-37117ba3): praos_header_assertion_rejected: superseded by runtime_opcert_header_cases; header rejection is proven by the opcert header scenarios
+- `ledger-submit-value-coin-i64-overflow-regression-latest-amaru` (fail, run 20261109T183751Z-499334eb): value_coin_overflow_regression_passed: fresh-funded value-overflow security finding observed
 
 ## removed: removed from the repo
 

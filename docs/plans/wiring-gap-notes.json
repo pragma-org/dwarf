@@ -353,10 +353,10 @@
   },
   {
    "match": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru",
-   "group": "review list",
-   "status": "review",
-   "cause": "regression reproduces the known Amaru coin-overflow DoS on 10.11.20260912 (frozen b159172; earlier note said 0918, corrected 2026-11-09): after the i64-max+1 case the Amaru submit API stops answering (\"fresh-funded value-overflow security finding observed\"). The scenario fails because the bug is still present, not because DWARF is broken",
-   "fix": "none in DWARF; decide whether this regression should report \"finding still present\" as its own outcome. F104 keeps the Amaru log on the next run"
+   "group": "validated by detection",
+   "status": "validated-by-detection",
+   "cause": "VALIDATED (user, 2026-11-09): the run fails because it correctly detects an open Amaru bug. On the latest Amaru v10.11.20261029+23031e0 a coin above i64::MAX panics the node (value.rs:337 'Lovelace exceeds i64::MAX'); earlier also on 10.11.20260912",
+   "fix": "none in DWARF; finding still open upstream"
   },
   {
    "match": "runtime-substrate-praos-header-assertion-example-smoke",
