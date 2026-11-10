@@ -105,3 +105,13 @@ def test_viewer_batch_budget_covers_the_committed_default_runs_unpacked():
         assert size <= single, entry["url"]
         total += size
     assert total * 2 <= budget, f"{total} unpacked bytes leave no headroom in the {budget}-byte batch budget"
+
+
+def test_viewer_accepts_as_many_archives_per_batch_as_the_pages_loader_allows():
+    import re
+    viewer = (ROOT / "docs/index.html").read_text(encoding="utf-8")
+    loader = (ROOT / "docs/portable-defaults.js").read_text(encoding="utf-8")
+    per_batch = int(re.search(r"var LIMITS = \{maxArchives: (\d+)", viewer).group(1))
+    cap = int(re.search(r"var MAX_ARCHIVES = (\d+);", loader).group(1))
+    listed = len(json.loads((ROOT / "docs/evidence/default-runs.json").read_text(encoding="utf-8"))["archives"])
+    assert per_batch >= cap >= listed

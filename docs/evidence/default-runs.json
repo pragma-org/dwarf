@@ -53,6 +53,28 @@
       "group": "Measurement workloads"
     },
     {
+      "url": "runs/20261110T104506Z-9862b6ba-bundle-export.tar.gz",
+      "size_bytes": 3067382,
+      "sha256": "7b384a4f2ca203e6e690c810a923af2e67f15543a3433b64ea8cbd62355d4c92",
+      "run_id": "20261110T104506Z-9862b6ba",
+      "implementation": "amaru",
+      "version": "10.11.20260912",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "Amaru measurement workload",
+      "group": "Measurement workloads"
+    },
+    {
+      "url": "runs/20261110T111937Z-36c7ea65-bundle-export.tar.gz",
+      "size_bytes": 620816,
+      "sha256": "03b4366184cb86ee578f3eb135c329f44e86c883257e4b1d68e440011d842f25",
+      "run_id": "20261110T111937Z-36c7ea65",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "Chain selection under partition",
+      "group": "Amaru vs cardano-node"
+    },
+    {
       "url": "runs/20261110T064044Z-417ab1b2-bundle-export.tar.gz",
       "size_bytes": 323829,
       "sha256": "0df1e053f07ebe7c7e708bb8f5ea8b32e622f753a18a9671a7e6ce69d6e3455b",
@@ -108,10 +130,10 @@
       "group": "Amaru vs cardano-node"
     },
     {
-      "url": "runs/20261110T043257Z-97004b14-bundle-export.tar.gz",
-      "size_bytes": 233369,
-      "sha256": "944a24ecaa562da36f14dbc16aafe241f9ab1b58701a96d51502b34d0a57e0d8",
-      "run_id": "20261110T043257Z-97004b14",
+      "url": "runs/20261110T111421Z-5d6763f6-bundle-export.tar.gz",
+      "size_bytes": 333591,
+      "sha256": "400d6a0c41cf82a27f8947345303011e8c60e648105008ab75d1d541a464c5b7",
+      "run_id": "20261110T111421Z-5d6763f6",
       "implementation": "cardano-node",
       "version": "11.1.2",
       "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
@@ -207,14 +229,25 @@
       "group": "Amaru vs cardano-node"
     },
     {
-      "url": "runs/20261110T043759Z-f9a860eb-bundle-export.tar.gz",
-      "size_bytes": 235656,
-      "sha256": "fab044ab75af31bbab63ecac1ca60c246e9d55dcb3e713265d934832be2bdbef",
-      "run_id": "20261110T043759Z-f9a860eb",
+      "url": "runs/20261110T111700Z-5af0d8be-bundle-export.tar.gz",
+      "size_bytes": 338265,
+      "sha256": "3a2648d42ee4418c5a30d295a4210f64e063fe3801ba6a4e35abdc81f96d2e78",
+      "run_id": "20261110T111700Z-5af0d8be",
       "implementation": "cardano-node",
       "version": "11.1.2",
       "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
       "title": "TxSubmission unexpected body",
+      "group": "Amaru vs cardano-node"
+    },
+    {
+      "url": "runs/20261110T112657Z-7355d431-bundle-export.tar.gz",
+      "size_bytes": 3324890,
+      "sha256": "06abf8e7a2b4790f1c62a78b2a31a9d6ac7f2a2544487c291632c6ba29f069f2",
+      "run_id": "20261110T112657Z-7355d431",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "Zero-denominator governance",
       "group": "Amaru vs cardano-node"
     },
     {
@@ -281,6 +314,17 @@
       "version": "10.11.20260918",
       "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
       "title": "Simple transfer",
+      "group": "Amaru client examples"
+    },
+    {
+      "url": "runs/20261110T101224Z-689843c9-bundle-export.tar.gz",
+      "size_bytes": 302911,
+      "sha256": "7a37d34d34a8f44680355c7dec6ab16874dda0351d63380f9fe8725f3b892e83",
+      "run_id": "20261110T101224Z-689843c9",
+      "implementation": "amaru",
+      "version": "10.11.20260918",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "TxSubmission window",
       "group": "Amaru client examples"
     },
     {
@@ -457,6 +501,17 @@
       "version": "10.7.1",
       "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
       "title": "BlockFetch \u2014 range pressure",
+      "group": "Protocol faults"
+    },
+    {
+      "url": "runs/20261110T113617Z-6a1133da-bundle-export.tar.gz",
+      "size_bytes": 61979,
+      "sha256": "a880bf78b8405968f3e97858e05ae1c029de143fc3bc40f1c693bba1bbe69d11",
+      "run_id": "20261110T113617Z-6a1133da",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "BlockFetch \u2014 stale point rejected",
       "group": "Protocol faults"
     },
     {
@@ -930,6 +985,28 @@
       "version": "11.1.2",
       "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
       "title": "Copied state \u2014 ChainSync divergence",
+      "group": "Recovery, ledger and consensus"
+    },
+    {
+      "url": "runs/20261110T114140Z-e0e960a7-bundle-export.tar.gz",
+      "size_bytes": 1446242,
+      "sha256": "0710ac8d09e6812823c905a1db3ab2c1d34fc53118ab0ad34b8073b339e14221",
+      "run_id": "20261110T114140Z-e0e960a7",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "Copied state \u2014 divergence",
+      "group": "Recovery, ledger and consensus"
+    },
+    {
+      "url": "runs/20261110T113711Z-12fe25cc-bundle-export.tar.gz",
+      "size_bytes": 1338680,
+      "sha256": "4382df032ca66d76f35ba4dd2672f478c654d84aa5aeaa61dc3b584e2ed85f80",
+      "run_id": "20261110T113711Z-12fe25cc",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "Copied state \u2014 node recovery",
       "group": "Recovery, ledger and consensus"
     },
     {

@@ -11604,7 +11604,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
  * The retained-evidence contracts mirror data/measurement_compare.py. */
 (function (root) {
   "use strict";
-  var LIMITS = {maxArchives: 100, maxRuns: 200, maxMetricsPerRun: 2000, maxMetrics: 20000, maxSources: 200,
+  var LIMITS = {maxArchives: 128, maxRuns: 256, maxMetricsPerRun: 2000, maxMetrics: 20000, maxSources: 200,
     maxArchiveBytes: 536870912, maxExpandedBytes: 1073741824, maxBatchExpandedBytes: 4294967296, maxSignatureBytes: 8388608, maxSessionBytes: 67108864, maxCells: 20000};
   var IDENTITY = ["implementation", "version", "source_revision", "image_digest"];
   var PARTS = ["metric_id", "unit", "scenario_id", "scenario_behavior_sha256", "runtime", "mode",
@@ -12191,7 +12191,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   async function signatureIndex(files) {
     var byRun = new Map(), issues = [], used = new Set(), api = archiveApi();
     var signatures = Array.from(files || []);
-    if (signatures.length > LIMITS.maxArchives) throw fault("signature-count-limit", "Choose at most 100 detached signatures per batch");
+    if (signatures.length > LIMITS.maxArchives) throw fault("signature-count-limit", "Choose at most " + LIMITS.maxArchives + " detached signatures per batch");
     for (var i = 0; i < signatures.length; i += 1) {
       var file = signatures[i];
       try {
@@ -12205,7 +12205,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   }
   async function importBatch(options) {
     var archives = Array.from(options.archives || []);
-    if (archives.length > LIMITS.maxArchives) throw fault("archive-count-limit", "Choose at most 100 archives per batch; nothing was opened");
+    if (archives.length > LIMITS.maxArchives) throw fault("archive-count-limit", "Choose at most " + LIMITS.maxArchives + " archives per batch; nothing was opened");
     var signatureFiles = Array.from(options.signatures || []);
     if (signatureFiles.reduce(function (sum, f) { return sum + (Number.isFinite(f.size) ? f.size : Infinity); }, 0) > LIMITS.maxSignatureBytes) throw fault("batch-signature-size-limit", "Selected detached signatures exceed the 8 MiB batch limit; nothing was opened");
     var api = archiveApi(), store = options.store || createRunStore(), normalize = options.normalize || recordFromModel;
