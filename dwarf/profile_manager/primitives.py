@@ -15108,6 +15108,18 @@ def _observe_protocol_peer(observer: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+AMARU_TIP_LOOKBACK_SECONDS = 300
+
+
+def _amaru_tip_lookback_since(since: str) -> str:
+    """``since`` moved back by the tip lookback (F160); unparseable stamps read from the start."""
+    try:
+        stamp = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return "0"
+    return (stamp - timedelta(seconds=AMARU_TIP_LOOKBACK_SECONDS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _observe_protocol_target(observer: dict[str, Any]) -> dict[str, Any]:
     implementation = str(observer.get("implementation") or "")
     container = str(observer.get("container") or "")
@@ -15125,7 +15137,14 @@ def _observe_protocol_target(observer: dict[str, Any]) -> dict[str, Any]:
             extract_latest_adopted_tip,
         )
 
-        tip = extract_latest_adopted_tip(log_text)
+        # F160: the tip as of this read is the latest block adopted up to now. A probe window
+        # shorter than the block interval holds no tip.adopt, so read the tip from a lookback
+        # window; log signals stay limited to the probe window.
+        tip_logs = _protocol_docker_result(
+            ["logs", "--since", _amaru_tip_lookback_since(since), container], timeout=120)
+        if tip_logs.returncode != 0:
+            raise RuntimeError(tip_logs.stderr.strip() or f"cannot read logs from {container}")
+        tip = extract_latest_adopted_tip(tip_logs.stdout + ("\n" + tip_logs.stderr if tip_logs.stderr else ""))
     else:
         from scripts.runtime_cardano_measurement_calibration import classify_log_signals
 
