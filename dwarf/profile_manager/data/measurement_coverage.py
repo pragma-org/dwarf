@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import json
 from pathlib import Path
 import re
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import jsonschema
 import yaml
 
+from profile_manager.config import storage_roots
 from profile_manager.data.catalog_definitions import list_definitions
 from profile_manager.data.coverage import _scenario_category
 from profile_manager.views.threat_coverage import current_threat_coverage_data
@@ -126,6 +128,60 @@ def _evidence_index(mapping: dict[str, Any], cards: list[dict[str, Any]]) -> dic
     return index
 
 
+_RUN_EVIDENCE_CACHE: dict[str, Any] = {}
+
+
+def _live_record(record: dict[str, Any]) -> bool:
+    return record.get("status") == "available" and (record.get("value") is not None or bool(record.get("sample_count")))
+
+
+def _retained_run_evidence(measurement_defs: dict[str, dict[str, Any]]) -> dict[tuple[str, str], dict]:
+    """Passing retained runs whose tap recorded at least one real value, newest run per scenario and tap.
+
+    A failed run, or a tap with only unavailable or empty records, is not evidence."""
+    root = storage_roots().runs
+    try:
+        stamp = (str(root), root.stat().st_mtime_ns)
+    except OSError:
+        return {}
+    if _RUN_EVIDENCE_CACHE.get("stamp") == stamp:
+        return _RUN_EVIDENCE_CACHE["index"]
+    index: dict[tuple[str, str], dict] = {}
+    passed: set[str] = set()
+    for run_dir in sorted(root.iterdir(), key=lambda path: path.name):
+        try:
+            manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        scenario_id = (manifest.get("scenario") or {}).get("id")
+        if manifest.get("exit_status") != "pass" or not scenario_id:
+            continue
+        passed.add(scenario_id)
+        for result_path in sorted((run_dir / "measurements").glob("*/result.json")):
+            tap_id = result_path.parent.name
+            if tap_id not in measurement_defs:
+                continue
+            try:
+                result = json.loads(result_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not any(_live_record(record) for record in result.get("records") or []):
+                continue
+            implementation = (measurement_defs[tap_id].get("compatibility") or {}).get("implementation") or ""
+            index[(scenario_id, tap_id)] = {
+                "card_id": "run", "card_title": scenario_id, "implementation": implementation,
+                "scenario_id": scenario_id, "run_id": run_dir.name,
+                "url": f"/operate/runs/{run_dir.name}", "verified": True,
+            }
+    _RUN_EVIDENCE_CACHE.update(stamp=stamp, index=index, passed=passed)
+    return index
+
+
+def passed_scenarios() -> set[str]:
+    """Scenario ids with at least one passing retained run (read with the run evidence)."""
+    return set(_RUN_EVIDENCE_CACHE.get("passed") or ())
+
+
 def _row(
     *,
     identity: str,
@@ -218,6 +274,7 @@ def _row(
         "scenario_families": families,
         "scenarios": linked_scenarios,
         "scenario_count": len(scenarios),
+        "validated_scenarios": len(scenario_ids & passed_scenarios()),
         "implementations": sorted(implementations) or ["Amaru", "Cardano-node"],
         "measurements": tap_rows,
         "tap_groups": tap_groups,
@@ -251,7 +308,10 @@ def measurement_coverage_payload() -> dict[str, Any]:
         for selection in profile.data.get("measurements") or []
         if selection.get("enabled")
     }
-    evidence_index = _evidence_index(mapping, threat_data["client_card_evidence"])
+    evidence_index = {
+        **_retained_run_evidence(measurement_defs),
+        **_evidence_index(mapping, threat_data["client_card_evidence"]),
+    }
     surface_rules = {item["id"]: item for item in mapping["surface_rules"]}
     family_rules = {item["id"]: item for item in mapping["family_rules"]}
     entry_rules = {item["id"]: item for item in mapping["entry_rules"]}

@@ -46,7 +46,8 @@ def _entry(row: dict[str, Any], kind: str, gap_ids: set[str]) -> dict[str, Any]:
     is_gap = row["id"] in gap_ids or scenario_count == 0 or status == "Unavailable"
     if is_gap:
         tier = "gap"
-    elif status == "Verified":
+    elif status == "Verified" or int(row.get("validated_scenarios") or 0) > 0:
+        # A mapped scenario that ran and passed is covered, with or without tap values.
         tier = "verified"
     else:
         tier = "mapped"
@@ -60,6 +61,7 @@ def _entry(row: dict[str, Any], kind: str, gap_ids: set[str]) -> dict[str, Any]:
         "applicable": int(taps.get("applicable") or 0),
         "verified": int(taps.get("verified") or 0),
         "scenario_count": scenario_count,
+        "validated_scenarios": int(row.get("validated_scenarios") or 0),
         "scenarios": [
             (s.get("id") if isinstance(s, dict) else s) for s in (row.get("scenarios") or [])
         ][:12],
