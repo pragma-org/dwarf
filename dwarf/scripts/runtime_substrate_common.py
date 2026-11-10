@@ -197,6 +197,10 @@ def normalize_substrate(substrate: dict) -> dict:
     amaru_json_traces = substrate.get("amaru_json_traces", False)
     if not isinstance(amaru_json_traces, bool):
         raise ValueError("substrate.amaru_json_traces must be a boolean")
+    # Who chose the Amaru trace form: the scenario, or the measurement-tap default.
+    amaru_json_traces_source = substrate.get("amaru_json_traces_source")
+    if amaru_json_traces_source not in (None, "scenario", "measurement-taps"):
+        raise ValueError("substrate.amaru_json_traces_source must be scenario or measurement-taps")
     amaru_txsubmission_trace = substrate.get("amaru_txsubmission_trace", False)
     if not isinstance(amaru_txsubmission_trace, bool):
         raise ValueError("substrate.amaru_txsubmission_trace must be a boolean")
@@ -551,6 +555,7 @@ def normalize_substrate(substrate: dict) -> dict:
         "cardano_pool_relays": _cardano_pool_relays(substrate),
         "amaru_local_reward_window_timing": _amaru_local_reward_window_timing(substrate),
         "amaru_json_traces": amaru_json_traces,
+        "amaru_json_traces_source": amaru_json_traces_source,
         "amaru_txsubmission_trace": amaru_txsubmission_trace,
         "controller_ownership": controller_ownership,
         "controller_attach": controller_attach,
@@ -974,6 +979,7 @@ def allocate_node_plan(
         "cardano_pool_relays": bool(normalized.get("cardano_pool_relays")),
         "amaru_local_reward_window_timing": bool(normalized.get("amaru_local_reward_window_timing")),
         "amaru_json_traces": bool(normalized.get("amaru_json_traces")),
+        "amaru_json_traces_source": normalized.get("amaru_json_traces_source"),
         "amaru_txsubmission_trace": bool(
             normalized.get("amaru_txsubmission_trace")
         ),

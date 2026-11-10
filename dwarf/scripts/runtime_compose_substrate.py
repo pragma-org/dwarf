@@ -1717,6 +1717,15 @@ def _docker_compose_body(
     }
 
 
+def _amaru_json_traces_record(plan: dict, nodes: list[dict]) -> dict:
+    """runtime.json record of the composed Amaru trace form (JSON taps need JSON)."""
+    if not any(node.get("impl") == "amaru" for node in nodes):
+        return {"amaru_json_traces": False, "amaru_json_traces_source": "no-amaru-nodes"}
+    enabled = bool(plan.get("amaru_json_traces", False))
+    source = plan.get("amaru_json_traces_source") or ("scenario" if enabled else "default-off")
+    return {"amaru_json_traces": enabled, "amaru_json_traces_source": source}
+
+
 def _runtime_user(runtime_root: Path) -> str:
     owner = runtime_root.stat()
     return f"{owner.st_uid}:{owner.st_gid}"
@@ -2138,9 +2147,8 @@ def _compose_substrate_docker(
         "amaru_txsubmission_trace": bool(
             plan.get("amaru_txsubmission_trace", False)
         ),
-        # Measurement capability fact: composed Amaru emits JSON traces only on opt-in.
-        "amaru_json_traces": bool(plan.get("amaru_json_traces", False))
-        and any(node["impl"] == "amaru" for node in metadata_nodes),
+        # Measurement capability fact and who chose the Amaru trace form.
+        **_amaru_json_traces_record(plan, metadata_nodes),
     }
     metadata_path = runtime_root / "runtime.json"
     write_json(metadata_path, metadata)

@@ -655,6 +655,13 @@ def _validate_substrate(value):
         if not isinstance(local_reward_window_timing, bool):
             raise ScenarioValidationError("substrate.amaru_local_reward_window_timing must be a boolean")
         normalized_substrate["amaru_local_reward_window_timing"] = local_reward_window_timing
+    # Amaru trace form: an explicit choice survives (true opts in; false opts a tapped
+    # run out of the JSON-trace default). It was dropped here before.
+    amaru_json_traces = value.get("amaru_json_traces")
+    if amaru_json_traces is not None:
+        if not isinstance(amaru_json_traces, bool):
+            raise ScenarioValidationError("substrate.amaru_json_traces must be a boolean")
+        normalized_substrate["amaru_json_traces"] = amaru_json_traces
     return normalized_substrate
 
 
@@ -1330,6 +1337,18 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
 
                 scen = _replace(scen, substrate={**scen.substrate, "cardano_tap_traces": True})
                 substrate_tap_traces = True
+            if substrate_intent is not None and any(
+                node.get("impl") == "amaru" for node in scen.substrate.get("nodes") or []
+            ):
+                # Tapped composed Amaru emits JSON traces (all 11 default taps need them)
+                # unless the scenario chose a form; Amaru log parsers read both forms.
+                from dataclasses import replace as _replace
+
+                if "amaru_json_traces" in scen.substrate:
+                    trace_form = {"amaru_json_traces_source": "scenario"}
+                else:
+                    trace_form = {"amaru_json_traces": True, "amaru_json_traces_source": "measurement-taps"}
+                scen = _replace(scen, substrate={**scen.substrate, **trace_form})
         else:
             prepared_measurements, measurement_auto_skip = prepare_auto_measurements(
                 scen, expected_resolution=expected_measurements

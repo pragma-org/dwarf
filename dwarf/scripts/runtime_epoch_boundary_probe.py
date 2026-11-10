@@ -46,6 +46,15 @@ _SNAPSHOT_RE = re.compile(
 )
 _POTS_RE = re.compile(r"pots\.dump treasury=(\d+) reserves=(\d+) fees=(\d+) donations=(\d+)")
 
+def _amaru_text(text: str) -> str:
+    """Amaru JSON trace records in the text form these patterns match (text unchanged)."""
+    try:
+        from scripts.runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    except ImportError:  # script mode
+        from runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    return amaru_trace_as_text(text)
+
+
 SECTION_BY_MODE = {
     "force_epoch_boundary": "epoch_boundary",
     "simulate_stake_snapshot_update": "stake_snapshot",
@@ -622,7 +631,7 @@ def _amaru_stake_snapshot(node: dict, config: dict) -> dict:
         body.update({"measured": False, "snapshot_hashes": [], "freeze_window_stable": None, "reason": error})
         return body
     by_epoch: dict[int, list[str]] = {}
-    for match in _SNAPSHOT_RE.findall(log_text):
+    for match in _SNAPSHOT_RE.findall(_amaru_text(log_text)):
         fields = [int(v) for v in match]
         by_epoch.setdefault(fields[6], []).append(_digest(fields))
     if not by_epoch:
@@ -1014,7 +1023,7 @@ def _cardano_reward(samples: list[dict], start_epoch, genesis: dict | None) -> d
 def _amaru_reward(node: dict, config: dict) -> dict:
     body = {"implementation": "amaru", "source": "amaru pots.dump log lines (treasury, reserves, fees, donations)"}
     log_text, error = _amaru_log(node, config)
-    pots = _POTS_RE.findall(log_text or "")
+    pots = _POTS_RE.findall(_amaru_text(log_text or ""))
     body["pots_samples"] = [
         {"treasury": int(t), "reserves": int(r), "fees": int(f), "donations": int(d)} for t, r, f, d in pots[-4:]
     ]

@@ -41,6 +41,15 @@ _AMARU_ADOPT = re.compile(r'tip\.adopt slot=(\d+) header_hash="([0-9a-f]{64})" b
 _AMARU_POTS = re.compile(r"pots\.dump treasury=(\d+) reserves=(\d+) fees=(\d+) donations=(\d+)")
 _AMARU_LEDGER_OPENED = re.compile(r'build\.ledger_opened tip="\[(\d+), h\'([0-9a-f]{64})\', (\d+)\]"')
 _AMARU_HANDSHAKE = re.compile(r'manager\.peer\.handshake_completed peer="([^"]+)"')
+
+def _amaru_text(text: str) -> str:
+    """Amaru JSON trace records in the text form these patterns match (text unchanged)."""
+    try:
+        from scripts.runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    except ImportError:  # script mode
+        from runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    return amaru_trace_as_text(text)
+
 _LOOPBACK_HOSTS = ("127.0.0.1", "[::1]", "::1", "localhost")
 _AMARU_PANIC = re.compile(r"panicked at|thread '.*' panicked|unreachable code", re.I)
 
@@ -124,7 +133,7 @@ def amaru_header_verdict(log_text: str, header_hash: str) -> dict[str, Any]:
     validated = None
     adopted = False
     reason_lines = []
-    for line in log_text.splitlines():
+    for line in _amaru_text(log_text).splitlines():
         if header_hash not in line:
             continue
         match = _AMARU_VALIDATION.search(line)
@@ -148,12 +157,12 @@ def amaru_header_verdict(log_text: str, header_hash: str) -> dict[str, Any]:
 def amaru_tips(log_text: str) -> list[dict[str, Any]]:
     return [
         {"slot": int(m.group(1)), "hash": m.group(2), "block": int(m.group(3))}
-        for m in _AMARU_ADOPT.finditer(log_text)
+        for m in _AMARU_ADOPT.finditer(_amaru_text(log_text))
     ]
 
 
 def amaru_last_pots(log_text: str) -> dict[str, int] | None:
-    hits = _AMARU_POTS.findall(log_text)
+    hits = _AMARU_POTS.findall(_amaru_text(log_text))
     if not hits:
         return None
     t, r, f, d = hits[-1]
@@ -162,7 +171,7 @@ def amaru_last_pots(log_text: str) -> dict[str, int] | None:
 
 def amaru_ledger_tip(log_text: str) -> dict[str, Any] | None:
     """The stable ledger point Amaru opened at boot (the point its ``pots.dump`` reads), last one wins."""
-    hits = _AMARU_LEDGER_OPENED.findall(log_text)
+    hits = _AMARU_LEDGER_OPENED.findall(_amaru_text(log_text))
     if not hits:
         return None
     slot, block_hash, block = hits[-1]
@@ -177,7 +186,7 @@ def amaru_foreign_peers(log_text: str, *, proxy_address: str) -> list[str]:
     duplex connection as a second upstream and switched forks 6 s after adopting the forged block).
     """
     seen: list[str] = []
-    for peer in _AMARU_HANDSHAKE.findall(log_text):
+    for peer in _AMARU_HANDSHAKE.findall(_amaru_text(log_text)):
         host = peer.rsplit(":", 1)[0]
         if peer == proxy_address or host in _LOOPBACK_HOSTS or peer in seen:
             continue

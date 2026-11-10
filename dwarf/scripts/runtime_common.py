@@ -1080,3 +1080,89 @@ def preview_remove_netem(view: PreviewNodeView, state: dict, *, runner=subproces
     remaining = result.stdout or ""
     if "netem" in remaining or "prio 1:" in remaining:
         raise RuntimeError(f"upstream fault qdisc still present in {view.container_name}: {remaining.strip()[:200]}")
+
+
+# --------------------------------------------------------------------------- #
+# Amaru trace forms
+# --------------------------------------------------------------------------- #
+# Amaru logs either tracing-subscriber text ("<ts> LEVEL target: message k=v ...")
+# or, with AMARU_WITH_JSON_TRACES=true, one JSON object per record. Primitives that
+# match the text form read JSON records through this adapter, so one parser serves
+# both. Field order follows the observed text records for every field a primitive
+# matches positionally (JSON objects arrive key-sorted); other fields follow.
+_AMARU_TEXT_FIELD_ORDER = {
+    "tip.adopt": ("slot", "header_hash", "block_height", "max_block_height", "suppressed"),
+    "pots.dump": ("treasury", "reserves", "fees", "donations"),
+    "stake_distribution.snapshot": (
+        "accounts", "dreps", "pools", "active_stake",
+        "pools_voting_stake", "dreps_voting_stake", "epoch",
+    ),
+    "chainsync.intersect_found": ("peer", "conn_id", "current", "highest"),
+    "manager.peer.handshake_completed": ("peer", "conn_id"),
+    "chain.select_from_block_validation": ("time.busy", "time.idle", "point", "valid", "header_hash"),
+}
+_AMARU_SPAN_EVENTS = frozenset({"new", "enter", "exit", "close"})
+_AMARU_UNQUOTED_FIELDS = frozenset({"time.busy", "time.idle"})
+_HEX64 = re.compile(r"[0-9a-fA-F]{64}")
+
+
+def _amaru_text_value(name: str, value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value) if isinstance(value, float) else str(value)
+    if isinstance(value, list):
+        if (
+            len(value) == 3
+            and isinstance(value[0], int) and not isinstance(value[0], bool)
+            and isinstance(value[1], str) and _HEX64.fullmatch(value[1])
+            and isinstance(value[2], int) and not isinstance(value[2], bool)
+        ):
+            # A chain point, as Amaru's Debug renders it in the text form.
+            return f"\"[{value[0]}, h'{value[1]}', {value[2]}]\""
+        return "[" + ", ".join(str(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return json.dumps(value, sort_keys=True)
+    text = str(value)
+    if name in _AMARU_UNQUOTED_FIELDS:
+        return text
+    return '"' + text.replace('"', '\\"') + '"'
+
+
+def amaru_trace_line_as_text(line: str) -> str:
+    """One Amaru JSON trace record in its text form; any other line unchanged."""
+    stripped = line.strip()
+    if not stripped.startswith("{"):
+        return line
+    try:
+        record = json.loads(stripped)
+    except ValueError:
+        return line
+    if not isinstance(record, dict):
+        return line
+    fields = record.get("fields")
+    target = record.get("target")
+    if not isinstance(fields, dict) or not isinstance(target, str) or "message" not in fields:
+        return line
+    message = str(fields.get("message"))
+    span = record.get("span") if isinstance(record.get("span"), dict) else {}
+    head = message
+    order_key = message
+    if message in _AMARU_SPAN_EVENTS and span.get("name"):
+        head = f"{span['name']} {message}"
+        order_key = str(span["name"])
+    remaining = {key: value for key, value in fields.items() if key != "message"}
+    ordered = [key for key in _AMARU_TEXT_FIELD_ORDER.get(order_key, ()) if key in remaining]
+    ordered += [key for key in remaining if key not in ordered]
+    rendered = " ".join(f"{key}={_amaru_text_value(key, remaining[key])}" for key in ordered)
+    level = str(record.get("level") or "INFO").upper()
+    timestamp = str(record.get("timestamp") or "")
+    prefix = f"{timestamp} {level:>5} {target}: "
+    return (prefix + head + (" " + rendered if rendered else "")).lstrip()
+
+
+def amaru_trace_as_text(text: str) -> str:
+    """A whole Amaru log in the text form (text lines and foreign lines unchanged)."""
+    if "{" not in (text or ""):
+        return text
+    return "\n".join(amaru_trace_line_as_text(line) for line in text.split("\n"))

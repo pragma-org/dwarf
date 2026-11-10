@@ -344,6 +344,15 @@ _TX_SUBMISSION_INIT_DELAY_RE = re.compile(
     r"(?:TxSubmissionInitDelay\s+)?(?P<seconds>\d+(?:\.\d+)?)s"
 )
 
+def _amaru_text(text: str) -> str:
+    """Amaru JSON trace records in the text form these patterns match (text unchanged)."""
+    try:
+        from scripts.runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    except ImportError:  # script mode
+        from runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    return amaru_trace_as_text(text)
+
+
 
 def _docker_started_at_epoch(timestamp: object) -> float:
     if not isinstance(timestamp, str) or not timestamp:
@@ -1398,6 +1407,7 @@ def _wait_for_target_adoption(
                 size = stream.tell()
                 stream.seek(max(minimum_log_offset, size - 262_144))
                 text = stream.read().decode("utf-8", "replace")
+            text = _amaru_text(text)
             matching = [line for line in text.splitlines() if header_hash in line]
             for line in matching:
                 if 'outcome="invalid_header"' in line or "Invalid VRF proof" in line:

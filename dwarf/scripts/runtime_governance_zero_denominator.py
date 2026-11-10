@@ -130,6 +130,15 @@ def _trace_connection(line: str) -> int | None:
     return int(value) if value is not None and value.isdigit() else None
 
 
+def _amaru_text(text: str) -> str:
+    """Amaru JSON trace records in the text form these patterns match (text unchanged)."""
+    try:
+        from scripts.runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    except ImportError:  # script mode
+        from runtime_common import amaru_trace_as_text  # noqa: PLC0415
+    return amaru_trace_as_text(text)
+
+
 def _selected_trace_event(line: str) -> str | None:
     return next((marker for marker in _P2P_EVENT_MARKERS if marker in line), None)
 
@@ -250,7 +259,7 @@ def assess_txsubmission_trace(
     blocking_reason = "required-p2p-cycle-was-not-observed"
     relative_offset = 0
     for raw_line in trace.splitlines(keepends=True):
-        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+        line = _amaru_text(raw_line.decode("utf-8", errors="replace").rstrip("\r\n"))
         marker = _selected_trace_event(line)
         line_offset = log_start_offset + relative_offset
         relative_offset += len(raw_line)
@@ -470,7 +479,7 @@ def _submit_amaru_with_admission_log(
         except OSError:
             evidence["status"] = "log-slice-unavailable"
             break
-        for line in log_slice.decode("utf-8", errors="replace").splitlines():
+        for line in _amaru_text(log_slice.decode("utf-8", errors="replace")).splitlines():
             if (
                 "mempool: transaction.accepted" in line
                 and transaction_id_token.search(line) is not None

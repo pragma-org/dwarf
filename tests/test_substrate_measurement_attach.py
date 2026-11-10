@@ -703,6 +703,105 @@ def test_untapped_or_amaru_target_substrate_keeps_its_cardano_config(monkeypatch
     assert [substrate.get("cardano_tap_traces") for substrate in seen] == [None, None]
 
 
+def _bound_substrates(monkeypatch, tmp_path, bodies):
+    events = []
+    _install_fake_primitives(monkeypatch, events, tmp_path)
+    seen = []
+    import profile_manager.primitives as primitives_module
+
+    original = primitives_module.instantiate
+
+    def capture(registry, *, name, **kwargs):
+        prim = original(registry, name=name, **kwargs)
+        if name == "runtime_compose_substrate":
+            real_run = prim.run
+
+            def run(handle, rng):
+                seen.append(dict(prim.bound_substrate))
+                real_run(handle, rng)
+
+            prim.run = run
+        return prim
+
+    monkeypatch.setattr(primitives_module, "instantiate", capture)
+    monkeypatch.setattr(
+        measurement_execution,
+        "prepare_substrate_measurements",
+        lambda *_a, **_k: (_ for _ in ()).throw(MeasurementExecutionError("stop here")),
+    )
+    for index, body in enumerate(bodies):
+        directory = tmp_path / f"s{index}"
+        directory.mkdir()
+        scenario_module.run_scenario(
+            _write_scenario(directory, body), runs_dir=tmp_path / "runs", state_dir=tmp_path / "state",
+        )
+    return seen
+
+
+def _amaru_body(**substrate_updates):
+    body = json.loads(
+        _scenario("amaru", AMARU_VERSION, nodes=[("node1", "cardano-node"), ("amaru1", "amaru")]).raw_bytes
+    )
+    body["substrate"].update(substrate_updates)
+    return body
+
+
+def test_tapped_composed_amaru_defaults_to_json_traces(monkeypatch, tmp_path):
+    seen = _bound_substrates(monkeypatch, tmp_path, [_amaru_body()])
+
+    assert seen[0]["amaru_json_traces"] is True
+    assert seen[0]["amaru_json_traces_source"] == "measurement-taps"
+
+
+def test_scenario_opt_out_keeps_amaru_text_traces(monkeypatch, tmp_path):
+    seen = _bound_substrates(monkeypatch, tmp_path, [_amaru_body(amaru_json_traces=False)])
+
+    assert seen[0]["amaru_json_traces"] is False
+    assert seen[0]["amaru_json_traces_source"] == "scenario"
+
+
+def test_untapped_composed_amaru_keeps_its_log_form(monkeypatch, tmp_path):
+    body = _amaru_body()
+    body["measurement_profile"] = "none"
+    seen = _bound_substrates(monkeypatch, tmp_path, [body])
+
+    assert "amaru_json_traces" not in seen[0]
+    assert "amaru_json_traces_source" not in seen[0]
+
+
+def test_runtime_json_records_the_amaru_trace_form_choice():
+    from scripts.runtime_compose_substrate import _amaru_json_traces_record
+
+    nodes = [{"impl": "amaru"}]
+    assert _amaru_json_traces_record(
+        {"amaru_json_traces": True, "amaru_json_traces_source": "measurement-taps"}, nodes
+    ) == {"amaru_json_traces": True, "amaru_json_traces_source": "measurement-taps"}
+    assert _amaru_json_traces_record({"amaru_json_traces": False}, nodes) == {
+        "amaru_json_traces": False, "amaru_json_traces_source": "default-off",
+    }
+    assert _amaru_json_traces_record({"amaru_json_traces": True}, [{"impl": "cardano-node"}]) == {
+        "amaru_json_traces": False, "amaru_json_traces_source": "no-amaru-nodes",
+    }
+
+
+def test_substrate_amaru_json_traces_source_is_validated(tmp_path):
+    from scripts.runtime_substrate_common import allocate_node_plan
+
+    substrate = _substrate(("amaru1", "amaru"))
+    for node in substrate["nodes"]:
+        node["version"] = AMARU_VERSION
+        node.pop("identity_binding")
+    plan = allocate_node_plan(
+        {**substrate, "amaru_json_traces": True, "amaru_json_traces_source": "measurement-taps"},
+        runtime_root=tmp_path, compose_project="p",
+    )
+    assert plan["amaru_json_traces_source"] == "measurement-taps"
+    with pytest.raises(ValueError, match="amaru_json_traces_source"):
+        allocate_node_plan(
+            {**substrate, "amaru_json_traces_source": "whatever"}, runtime_root=tmp_path, compose_project="p"
+        )
+
+
 def test_profile_cardano_run_captures_the_target_container_log_before_finalize(
     monkeypatch, tmp_path
 ):
@@ -838,12 +937,28 @@ def test_plan_freezes_per_run_overrides_for_a_self_composed_devnet(monkeypatch, 
     assert {item["id"] for item in frozen["measurements"] if item["enabled"]} == resolved
 
 
-def test_plan_refuses_an_explicit_trace_tap_the_composed_amaru_cannot_emit(monkeypatch):
-    from profile_manager.run_plan import RunPlanError
+def test_plan_resolves_amaru_trace_taps_because_tapped_composed_amaru_emits_json(monkeypatch):
+    plan = _plan(
+        monkeypatch,
+        MIXED_AMARU_TARGET,
+        measurement_overrides=[{"id": "amaru-stock-mempool", "enabled": True}],
+    )
 
-    with pytest.raises(RunPlanError, match="amaru-stock-mempool"):
-        _plan(
-            monkeypatch,
-            MIXED_AMARU_TARGET,
-            measurement_overrides=[{"id": "amaru-stock-mempool", "enabled": True}],
+    assert "amaru-stock-mempool" in {entry["id"] for entry in plan["measurements"]["resolved"]}
+
+
+def test_plan_view_follows_the_scenario_amaru_trace_form_opt_out():
+    from profile_manager.run_plan import RunPlanRequest, _substrate_measurement_view
+
+    def view(**substrate):
+        scenario = SimpleNamespace(
+            substrate={"nodes": [], **substrate}, runtime="devnet",
+            target={"implementation": "amaru"}, measurement_profile=None, measurements=[],
         )
+        request = RunPlanRequest(
+            scenario_id="x", measurement_overrides=[{"id": "amaru-stock-mempool", "enabled": True}]
+        )
+        return _substrate_measurement_view(scenario, {"resolved": {}}, request)
+
+    assert view().amaru_json_traces is True
+    assert view(amaru_json_traces=False).amaru_json_traces is False

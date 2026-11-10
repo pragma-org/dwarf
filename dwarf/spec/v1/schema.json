@@ -406,6 +406,10 @@
           "default": false,
           "description": "Opt-in (generated single-host docker devnets only): register each genesis stake pool's own node (service DNS name + container port) as its relay, so the ledger has ledger peers. Off: the generated genesis is unchanged."
         },
+        "amaru_json_traces": {
+          "type": "boolean",
+          "description": "Amaru trace form for composed Amaru nodes (AMARU_WITH_JSON_TRACES). Omitted: JSON when measurement taps attach to the run, text otherwise. true: always JSON. false: always text (opts a tapped run out; the Amaru JSON-trace taps then report unavailable). The choice is recorded in runtime.json as amaru_json_traces / amaru_json_traces_source."
+        },
         "amaru_local_reward_window_timing": {
           "type": "boolean",
           "default": false,

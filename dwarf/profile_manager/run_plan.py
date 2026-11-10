@@ -1364,8 +1364,8 @@ def _substrate_measurement_view(scenario, preview, request) -> _SubstrateMeasure
     here and frozen into the launch exactly as for a profile run.  The implicit
     default is left to the runner, which resolves it against the composed node once
     ``runtime_compose_substrate`` has proven it (scenario.substrate_measurement_intent).
-    Composed substrates run stock catalog images; Amaru JSON-trace taps need the
-    substrate's ``amaru_json_traces`` opt-in.
+    Composed substrates run stock catalog images; a tapped composed Amaru emits JSON
+    traces unless the scenario sets ``amaru_json_traces: false``.
     """
     substrate = scenario.substrate
     if (
@@ -1392,7 +1392,7 @@ def _substrate_measurement_view(scenario, preview, request) -> _SubstrateMeasure
         return None
     return _SubstrateMeasurementView(
         measurement_target_mode="stock",
-        amaru_json_traces=substrate.get("amaru_json_traces") is True,
+        amaru_json_traces=substrate.get("amaru_json_traces") is not False,
     )
 
 
