@@ -1,0 +1,17 @@
+{
+  "localRoots": [
+    {
+      "accessPoints": [
+        {
+          "address": "node2.example",
+          "port": 3001
+        }
+      ],
+      "advertise": false,
+      "trustable": true,
+      "valency": 1
+    }
+  ],
+  "publicRoots": [],
+  "useLedgerAfterSlot": -1
+}
