@@ -1495,3 +1495,30 @@ def test_profile_and_plugin_guidance_do_not_freeze_inventory_or_overstate_isolat
     assert "live catalog" in concepts.lower()
     assert "audit-grade isolation" not in docs.lower()
     assert "not sandboxed" in docs.lower()
+
+
+def _health_sample(slot):
+    return {"profile_id": "profile-g", "health": {"returncode": 0, "parsed": {"tip_slot": slot}}}
+
+
+def test_progress_sample_waits_for_a_tip_that_advances():
+    """Preview averages one block per 20 s: two tip samples 10 s apart see no new block ~61% of the time
+    (e^-0.5), so preflight refused a healthy, following profile-g (runs 20261109T23*). The second
+    sample is retaken every 10 s until the tip advances, up to 120 s."""
+    from profile_manager.data import operate_topology_health as health
+
+    slots = iter([100, 100, 160])
+    slept = []
+    second = health._progress_second_sample(_health_sample(100), lambda: _health_sample(next(slots)),
+                                            sleep=slept.append)
+    assert second["health"]["parsed"]["tip_slot"] == 160
+    assert slept == [10, 10, 10]
+
+
+def test_progress_sample_gives_up_after_the_budget():
+    from profile_manager.data import operate_topology_health as health
+
+    slept = []
+    second = health._progress_second_sample(_health_sample(100), lambda: _health_sample(100), sleep=slept.append)
+    assert second["health"]["parsed"]["tip_slot"] == 100
+    assert sum(slept) == 120

@@ -352,6 +352,32 @@ def _authoritative_controller_result(
     )
 
 
+# Public networks: preview averages one block per 20 s, so one 10 s gap sees no new block ~61% of
+# the time (e^-0.5). The second sample is retaken until the tip advances, up to 120 s (~0.25%, e^-6);
+# a devnet advances inside the first interval, so its check is as fast as before.
+PROGRESS_SAMPLE_INTERVAL_SECONDS = 10
+PROGRESS_SAMPLE_BUDGET_SECONDS = 120
+
+
+def _tip_slot(sample: dict[str, Any] | None) -> int | None:
+    return _integer((((sample or {}).get("health") or {}).get("parsed") or {}).get("tip_slot"))
+
+
+def _progress_second_sample(first: dict[str, Any], take_sample, *, sleep=None) -> dict[str, Any]:
+    """Retake the second health sample until the tip slot advances past the first, within the budget."""
+    sleep = sleep or time.sleep
+    first_slot = _tip_slot(first)
+    waited = 0
+    while True:
+        sleep(PROGRESS_SAMPLE_INTERVAL_SECONDS)
+        waited += PROGRESS_SAMPLE_INTERVAL_SECONDS
+        second = take_sample()
+        second_slot = _tip_slot(second)
+        if (first_slot is None or second_slot is None or second_slot > first_slot
+                or waited >= PROGRESS_SAMPLE_BUDGET_SECONDS):
+            return second
+
+
 def _default_probe(
     profile_id: str | None = None,
     *,
@@ -552,8 +578,7 @@ def _default_probe(
                 classified_health=classified,
                 inventory=inventory,
             )
-        time.sleep(10)
-        second = _live_health(profile_id)
+        second = _progress_second_sample(first, lambda: _live_health(profile_id))
         classified = classify_current_profile_health(first, second)
         return build_current_topology_snapshot(
             desired=desired,
