@@ -168,9 +168,21 @@ def _profile_node_containers(config: RuntimeConfig) -> list[str]:
     return names
 
 
+def _require_containers_on_controller(config: RuntimeConfig, containers: list[str]) -> None:
+    """A dashboard/controller profile runs its nodes as containers; the host-era tmux path only
+    exists under the legacy profiles root. Finding no container there is an error, never a
+    silent tmux 'restart' that kills nothing (run 20261109T040452Z passed that way)."""
+    legacy = Path(config.runtime_root).is_relative_to(_LEGACY_PROFILES_ROOT)
+    if not containers and not legacy:
+        raise RuntimeError(
+            f"controller profile at {config.runtime_root} lists no node containers in runtime.json; "
+            "refusing the host-era tmux stop/start (it would restart nothing)")
+
+
 def stop_session_with_details(config: RuntimeConfig) -> dict:
     started_at = time.monotonic()
     containers = _profile_node_containers(config)
+    _require_containers_on_controller(config, containers)
     if containers:
         # F121: a container profile is stopped through its node containers, not a tmux session
         result = subprocess.run(["docker", "stop", "-t", "30", *containers], check=False, text=True, capture_output=True)
@@ -235,6 +247,7 @@ def start_session(config: RuntimeConfig) -> None:
 def start_session_with_details(config: RuntimeConfig) -> dict:
     started_at = time.monotonic()
     containers = _profile_node_containers(config)
+    _require_containers_on_controller(config, containers)
     if containers:
         result = subprocess.run(["docker", "start", *containers], check=False, text=True, capture_output=True)
         if result.returncode != 0:

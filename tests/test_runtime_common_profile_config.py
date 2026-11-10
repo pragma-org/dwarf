@@ -71,3 +71,23 @@ def test_query_tip_passes_the_short_link_to_cardano_cli(tmp_path, monkeypatch):
                               log_paths=(), fallback_range=("", ""))
     assert rc.query_tip(config, "node1")["slot"] == 5
     assert len(seen["socket"]) < 100
+
+
+def test_a_controller_profile_without_node_containers_refuses_to_restart(tmp_path, monkeypatch):
+    """Run 20261109T040452Z (m3-runtime-profile-restart-tip-recovery): no node container was found, the
+    helper fell back to the host-era tmux path, killed nothing, 'started' a session in 0.016 s and the
+    scenario passed with an identical tip. On a controller install that must be an error, not a restart."""
+    import pytest
+
+    from scripts import runtime_common as rc
+
+    root = tmp_path / "topology-runtimes" / "profile-a" / "current"
+    root.mkdir(parents=True)
+    (root / "runtime.json").write_text('{"profile_id": "profile-a", "nodes": []}', encoding="utf-8")
+    config = rc.resolve_profile_config("profile-a", legacy_root=tmp_path / "no-legacy")
+    config = config.__class__(**{**config.__dict__, "runtime_root": root, "env_root": root / "env"})
+    monkeypatch.setattr(rc.subprocess, "run", lambda *a, **k: pytest.fail(f"must not run {a}"))
+    with pytest.raises(RuntimeError, match="no node containers"):
+        rc.stop_session_with_details(config)
+    with pytest.raises(RuntimeError, match="no node containers"):
+        rc.start_session_with_details(config)
