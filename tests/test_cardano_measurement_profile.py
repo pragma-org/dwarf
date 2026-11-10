@@ -20,6 +20,26 @@ def test_cardano_measurement_profile_is_exact_opt_in_and_preserves_profile_ident
     assert substrate["cardano_measurement_traces"] is True
 
 
+def test_ordinary_cardano_profile_deploys_with_tap_trace_namespaces_only():
+    """Profile Cardano taps parse BlockFetch.Client/KeepAlive/Mempool/LedgerMetrics;
+    a plain profile (profile-a) deployed without them, so its taps had no records.
+    The deploy now turns on the namespaces only (no measurement node settings)."""
+    profile = find_profile("profile-a-haskell-peersharing-disabled")
+    assert profile.cardano_measurement_traces is False
+    preview = build_deployment_version_preview(asdict(profile))
+    substrate = versioned_substrate_for_profile(profile, preview)
+    assert substrate["cardano_measurement_traces"] is False
+    assert substrate["cardano_tap_traces"] is True
+
+
+def test_measurement_profile_keeps_its_full_trace_settings_and_no_second_flag():
+    profile = find_profile("profile-s-cardano-measurement-stock-control")
+    substrate = versioned_substrate_for_profile(
+        profile, build_deployment_version_preview(asdict(profile))
+    )
+    assert substrate.get("cardano_tap_traces") is not True
+
+
 def test_measurement_trace_config_enables_only_audited_machine_namespaces(tmp_path):
     path = tmp_path / "configuration.yaml"
     original = {

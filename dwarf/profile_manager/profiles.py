@@ -894,6 +894,13 @@ def versioned_substrate_for_profile(
         "nodes": nodes,
         "topology": {"edges": edges},
     }
+    if not profile.cardano_measurement_traces and any(
+        node.get("impl") == "cardano-node" for node in nodes
+    ):
+        # Profile Cardano runs are tapped by default (implicit-default profile); the
+        # stock collectors need BlockFetch.Client/KeepAlive/Mempool/LedgerMetrics
+        # records. Namespaces only: the measurement node settings stay off.
+        substrate["cardano_tap_traces"] = True
     for field in ("operator_registration_id", "operator_overlay_revision"):
         value = version_preview.get(field)
         if value is not None:
