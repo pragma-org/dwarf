@@ -190,3 +190,26 @@ def test_partition_attempts_are_bounded():
     out = _run(FakeSubstrate(isolated_forges=False), partition_max_seconds=5, partition_attempts=2)
     assert len(out["partition_attempts"]) == 2
     assert out["rollback_status"] == "no_fork_formed"
+
+
+def test_the_partition_heals_before_the_majority_nears_k():
+    """Run 20261110T101845Z: k=5, the heal came when the majority was 4 blocks past the fork, the
+    majority forged 4 more before the peers reconnected, and the 8-deep fork could never resolve.
+    The partition must heal while the majority still leaves room for the reconnect."""
+    out = _run(FakeSubstrate(isolated_forges=False), k=5, partition_max_seconds=60, partition_attempts=2)
+    assert [a["outcome"] for a in out["partition_attempts"]] == ["majority_reached_depth_cap"] * 2
+    assert all(a["majority_blocks_since_fork"] <= 3 for a in out["partition_attempts"])
+    assert out["rollback_status"] == "no_fork_formed"
+
+
+class NeverHeals(FakeSubstrate):
+    def connect(self, node, partition):
+        self.events.append(("connect", node["id"], tuple(partition["aliases"])))
+        return {"ok": True}                       # the peers never take the isolated node back
+
+
+def test_a_fork_left_deeper_than_k_after_heal_is_named():
+    out = _run(NeverHeals(), k=5)
+    assert out["fork_formed"] is True and out["converged"] is False
+    assert out["rollback_status"] == "fork_deeper_than_k_after_heal"
+    assert out["post_heal_majority_blocks_since_fork"] > 5

@@ -452,6 +452,11 @@ def partition_fork_and_heal(*, nodes: list[dict], target_id: str, config: dict, 
     partition_max = float(config.get("partition_max_seconds", 75))
     # Stop growing the target's branch before a rollback deeper than k would be needed.
     depth_cap = max(1, int(security_parameter_k) - 1) if security_parameter_k else int(config.get("max_fork_blocks", 5))
+    # The majority keeps forging while the peers reconnect after the heal (5.8 s and 4 blocks in run
+    # 20261110T101845Z). If its branch passes k before the reconnect, the fork can never resolve, so
+    # heal while the majority still leaves reconnect_margin_blocks of room below k.
+    margin = max(1, int(config.get("reconnect_margin_blocks", 2)))
+    majority_cap = max(2, int(security_parameter_k) - margin) if security_parameter_k else depth_cap + 1
     out = {"target_node": str(target_id), "security_parameter_k": security_parameter_k,
            "security_parameter_k_source": "shelley-genesis securityParam" if security_parameter_k else None,
            "fork_formed": False, "converged": False, "rollback_status": "not_started"}
@@ -496,6 +501,9 @@ def partition_fork_and_heal(*, nodes: list[dict], target_id: str, config: dict, 
                 if own >= depth_cap:
                     outcome = "isolated_branch_reached_depth_cap"
                     break
+                if majority >= majority_cap:
+                    outcome = "majority_reached_depth_cap"
+                    break
         finally:
             out["partition_seconds"] = round(ops.now() - started, 3)
             heal_at = ops.now()
@@ -516,6 +524,12 @@ def partition_fork_and_heal(*, nodes: list[dict], target_id: str, config: dict, 
     ok, tips, seconds = _wait_converged(nodes, ops, timeout=converge_timeout, poll=poll)
     out["converged"], out["heal_to_convergence_seconds"] = ok, round(seconds, 3)
     out["post_heal_tips"] = {k: _short(v) for k, v in tips.items()}
+    fork_block = (out.get("fork_point") or {}).get("block")
+    other_ids = {str(n.get("id") or n.get("name")) for n in others}
+    majority_after = [int(t["block"]) for node_id, t in tips.items()
+                      if node_id in other_ids and isinstance(t, dict) and t.get("block") is not None]
+    out["post_heal_majority_blocks_since_fork"] = (
+        max(majority_after) - int(fork_block) if (majority_after and fork_block is not None) else None)
 
     target_lines = ops.log_lines_since(target, heal_at)
     out["switch_logged_by_target"] = (count_fork_switches(target_lines) >= 1) if target_lines is not None else None
@@ -525,6 +539,9 @@ def partition_fork_and_heal(*, nodes: list[dict], target_id: str, config: dict, 
     rolled_back = abandoned_on_chain is False or (abandoned_on_chain is None and out["switch_logged_by_target"])
     if not out["fork_formed"]:
         out["rollback_status"] = "no_fork_formed"
+    elif not ok and security_parameter_k and (out["post_heal_majority_blocks_since_fork"] or 0) > int(security_parameter_k):
+        # The majority passed k before the nodes reconnected: by design no node may switch that far.
+        out["rollback_status"] = "fork_deeper_than_k_after_heal"
     elif not ok:
         out["rollback_status"] = "not_converged"
     elif security_parameter_k and own > int(security_parameter_k):

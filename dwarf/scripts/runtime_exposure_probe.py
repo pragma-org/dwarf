@@ -20,6 +20,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from runtime_connection_state import resolve_target_process  # noqa: E402
 from runtime_multi_node_observation import _query_tip_once, _resolve_socket_path  # noqa: E402
 from runtime_resource_abuse_fault import apply_network_impairment, _load_stats  # noqa: E402
+from runtime_resource_profile import collect_container_samples  # noqa: E402
 from runtime_txsubmission_probe import HANDSHAKE_PROPOSE_HEX, _classify_handshake_reply, _encode_mux_sdu  # noqa: E402
 
 
@@ -530,23 +531,32 @@ def _network_magic(metadata: dict, config: dict) -> int:
     return int(value)
 
 
-def _sample_ps_cpu_pct(pid: int) -> float:
-    result = subprocess.run(
-        ["ps", "-p", str(pid), "-o", "%cpu="],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=5,
-    )
-    if result.returncode != 0:
-        return 0.0
+def _sample_node_cpu_pct(node: dict, target: dict, runner=None) -> float | None:
+    """CPU % of the node under test, or None when it cannot be read (never a stand-in 0).
+
+    A containerised node is read from its cgroup through ``docker stats`` (the controller is not in
+    the host pid namespace, so ``ps -p <host pid>`` there sees nothing or an unrelated process)."""
+    container = str(node.get("container_name") or "")
+    if container:
+        try:
+            samples = collect_container_samples(container_name=container, expected_name=container,
+                                                sample_count=1, sample_interval_seconds=0.0, runner=runner)
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+            return None
+        value = samples[0].get("cpu_percent") if samples else None
+        return float(value) if value is not None else None
+    pid = int((target or {}).get("pid") or 0)
+    if pid <= 0:
+        return None
+    result = (runner or subprocess.run)(["ps", "-p", str(pid), "-o", "%cpu="],
+                                        capture_output=True, text=True, check=False, timeout=5)
     text = (result.stdout or "").strip()
-    if not text:
-        return 0.0
+    if result.returncode != 0 or not text:
+        return None
     try:
         return float(text.splitlines()[-1].strip())
     except ValueError:
-        return 0.0
+        return None
 
 
 def _resolve_peer_node_id(metadata: dict, target_node: str) -> str:
@@ -586,7 +596,19 @@ def _run_local_query_stress(*, metadata: dict, config: dict) -> dict:
     deadline = time.monotonic() + max(0.5, duration_seconds)
     success_count = 0
     failure_count = 0
-    peak_cpu_pct = 0.0
+    cpu_samples: list[float] = []
+
+    def _sample_cpu_until_deadline() -> None:
+        # docker stats takes about a second per read; sample beside the query loop, not inside it.
+        while True:
+            value = _sample_node_cpu_pct(node, target)
+            if value is not None:
+                cpu_samples.append(value)
+            if time.monotonic() >= deadline:
+                return
+
+    sampler = threading.Thread(target=_sample_cpu_until_deadline, daemon=True)
+    sampler.start()
     while time.monotonic() < deadline:
         sample = _query_tip_once(
             cardano_cli=cardano_cli,
@@ -599,12 +621,14 @@ def _run_local_query_stress(*, metadata: dict, config: dict) -> dict:
             success_count += 1
         else:
             failure_count += 1
-        peak_cpu_pct = max(peak_cpu_pct, _sample_ps_cpu_pct(int(target["pid"])))
         time.sleep(query_interval_seconds)
+    sampler.join(timeout=35)
     return {
         "rate_limit_triggered": success_count > 0,
         "critical_work_blocked": success_count == 0,
-        "peak_cpu_pct": round(peak_cpu_pct, 2),
+        "peak_cpu_pct": round(max(cpu_samples), 2) if cpu_samples else None,
+        "cpu_sample_count": len(cpu_samples),
+        "cpu_source": "docker-stats" if node.get("container_name") else "ps",
         "cpu_ceiling_pct": cpu_ceiling_pct,
         "query_success_count": success_count,
         "query_failure_count": failure_count,

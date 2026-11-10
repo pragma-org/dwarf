@@ -21725,13 +21725,16 @@ class LocalQueryAmplificationBounded(AssertionPrimitive):
         result_body = payload.get("result") or {}
         rate_limit_triggered = bool(result_body.get("rate_limit_triggered", False))
         critical_work_blocked = bool(result_body.get("critical_work_blocked", True))
-        peak_cpu_pct = float(result_body.get("peak_cpu_pct", 100.0) or 100.0)
+        # A measured 0.0 is a value; no sample is no CPU claim (never read as 0 or 100).
+        raw_peak = result_body.get("peak_cpu_pct")
+        peak_cpu_pct = float(raw_peak) if isinstance(raw_peak, (int, float)) and not isinstance(raw_peak, bool) else None
         cpu_ceiling_pct = float(result_body.get("cpu_ceiling_pct", 0.0) or 0.0)
         enough = (
             latest is not None
             and payload.get("outcome") == "ok"
             and rate_limit_triggered
             and not critical_work_blocked
+            and peak_cpu_pct is not None
             and peak_cpu_pct <= cpu_ceiling_pct
         )
         result = "pass" if enough else "fail"
