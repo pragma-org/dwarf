@@ -77,7 +77,12 @@ def test_prepare_cardano_measurements_resolves_exact_live_stock_runtime(tmp_path
     assert collector.trace_paths == [
         tmp_path / "run" / "outputs" / "cardano-measurement-calibration" / "raw" / "node1.ndjson",
         tmp_path / "run" / "outputs" / "protocol-decode-cases" / "raw" / "node1.ndjson",
+        # The target node's own container log for the run window (only two scenario
+        # primitives write the calibration/decode sources).
+        tmp_path / "run" / "outputs" / "cardano-measurement-run" / "raw" / "node1.ndjson",
     ]
+    assert prepared.trace_container == "dwarf-cardano-node1"
+    assert prepared.run_window_trace_path(tmp_path / "run") == collector.trace_paths[-1]
 
 
 def test_prepare_cardano_measurements_fails_closed_on_unproven_runtime(tmp_path):

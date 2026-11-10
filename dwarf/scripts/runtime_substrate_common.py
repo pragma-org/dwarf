@@ -186,6 +186,11 @@ def normalize_substrate(substrate: dict) -> dict:
     cardano_measurement_traces = substrate.get("cardano_measurement_traces", False)
     if not isinstance(cardano_measurement_traces, bool):
         raise ValueError("substrate.cardano_measurement_traces must be a boolean")
+    # Set by the scenario runner when measurement taps attach to a composed Cardano
+    # target: the stock tap trace namespaces, without the measurement node settings.
+    cardano_tap_traces = substrate.get("cardano_tap_traces", False)
+    if not isinstance(cardano_tap_traces, bool):
+        raise ValueError("substrate.cardano_tap_traces must be a boolean")
     cardano_observability_traces = substrate.get("cardano_observability_traces", False)
     if not isinstance(cardano_observability_traces, bool):
         raise ValueError("substrate.cardano_observability_traces must be a boolean")
@@ -539,6 +544,7 @@ def normalize_substrate(substrate: dict) -> dict:
     return {
         "profile_id": profile_id,
         "cardano_measurement_traces": cardano_measurement_traces,
+        "cardano_tap_traces": cardano_tap_traces,
         "cardano_observability_traces": cardano_observability_traces,
         "cardano_experimental_protocols": cardano_experimental_protocols,
         "cardano_accepted_connections_limit": _accepted_connections_limit(substrate),
@@ -961,6 +967,7 @@ def allocate_node_plan(
         "cardano_measurement_traces": bool(
             normalized.get("cardano_measurement_traces")
         ),
+        "cardano_tap_traces": bool(normalized.get("cardano_tap_traces")),
         "cardano_observability_traces": bool(normalized.get("cardano_observability_traces")),
         "cardano_experimental_protocols": normalized.get("cardano_experimental_protocols"),
         "cardano_accepted_connections_limit": normalized.get("cardano_accepted_connections_limit"),

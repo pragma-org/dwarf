@@ -1298,6 +1298,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     prepared_measurements = None
     measurement_auto_skip = None
     substrate_intent = None
+    substrate_tap_traces = False
     expected_measurements = None
     if measurement_context is None and primitives.antithesis_package_mode():
         # Inside the Antithesis package there is no locally deployed profile
@@ -1317,6 +1318,18 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             substrate_intent = substrate_measurement_intent(
                 scen, expected_resolution=expected_measurements
             )
+            if (
+                substrate_intent is not None
+                and scen.target.get("implementation") == "cardano-node"
+                and scen.substrate.get("cardano_measurement_traces") is not True
+            ):
+                # A tapped composed Cardano target emits the trace namespaces its
+                # collectors read (BlockFetch.Client, KeepAlive, Mempool, ...); without
+                # them the stock taps could only report empty traces.
+                from dataclasses import replace as _replace
+
+                scen = _replace(scen, substrate={**scen.substrate, "cardano_tap_traces": True})
+                substrate_tap_traces = True
         else:
             prepared_measurements, measurement_auto_skip = prepare_auto_measurements(
                 scen, expected_resolution=expected_measurements
@@ -1371,6 +1384,14 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
     from profile_manager.launch_store import retain_launch_inputs_from_environment
 
     retain_launch_inputs_from_environment(handle.run_dir)
+    if substrate_tap_traces:
+        handle.log(
+            phase="setup",
+            primitive="measurement-auto-attach",
+            level="info",
+            event="measurement_trace_namespaces_enabled",
+            payload={"substrate_flag": "cardano_tap_traces", "node_settings_changed": False},
+        )
     if measurement_auto_skip:
         handle.log(
             phase="setup",
@@ -1550,6 +1571,7 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                 topology_lock.close()
             return handle
     measurement_runtime = None
+    measurement_window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     if measurement_context is not None:
         from profile_manager.measurement_runtime import MeasurementRuntime
 
@@ -1625,6 +1647,21 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                     "started_at": amaru_trace_capture["started_at"],
                 },
             )
+
+    cardano_trace_capture = None
+    if (
+        measurement_runtime is not None
+        and prepared_measurements is not None
+        and getattr(prepared_measurements, "implementation", None) == "cardano-node"
+        and getattr(prepared_measurements, "trace_container", None)
+    ):
+        # The target node's own log is the stock collectors' trace source; retain the
+        # run window before the collectors finalize (as for the Amaru relay above).
+        cardano_trace_capture = {
+            "container": prepared_measurements.trace_container,
+            "started_at": measurement_window_started_at,
+            "destination": prepared_measurements.run_window_trace_path(handle.run_dir),
+        }
 
     observer = telemetry.ObserverCollector(metrics_dir=handle.run_dir / "metrics", pid=os.getpid())
     observer.start()
@@ -1891,6 +1928,23 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                     event="node_trace_captured",
                     payload={**trace_summary, "ended_at": ended_at},
                 )
+        if cardano_trace_capture is not None:
+            from profile_manager import measurement_execution as _measurement_execution
+
+            ended_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            try:
+                trace_summary = _measurement_execution.capture_container_trace_window(
+                    cardano_trace_capture["container"],
+                    started_at=cardano_trace_capture["started_at"],
+                    ended_at=ended_at,
+                    destination=cardano_trace_capture["destination"],
+                )
+            except Exception as exc:  # noqa: BLE001 - never lose terminal evidence
+                handle.log(phase="measurement", primitive="cardano-scenario-trace", level="warning",
+                           event="node_trace_unavailable", payload={"reason": str(exc)[:512], "stage": "finish"})
+            else:
+                handle.log(phase="measurement", primitive="cardano-scenario-trace", level="info",
+                           event="node_trace_captured", payload={**trace_summary, "ended_at": ended_at})
         if substrate_attachment is not None:
             # No teardown primitive ran (or it was skipped): finalize while the
             # substrate may still be present rather than lose the evidence.

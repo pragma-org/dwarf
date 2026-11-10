@@ -728,6 +728,15 @@ class PreparedScenarioMeasurements:
     # the collectors read it live (offset at start, delta at finalize).
     trace_paths: tuple[Path, ...] | None = None
     peer_policy: str | None = None
+    # Profile Cardano runs: the target container whose own log the runner captures
+    # for the run window (capture_container_trace_window) into run_window_trace_path.
+    trace_container: str | None = None
+
+    def run_window_trace_path(self, run_dir: str | Path) -> Path:
+        return (
+            Path(run_dir) / "outputs" / "cardano-measurement-run" / "raw"
+            / f"{self.target_node}.ndjson"
+        )
 
     def build_factories(self, run_dir: str | Path) -> dict[str, Any]:
         run_path = Path(run_dir)
@@ -767,6 +776,7 @@ class PreparedScenarioMeasurements:
                 / "protocol-decode-cases"
                 / "raw"
                 / "node1.ndjson",
+                self.run_window_trace_path(run_path),
             )
             all_factories = build_cardano_measurement_factories(
                 runtime_metadata_path=self.runtime_metadata_path,
@@ -965,7 +975,51 @@ def prepare_scenario_measurements(
         patched_trace_paths=(
             patched_trace_paths if implementation == "cardano-node" else ()
         ),
+        trace_container=(
+            str(node.get("container_name") or "") or None
+            if implementation == "cardano-node"
+            else None
+        ),
     )
+
+
+def capture_container_trace_window(
+    container: str,
+    *,
+    started_at: str,
+    ended_at: str,
+    destination: str | Path,
+    runner: Callable[..., Any] = subprocess.run,
+) -> dict[str, Any]:
+    """Retain the measured node container's own JSON log records for one run window.
+
+    The node's log is the trace source the stock collectors read; without it they see
+    only what a calibration primitive happened to write. Non-JSON lines are dropped,
+    records are kept byte-for-byte."""
+    path = Path(destination)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    result = runner(
+        ["docker", "logs", "--since", started_at, "--until", ended_at, container],
+        capture_output=True, text=True, check=False, timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            (result.stderr or "").strip()[:256] or "cannot read the measured node container log"
+        )
+    rows = []
+    for line in (str(result.stdout or "") + "\n" + str(result.stderr or "")).splitlines():
+        text = line.strip()
+        if not text.startswith("{"):
+            continue
+        try:
+            record = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            rows.append(text)
+    body = "".join(row + "\n" for row in rows)
+    path.write_text(body, encoding="utf-8")
+    return {"container": container, "record_count": len(rows), "bytes": len(body.encode("utf-8"))}
 
 
 # Version sentinels a portable scenario target may still carry when it runs without a

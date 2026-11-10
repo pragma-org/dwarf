@@ -563,6 +563,187 @@ def test_composed_amaru_json_traces_are_an_honoured_substrate_opt_in():
     assert "AMARU_WITH_JSON_TRACES" not in ordinary
 
 
+def test_tap_trace_namespaces_enable_collector_traces_without_changing_node_logic(tmp_path):
+    from scripts.runtime_compose_substrate import (
+        CARDANO_MEASUREMENT_TRACE_NAMESPACES,
+        _enable_cardano_tap_trace_namespaces,
+    )
+
+    config = tmp_path / "configuration.yaml"
+    config.write_text(json.dumps({"TraceOptions": {"Mempool": {"severity": "Notice"}}}))
+
+    record = _enable_cardano_tap_trace_namespaces(config)
+
+    body = json.loads(config.read_text())
+    assert record["enabled"] is True and record["node_settings"] == {}
+    assert record["source"] == "measurement-taps"
+    for namespace in CARDANO_MEASUREMENT_TRACE_NAMESPACES:
+        assert body["TraceOptions"][namespace]["detail"] == "DDetailed"
+    assert body["TraceOptions"]["Mempool"]["severity"] == "Debug"
+    assert "TxSubmissionLogicVersion" not in body
+
+
+def test_substrate_tap_traces_is_a_validated_plan_flag(tmp_path):
+    from scripts.runtime_substrate_common import allocate_node_plan
+
+    substrate = _substrate(("node1", "cardano-node"))
+    for node in substrate["nodes"]:
+        node["version"] = CARDANO_VERSION
+        node.pop("identity_binding")
+    plan = allocate_node_plan(
+        {**substrate, "cardano_tap_traces": True}, runtime_root=tmp_path, compose_project="p"
+    )
+    assert plan["cardano_tap_traces"] is True
+    with pytest.raises(ValueError, match="cardano_tap_traces"):
+        allocate_node_plan(
+            {**substrate, "cardano_tap_traces": "yes"}, runtime_root=tmp_path, compose_project="p"
+        )
+
+
+def test_container_trace_window_keeps_only_the_node_json_records(tmp_path):
+    from profile_manager.measurement_execution import capture_container_trace_window
+
+    calls = []
+
+    def runner(argv, **_kwargs):
+        calls.append(argv)
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"ns":"Mempool.AddedTx","at":"t1"}\nplain text line\n[1,2]\n',
+            stderr='{"ns":"BlockFetch.Client.CompletedBlockFetch","at":"t2"}\n',
+        )
+
+    destination = tmp_path / "raw" / "node1.ndjson"
+    summary = capture_container_trace_window(
+        "dwarf-cardano-node1", started_at="S", ended_at="E", destination=destination, runner=runner,
+    )
+
+    assert calls == [["docker", "logs", "--since", "S", "--until", "E", "dwarf-cardano-node1"]]
+    lines = destination.read_text().splitlines()
+    assert [json.loads(line)["ns"] for line in lines] == [
+        "Mempool.AddedTx", "BlockFetch.Client.CompletedBlockFetch",
+    ]
+    assert summary["record_count"] == 2
+
+
+def test_tapped_cardano_substrate_turns_on_tap_trace_namespaces(monkeypatch, tmp_path):
+    events = []
+    _install_fake_primitives(monkeypatch, events, tmp_path)
+    seen = {}
+    import profile_manager.primitives as primitives_module
+
+    original = primitives_module.instantiate
+
+    def capture(registry, *, name, **kwargs):
+        prim = original(registry, name=name, **kwargs)
+        if name == "runtime_compose_substrate":
+            real_run = prim.run
+
+            def run(handle, rng):
+                seen["substrate"] = dict(prim.bound_substrate)
+                real_run(handle, rng)
+
+            prim.run = run
+        return prim
+
+    monkeypatch.setattr(primitives_module, "instantiate", capture)
+    monkeypatch.setattr(
+        measurement_execution,
+        "prepare_substrate_measurements",
+        lambda *_a, **_k: (_ for _ in ()).throw(MeasurementExecutionError("stop here")),
+    )
+
+    handle = scenario_module.run_scenario(
+        _write_scenario(tmp_path, _scenario_body()),
+        runs_dir=tmp_path / "runs",
+        state_dir=tmp_path / "state",
+    )
+
+    assert seen["substrate"]["cardano_tap_traces"] is True
+    log = [json.loads(line) for line in (handle.run_dir / "log.ndjson").read_text().splitlines()]
+    assert any(entry["event"] == "measurement_trace_namespaces_enabled" for entry in log)
+
+
+def test_untapped_or_amaru_target_substrate_keeps_its_cardano_config(monkeypatch, tmp_path):
+    events = []
+    _install_fake_primitives(monkeypatch, events, tmp_path)
+    seen = []
+    import profile_manager.primitives as primitives_module
+
+    original = primitives_module.instantiate
+
+    def capture(registry, *, name, **kwargs):
+        prim = original(registry, name=name, **kwargs)
+        if name == "runtime_compose_substrate":
+            real_run = prim.run
+
+            def run(handle, rng):
+                seen.append(dict(prim.bound_substrate))
+                real_run(handle, rng)
+
+            prim.run = run
+        return prim
+
+    monkeypatch.setattr(primitives_module, "instantiate", capture)
+    monkeypatch.setattr(
+        measurement_execution,
+        "prepare_substrate_measurements",
+        lambda *_a, **_k: (_ for _ in ()).throw(MeasurementExecutionError("stop here")),
+    )
+    amaru = json.loads(
+        _scenario("amaru", AMARU_VERSION, nodes=[("node1", "cardano-node"), ("amaru1", "amaru")]).raw_bytes
+    )
+    for index, body in enumerate((_scenario_body(measurement_profile="none"), amaru)):
+        scenario_module.run_scenario(
+            _write_scenario(tmp_path / str(index), body) if (tmp_path / str(index)).mkdir() is None else None,
+            runs_dir=tmp_path / "runs",
+            state_dir=tmp_path / "state",
+        )
+
+    assert [substrate.get("cardano_tap_traces") for substrate in seen] == [None, None]
+
+
+def test_profile_cardano_run_captures_the_target_container_log_before_finalize(
+    monkeypatch, tmp_path
+):
+    events = []
+    _install_fake_primitives(monkeypatch, events, tmp_path)
+    captured = {}
+
+    def capture(container, *, started_at, ended_at, destination, **_kwargs):
+        events.append(("capture", container))
+        captured.update(container=container, destination=Path(destination))
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_text('{"ns":"Mempool.AddedTx"}\n')
+        return {"record_count": 1}
+
+    monkeypatch.setattr(measurement_execution, "capture_container_trace_window", capture)
+    prepared = SimpleNamespace(
+        resolution=_resolution(_resolved("tap-a")),
+        runtime_metadata_path=tmp_path / "runtime.json",
+        target_node="node1",
+        implementation="cardano-node",
+        trace_container="dwarf-cardano-node1",
+        run_window_trace_path=lambda run_dir: Path(run_dir) / "outputs/cardano-measurement-run/raw/node1.ndjson",
+        build_factories=lambda _run_dir: {"tap-a": lambda _entry: RecordingCollector(events)},
+    )
+    monkeypatch.setattr(
+        scenario_module, "prepare_auto_measurements", lambda *_a, **_k: (prepared, None)
+    )
+    body = _scenario_body(profile="profile-s", setup=[], teardown=[])
+    body.pop("substrate")
+    body["target"] = {"implementation": "cardano-node", "version": CARDANO_VERSION}
+
+    handle = scenario_module.run_scenario(
+        _write_scenario(tmp_path, body), runs_dir=tmp_path / "runs", state_dir=tmp_path / "state",
+    )
+
+    assert captured["container"] == "dwarf-cardano-node1"
+    assert captured["destination"] == handle.run_dir / "outputs/cardano-measurement-run/raw/node1.ndjson"
+    order = [event for event in events if event[0] in {"capture", "finalize"}]
+    assert order == [("capture", "dwarf-cardano-node1"), ("finalize", "tap-a")]
+
+
 # --- plan time --------------------------------------------------------------
 
 

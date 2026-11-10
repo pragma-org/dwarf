@@ -489,6 +489,36 @@ def _enable_cardano_measurement_traces(config_path: Path) -> dict:
     }
 
 
+def _enable_cardano_tap_trace_namespaces(config_path: Path) -> dict:
+    """Enable the stock measurement-tap trace namespaces for a tapped composed run.
+
+    Same audited namespaces and severities as ``_enable_cardano_measurement_traces``
+    (BlockFetch.Client, KeepAlive.Remote, Mempool, LedgerMetrics, ...) but none of its
+    node settings: the composed node keeps its stock protocol logic and only emits
+    more trace records. Recorded in runtime.json so the run never reads as untraced."""
+    body = json.loads(config_path.read_text(encoding="utf-8"))
+    options = body.get("TraceOptions")
+    if not isinstance(options, dict):
+        options = {}
+    for namespace in CARDANO_MEASUREMENT_TRACE_NAMESPACES:
+        current = options.get(namespace)
+        configured = dict(current) if isinstance(current, dict) else {}
+        configured.update({
+            "severity": CARDANO_MEASUREMENT_TRACE_SEVERITIES.get(namespace, "Info"),
+            "detail": "DDetailed",
+        })
+        options[namespace] = configured
+    body["TraceOptions"] = options
+    config_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
+    return {
+        "enabled": True,
+        "source": "measurement-taps",
+        "namespaces": sorted(CARDANO_MEASUREMENT_TRACE_NAMESPACES),
+        "config_path": str(config_path),
+        "node_settings": {},
+    }
+
+
 def _refresh_cardano_testnet_start_times_remote(*, host: dict, env_root: str, start_time_offset_seconds: int = 15) -> dict:
     command = (
         "python3 - "
@@ -1868,11 +1898,12 @@ def _compose_substrate_docker(
         # and before the F134 hash pins.
         pool_relays = _register_cardano_pool_relays(
             env_root=env_root, nodes=haskell_nodes, enabled=bool(plan.get("cardano_pool_relays")))
-        measurement_trace_config = (
-            _enable_cardano_measurement_traces(env_root / "configuration.yaml")
-            if plan.get("cardano_measurement_traces") is True
-            else {"enabled": False, "namespaces": []}
-        )
+        if plan.get("cardano_measurement_traces") is True:
+            measurement_trace_config = _enable_cardano_measurement_traces(env_root / "configuration.yaml")
+        elif plan.get("cardano_tap_traces") is True:
+            measurement_trace_config = _enable_cardano_tap_trace_namespaces(env_root / "configuration.yaml")
+        else:
+            measurement_trace_config = {"enabled": False, "namespaces": []}
         observability_trace_config = (
             _enable_cardano_observability_traces(env_root / "configuration.yaml")
             if plan.get("cardano_observability_traces") is True
