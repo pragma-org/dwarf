@@ -1144,6 +1144,7 @@ def prepare_substrate_measurements(
     runtime_metadata_path: str | Path,
     expected_resolution: dict[str, Any] | None = None,
     tip_probe: Callable[[], dict[str, Any]] | None = None,
+    catalog_revision: str | None = None,
 ) -> PreparedScenarioMeasurements:
     """Resolve taps against the node a self-composed substrate proved it runs.
 
@@ -1177,11 +1178,16 @@ def prepare_substrate_measurements(
         else None
     )
     expected_identity = (expected or {}).get("target_identity") or None
+    # The composed runtime records no catalog revision; the run's frozen launch plan does.
+    revision = _catalog_revision(runtime) or (catalog_revision or "")
+    if not revision:
+        raise MeasurementExecutionError(
+            "composed runtime and launch plan carry no version catalog revision")
     identity = _composed_node_identity(
         node,
         scenario,
         expected_identity=expected_identity,
-        catalog_revision=_catalog_revision(runtime),
+        catalog_revision=revision,
     )
     target_node = str(node.get("id") or node.get("name") or "")
     log_path = str(node.get("log_path") or "")

@@ -110,6 +110,7 @@ def _runtime(tmp_path, *nodes, **updates):
         "runtime_root": str(root),
         "network_magic": 42,
         "nodes": [_node(root, *node[:2], **(node[2] if len(node) > 2 else {})) for node in nodes],
+        "version_provenance": {"catalog_revision": "c" * 64},
     }
     body.update(updates)
     path = tmp_path / "runtime.json"
@@ -400,8 +401,9 @@ def test_self_compose_run_starts_taps_after_compose_and_finalizes_before_teardow
     runtime_path = _install_fake_primitives(monkeypatch, events, tmp_path)
     observed = {}
 
-    def prepare(scen, *, runtime_metadata_path, expected_resolution=None):
+    def prepare(scen, *, runtime_metadata_path, expected_resolution=None, catalog_revision=None):
         observed["runtime_metadata_path"] = Path(runtime_metadata_path)
+        observed["catalog_revision"] = catalog_revision
         resolution = _resolution(_resolved("tap-a"))
         return SimpleNamespace(
             resolution=resolution,
@@ -423,6 +425,7 @@ def test_self_compose_run_starts_taps_after_compose_and_finalizes_before_teardow
     )
 
     assert observed["runtime_metadata_path"] == runtime_path
+    assert "catalog_revision" in observed  # the runner hands the frozen launch revision to the binder
     order = [event for event in events if event[0] in {"primitive", "start", "finalize"}]
     assert order == [
         ("primitive", "compose"),
@@ -962,3 +965,30 @@ def test_plan_view_follows_the_scenario_amaru_trace_form_opt_out():
 
     assert view().amaru_json_traces is True
     assert view(amaru_json_traces=False).amaru_json_traces is False
+
+
+def test_composed_identity_takes_the_catalog_revision_from_the_frozen_launch(tmp_path):
+    """Pilot run 20261110T033903Z: the composed runtime records version_provenance.catalog_revision null,
+    so every per-tap result failed schema validation (version_catalog_revision ''). The run's frozen
+    launch plan carries the revision the versions were resolved from."""
+    path, _ = _runtime(tmp_path, ("node1", "cardano-node"),
+                       version_provenance={"catalog_revision": None, "catalog_snapshot": None})
+    prepared = prepare_substrate_measurements(_scenario(), runtime_metadata_path=path,
+                                              catalog_revision="4" * 64)
+    assert prepared.resolution["target_identity"]["version_catalog_revision"] == "4" * 64
+
+
+def test_composed_identity_without_any_catalog_revision_gets_no_taps(tmp_path):
+    path, _ = _runtime(tmp_path, ("node1", "cardano-node"),
+                       version_provenance={"catalog_revision": None, "catalog_snapshot": None})
+    with pytest.raises(MeasurementExecutionError, match="catalog revision"):
+        prepare_substrate_measurements(_scenario(), runtime_metadata_path=path)
+
+
+def test_the_launch_plan_catalog_revision_is_read_from_the_run_folder(tmp_path):
+    from profile_manager.scenario import _launch_catalog_revision
+
+    (tmp_path / "launch").mkdir()
+    (tmp_path / "launch" / "plan.json").write_text(json.dumps({"versions": {"catalog_revision": "5" * 64}}))
+    assert _launch_catalog_revision(tmp_path) == "5" * 64
+    assert _launch_catalog_revision(tmp_path / "missing") is None

@@ -1114,6 +1114,16 @@ SUBSTRATE_COMPOSE_PRIMITIVE = "runtime_compose_substrate"
 SUBSTRATE_TEARDOWN_PRIMITIVE = "runtime_teardown_substrate"
 
 
+def _launch_catalog_revision(run_dir) -> str | None:
+    """The version catalog revision the run's frozen launch plan was resolved from."""
+    try:
+        plan = json.loads((Path(run_dir) / "launch" / "plan.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    value = (plan.get("versions") or {}).get("catalog_revision") if isinstance(plan, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
 def substrate_measurement_intent(scen, *, expected_resolution=None, env=None):
     """How a self-composed devnet is measured: ``"explicit"``, ``"implicit"`` or ``None``.
 
@@ -1202,6 +1212,7 @@ class _SubstrateMeasurementAttachment:
                 self.scen,
                 runtime_metadata_path=metadata_path,
                 expected_resolution=self.expected_resolution,
+                catalog_revision=_launch_catalog_revision(self.handle.run_dir),
             )
         except (measurement_execution.MeasurementExecutionError, MeasurementResolutionError) as exc:
             if self.intent == "explicit":
