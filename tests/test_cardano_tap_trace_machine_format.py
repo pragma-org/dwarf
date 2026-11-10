@@ -43,3 +43,35 @@ def test_a_config_without_stdout_gains_machine_stdout(tmp_path):
     path = _config(tmp_path, ["Forwarder"])
     rcs._enable_cardano_tap_trace_namespaces(path)
     assert json.loads(path.read_text())["TraceOptions"][""]["backends"] == ["Forwarder", "Stdout MachineFormat"]
+
+
+def test_trace_settings_are_applied_again_after_the_amaru_bootstrap_rewrite():
+    """Taps rerun 20261110T110311Z: the Amaru bootstrap synthesis rewrote configuration.yaml after the
+    tap traces were enabled, so the node ran with HumanFormatColoured stdout and no tap namespaces."""
+    import inspect
+    source = inspect.getsource(rcs._compose_substrate_docker)
+    bootstrap = source.index("_synthesize_amaru_bootstrap_for_custom_testnet(")
+    reapply = source.index("_apply_cardano_trace_settings(", bootstrap)
+    assert reapply > bootstrap
+    assert source.index("_pin_cardano_accepted_connections_limit(") > reapply
+
+
+def test_apply_trace_settings_restores_tap_namespaces_after_a_rewrite(tmp_path):
+    path = _config(tmp_path, ["Stdout HumanFormatColoured"])
+    plan = {"cardano_tap_traces": True}
+    rcs._apply_cardano_trace_settings(path, plan)
+    # a later step writes the image's pinned configuration back
+    path.write_text(json.dumps({"TraceOptions": {"": {"severity": "Notice", "backends": ["Stdout HumanFormatColoured"]}}}))
+    measurement, observability = rcs._apply_cardano_trace_settings(path, plan)
+    options = json.loads(path.read_text())["TraceOptions"]
+    assert options[""]["backends"] == ["Stdout MachineFormat"]
+    assert set(rcs.CARDANO_MEASUREMENT_TRACE_NAMESPACES) <= set(options)
+    assert measurement["enabled"] is True and observability["enabled"] is False
+
+
+def test_apply_trace_settings_leaves_untapped_configs_alone(tmp_path):
+    path = _config(tmp_path, ["Stdout HumanFormatColoured"])
+    before = path.read_text()
+    measurement, observability = rcs._apply_cardano_trace_settings(path, {})
+    assert path.read_text() == before
+    assert measurement == {"enabled": False, "namespaces": []}

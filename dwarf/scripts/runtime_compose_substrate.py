@@ -537,6 +537,23 @@ def _enable_cardano_tap_trace_namespaces(config_path: Path) -> dict:
     }
 
 
+def _apply_cardano_trace_settings(config_path: Path, plan: dict) -> tuple[dict, dict]:
+    """Opt-in trace settings for a composed cardano-node config: measurement or tap namespaces, and
+    observability. Idempotent, so it is applied again after any step that rewrites the config."""
+    if plan.get("cardano_measurement_traces") is True:
+        measurement = _enable_cardano_measurement_traces(config_path)
+    elif plan.get("cardano_tap_traces") is True:
+        measurement = _enable_cardano_tap_trace_namespaces(config_path)
+    else:
+        measurement = {"enabled": False, "namespaces": []}
+    observability = (
+        _enable_cardano_observability_traces(config_path)
+        if plan.get("cardano_observability_traces") is True
+        else {"enabled": False, "namespaces": []}
+    )
+    return measurement, observability
+
+
 def _refresh_cardano_testnet_start_times_remote(*, host: dict, env_root: str, start_time_offset_seconds: int = 15) -> dict:
     command = (
         "python3 - "
@@ -1925,17 +1942,8 @@ def _compose_substrate_docker(
         # and before the F134 hash pins.
         pool_relays = _register_cardano_pool_relays(
             env_root=env_root, nodes=haskell_nodes, enabled=bool(plan.get("cardano_pool_relays")))
-        if plan.get("cardano_measurement_traces") is True:
-            measurement_trace_config = _enable_cardano_measurement_traces(env_root / "configuration.yaml")
-        elif plan.get("cardano_tap_traces") is True:
-            measurement_trace_config = _enable_cardano_tap_trace_namespaces(env_root / "configuration.yaml")
-        else:
-            measurement_trace_config = {"enabled": False, "namespaces": []}
-        observability_trace_config = (
-            _enable_cardano_observability_traces(env_root / "configuration.yaml")
-            if plan.get("cardano_observability_traces") is True
-            else {"enabled": False, "namespaces": []}
-        )
+        measurement_trace_config, observability_trace_config = _apply_cardano_trace_settings(
+            env_root / "configuration.yaml", plan)
         for node in haskell_nodes:
             node["socket_path"] = str(env_root / "socket" / node["id"] / "sock")
             node["db_dir"] = str(env_root / "node-data" / f"node{node['slot_index']}" / "db")
@@ -2011,6 +2019,10 @@ def _compose_substrate_docker(
             nodes=plan["nodes"],
             explicit=plan.get("cardano_experimental_protocols"),
         )
+        # The same rewrite drops the tap and measurement trace settings (taps rerun
+        # 20261110T110311Z: stdout back to HumanFormatColoured, no tap namespaces): apply them again.
+        measurement_trace_config, observability_trace_config = _apply_cardano_trace_settings(
+            env_root / "configuration.yaml", plan)
     elif not public_network:
         start_time_refresh = _refresh_cardano_testnet_start_times(env_root=runtime_root / "env")
     if plan.get("kes_genesis_override"):
