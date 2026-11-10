@@ -850,38 +850,45 @@ def _wait_for_fresh_peer_connection(
 ) -> dict[str, Any]:
     log_path = Path(str(target.get("log_path") or ""))
     started = time.monotonic()
+    # Tapped Amaru writes verbose JSON traces: scan forward in bounded chunks (never more than
+    # _MAX_P2P_TRACE_BYTES in memory) and read each record in its text form.
+    scan_offset = log_start_offset
     while True:
-        try:
-            end_offset = log_path.stat().st_size
-            length = end_offset - log_start_offset
-            if length > _MAX_P2P_TRACE_BYTES:
-                raise RuntimeError("fresh peer connection log slice is oversized")
-            with log_path.open("rb") as stream:
-                stream.seek(log_start_offset)
-                log_slice = stream.read(max(0, length))
-        except OSError as exc:
-            raise RuntimeError("fresh peer connection log is unavailable") from exc
-        offset = log_start_offset
-        for raw_line in log_slice.splitlines(keepends=True):
-            line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
-            if (
-                "manager.peer.connected" in line
-                and _trace_field(line, "peer") == expected_peer
-            ):
-                connection = _trace_connection(line)
-                if connection is not None and connection != prior_connection_id:
-                    return {
-                        "schema_version": 1,
-                        "status": "connected",
-                        "peer": expected_peer,
-                        "conn_id": connection,
-                        "prior_conn_id": prior_connection_id,
-                        "log_start_offset": log_start_offset,
-                        "event_offset": offset,
-                        "event_line": line[:4096],
-                        "event_line_sha256": hashlib.sha256(raw_line).hexdigest(),
-                    }
-            offset += len(raw_line)
+        while True:
+            try:
+                end_offset = log_path.stat().st_size
+                with log_path.open("rb") as stream:
+                    stream.seek(scan_offset)
+                    chunk = stream.read(max(0, min(end_offset - scan_offset, _MAX_P2P_TRACE_BYTES)))
+            except OSError as exc:
+                raise RuntimeError("fresh peer connection log is unavailable") from exc
+            complete = chunk[: chunk.rfind(b"\n") + 1]
+            if not complete and len(chunk) >= _MAX_P2P_TRACE_BYTES:
+                raise RuntimeError("fresh peer connection log line is oversized")
+            offset = scan_offset
+            for raw_line in complete.splitlines(keepends=True):
+                line = _amaru_text(raw_line.decode("utf-8", errors="replace").rstrip("\r\n"))
+                if (
+                    "manager.peer.connected" in line
+                    and _trace_field(line, "peer") == expected_peer
+                ):
+                    connection = _trace_connection(line)
+                    if connection is not None and connection != prior_connection_id:
+                        return {
+                            "schema_version": 1,
+                            "status": "connected",
+                            "peer": expected_peer,
+                            "conn_id": connection,
+                            "prior_conn_id": prior_connection_id,
+                            "log_start_offset": log_start_offset,
+                            "event_offset": offset,
+                            "event_line": line[:4096],
+                            "event_line_sha256": hashlib.sha256(raw_line).hexdigest(),
+                        }
+                offset += len(raw_line)
+            scan_offset += len(complete)
+            if len(chunk) < _MAX_P2P_TRACE_BYTES:
+                break
         if time.monotonic() - started >= timeout_seconds:
             raise RuntimeError("Amaru did not establish a fresh peer connection")
         time.sleep(0.25)
