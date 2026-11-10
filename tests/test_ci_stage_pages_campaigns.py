@@ -88,3 +88,20 @@ def test_pages_rejects_archive_above_github_file_limit():
            "sha256": "b" * 64, "run_id": "run-1", "implementation": "amaru", "version": "v1"}
     with pytest.raises(ValueError, match="archive size"):
         api.validate_defaults({"schema_version": api._SCHEMA, "archives": [row]})
+
+
+def test_viewer_batch_budget_covers_the_committed_default_runs_unpacked():
+    """The Pages viewer loads every default archive in one batch; their unpacked total must fit its batch budget."""
+    import re
+    import tarfile
+    viewer = (ROOT / "docs/index.html").read_text(encoding="utf-8")
+    budget = int(re.search(r"maxBatchExpandedBytes: (\d+)", viewer).group(1))
+    single = int(re.search(r"maxArchiveBytes: \d+, maxExpandedBytes: (\d+)", viewer).group(1))
+    manifest = json.loads((ROOT / "docs/evidence/default-runs.json").read_text(encoding="utf-8"))
+    total = 0
+    for entry in manifest["archives"]:
+        with tarfile.open(ROOT / "docs/evidence" / entry["url"]) as archive:
+            size = sum(member.size for member in archive.getmembers())
+        assert size <= single, entry["url"]
+        total += size
+    assert total * 2 <= budget, f"{total} unpacked bytes leave no headroom in the {budget}-byte batch budget"

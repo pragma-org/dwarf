@@ -11605,7 +11605,7 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
 (function (root) {
   "use strict";
   var LIMITS = {maxArchives: 100, maxRuns: 200, maxMetricsPerRun: 2000, maxMetrics: 20000, maxSources: 200,
-    maxArchiveBytes: 536870912, maxExpandedBytes: 1073741824, maxSignatureBytes: 8388608, maxSessionBytes: 67108864, maxCells: 20000};
+    maxArchiveBytes: 536870912, maxExpandedBytes: 1073741824, maxBatchExpandedBytes: 4294967296, maxSignatureBytes: 8388608, maxSessionBytes: 67108864, maxCells: 20000};
   var IDENTITY = ["implementation", "version", "source_revision", "image_digest"];
   var PARTS = ["metric_id", "unit", "scenario_id", "scenario_behavior_sha256", "runtime", "mode",
     "measurement_profile_id", "measurement_profile_digest", "collector_digests", "profile_id", "profile_sha256", "report_schema_version"];
@@ -12212,7 +12212,8 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
     var batchGeneration = store.generation();
     var importer = options.importArchive || api.importArchiveFiles;
     var maxCompressed = options.maxArchiveBytes == null ? LIMITS.maxArchiveBytes : options.maxArchiveBytes;
-    var maxExpanded = options.maxExpandedBytes == null ? LIMITS.maxExpandedBytes : options.maxExpandedBytes;
+    // One archive may unpack to maxExpandedBytes; a whole batch (the Pages default set) to maxBatchExpandedBytes.
+    var maxExpanded = options.maxExpandedBytes == null ? LIMITS.maxBatchExpandedBytes : options.maxExpandedBytes;
     if (options.maxArchiveBytes == null && archives.reduce(function (sum, f) { return sum + (Number.isFinite(f.size) ? f.size : Infinity); }, 0) > maxCompressed) throw fault("batch-archive-size-limit", "Selected archives exceed the 512 MiB compressed batch limit; nothing was opened");
     var index = await signatureIndex(signatureFiles);
     archives = archives.map(function (file, position) { return {file: file, position: position}; }).sort(function (a, b) {
