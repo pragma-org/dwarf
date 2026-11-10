@@ -30,6 +30,20 @@ def test_host_era_node_keeps_the_published_port():
     assert common.node_wire_endpoint({"id": "n", "port": 3001}, None) == ("127.0.0.1", 3001)
 
 
+PACKAGE_NODE = {"id": "node1", "port": 3001, "listen_address": "node1.example:3001",
+                "container_listen_address": "node1.example:3001", "observation_transport": "antithesis-package"}
+
+
+@pytest.mark.parametrize("target_host", [None, "127.0.0.1", "localhost"])
+def test_package_node_uses_its_service_hostname(target_host):
+    """Inside an Antithesis package there is no container_ip; the node is its compose hostname, not loopback."""
+    assert common.node_wire_endpoint(PACKAGE_NODE, target_host) == ("node1.example", 3001)
+
+
+def test_package_node_keeps_an_explicit_remote_host():
+    assert common.node_wire_endpoint(PACKAGE_NODE, "192.0.2.7") == ("192.0.2.7", 3001)
+
+
 def test_metadata_lookup(tmp_path):
     path = tmp_path / "runtime.json"
     path.write_text(json.dumps({"nodes": [NODE]}))

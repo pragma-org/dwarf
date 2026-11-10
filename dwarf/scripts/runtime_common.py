@@ -375,6 +375,10 @@ def node_wire_endpoint(node: dict, target_host: str | None = None) -> tuple[str,
     listen = str(node.get("container_listen_address") or "")
     if container_ip and ":" in listen:
         return container_ip, int(listen.rsplit(":", 1)[1])
+    if node.get("observation_transport") == "antithesis-package" and ":" in listen:
+        # Inside an Antithesis package the workload reaches the node by its compose hostname.
+        host, port = listen.rsplit(":", 1)
+        return host, int(port)
     return (explicit or "127.0.0.1"), int(node["port"])
 
 
