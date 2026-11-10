@@ -146,3 +146,47 @@ def test_modes_are_no_longer_not_applicable():
     import inspect
     source = inspect.getsource(rf.apply_recovery_mode)
     assert "substrate-walled" not in source
+
+
+class MinorityWinsFirst(FakeSubstrate):
+    """Taps campaign 20261110T045824Z: node3 alone forged 4 blocks while the majority forged 1, so the
+    partitioned branch hit the depth cap first and won on heal: no fork in the measured direction. The
+    leader schedule is random; a second partition forms the fork the scenario needs."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.partitions = 0
+
+    def disconnect(self, node):
+        self.partitions += 1
+        return super().disconnect(node)
+
+    def sleep(self, seconds):
+        if self.partitions == 1 and self.healed_at is None and self.fork is not None:
+            self.t += seconds
+            self.fork.append((f"w{len(self.fork)}", int(self.t * 10)))   # the minority outruns the majority
+            return
+        super().sleep(seconds)
+
+    def connect(self, node, partition):
+        if self.partitions == 1 and self.fork and len(self.fork) > len(self.chain) - len(self.base):
+            self.chain = self.base + self.fork                             # the longer minority branch wins
+            self.fork = None
+            self.events.append(("connect", node["id"], tuple(partition["aliases"])))
+            return {"ok": True}
+        return super().connect(node, partition)
+
+
+def test_a_minority_branch_that_wins_is_healed_and_the_partition_retried():
+    fake = MinorityWinsFirst()
+    out = _run(fake, mode="chain_switch_inject", target_node="node3", k=5)
+    assert fake.partitions == 2
+    assert [a["outcome"] for a in out["partition_attempts"]] == ["isolated_branch_reached_depth_cap", "fork_formed"]
+    assert out["fork_formed"] is True
+    assert out["chain_switch_status"] == "switched"
+
+
+def test_partition_attempts_are_bounded():
+    out = _run(FakeSubstrate(isolated_forges=False), partition_max_seconds=5, partition_attempts=2)
+    assert len(out["partition_attempts"]) == 2
+    assert out["rollback_status"] == "no_fork_formed"

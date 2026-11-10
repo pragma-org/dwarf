@@ -459,36 +459,55 @@ def partition_fork_and_heal(*, nodes: list[dict], target_id: str, config: dict, 
     pre_ok, pre_tips, _ = _wait_converged(nodes, ops, timeout=converge_timeout, poll=poll)
     out["pre_partition_converged"] = pre_ok
     out["pre_partition_tips"] = {k: _short(v) for k, v in pre_tips.items()}
-    partition = ops.disconnect(target)
-    out["partition"] = {k: v for k, v in partition.items() if k != "ok"}
-    if not partition.get("ok"):
-        out["rollback_status"] = "partition_failed"
-        return out
-    fork_point = ops.tip(target)
-    out["fork_point"] = _short(fork_point)
-    started = ops.now()
+    # The leader schedule is random: in a short window the partitioned node can outrun the majority,
+    # hit the depth cap and win on heal. That is no fork in the measured direction, so heal, let the
+    # nodes reconverge and partition again, up to a bounded number of attempts (each one recorded).
+    attempts_max = max(1, int(config.get("partition_attempts", 3)))
+    out["partition_attempts"] = []
     own = majority = 0
-    target_tip, majority_tip = fork_point, fork_point
-    try:
-        while ops.now() - started < partition_max:
-            ops.sleep(poll)
-            target_tip = ops.tip(target)
-            majority_tips = [t for t in (ops.tip(n) for n in others) if t.get("block") is not None]
-            majority_tip = max(majority_tips, key=lambda t: int(t["block"]), default=majority_tip)
-            if target_tip.get("block") is None or fork_point.get("block") is None:
-                continue
-            on_majority = any(t.get("hash") == target_tip.get("hash") for t in majority_tips)
-            own = 0 if on_majority else int(target_tip["block"]) - int(fork_point["block"])
-            majority = int(majority_tip["block"]) - int(fork_point["block"])
-            if own >= 1 and majority > own:
-                out["fork_formed"] = True
-                break
-            if own >= depth_cap:
-                break
-    finally:
-        out["partition_seconds"] = round(ops.now() - started, 3)
-        heal_at = ops.now()
-        out["heal"] = ops.connect(target, partition)
+    for attempt in range(1, attempts_max + 1):
+        partition = ops.disconnect(target)
+        out["partition"] = {k: v for k, v in partition.items() if k != "ok"}
+        if not partition.get("ok"):
+            out["rollback_status"] = "partition_failed"
+            out["partition_attempts"].append({"attempt": attempt, "outcome": "partition_failed"})
+            return out
+        fork_point = ops.tip(target)
+        out["fork_point"] = _short(fork_point)
+        started = ops.now()
+        own = majority = 0
+        target_tip, majority_tip = fork_point, fork_point
+        outcome = "no_fork_in_window"
+        try:
+            while ops.now() - started < partition_max:
+                ops.sleep(poll)
+                target_tip = ops.tip(target)
+                majority_tips = [t for t in (ops.tip(n) for n in others) if t.get("block") is not None]
+                majority_tip = max(majority_tips, key=lambda t: int(t["block"]), default=majority_tip)
+                if target_tip.get("block") is None or fork_point.get("block") is None:
+                    continue
+                on_majority = any(t.get("hash") == target_tip.get("hash") for t in majority_tips)
+                own = 0 if on_majority else int(target_tip["block"]) - int(fork_point["block"])
+                majority = int(majority_tip["block"]) - int(fork_point["block"])
+                if own >= 1 and majority > own:
+                    out["fork_formed"] = True
+                    outcome = "fork_formed"
+                    break
+                if own >= depth_cap:
+                    outcome = "isolated_branch_reached_depth_cap"
+                    break
+        finally:
+            out["partition_seconds"] = round(ops.now() - started, 3)
+            heal_at = ops.now()
+            out["heal"] = ops.connect(target, partition)
+        out["partition_attempts"].append({
+            "attempt": attempt, "outcome": outcome, "partition_seconds": out["partition_seconds"],
+            "isolated_fork_blocks": own, "majority_blocks_since_fork": majority})
+        if out["fork_formed"] or attempt == attempts_max:
+            break
+        settled, _tips, _ = _wait_converged(nodes, ops, timeout=converge_timeout, poll=poll)
+        if not settled:
+            break
     out["isolated_fork_tip"] = _short(target_tip)
     out["isolated_fork_blocks"] = own
     out["majority_tip_at_heal"] = _short(majority_tip)
