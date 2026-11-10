@@ -28,8 +28,25 @@
       if (typeof entry.sha256 !== "string" || !/^[0-9a-f]{64}$/i.test(entry.sha256)) fail("archive digest must be a SHA-256 hex value");
       total += entry.size_bytes;
       if (total > MAX_TOTAL_BYTES) fail("archives exceed the total download limit");
-      return {url: url.href, name: decodeURIComponent(url.pathname.split("/").pop()), size: entry.size_bytes, sha256: entry.sha256.toLowerCase()};
+      return {url: url.href, name: decodeURIComponent(url.pathname.split("/").pop()), size: entry.size_bytes, sha256: entry.sha256.toLowerCase(),
+        run_id: shortText(entry.run_id, 120), title: shortText(entry.title, 80), group: shortText(entry.group, 60)};
     });
+  }
+
+  // Optional display labels: a short title and a list group. Anything else is ignored.
+  function shortText(value, limit) { return typeof value === "string" && value.trim() && value.length <= limit ? value.trim() : ""; }
+
+  // Labels key by run id; an Antithesis snapshot archive keys by the prefix its imported run ids carry.
+  function runLabels(entries) {
+    var labels = {byRun: Object.create(null), byPrefix: Object.create(null), groupOrder: []};
+    entries.forEach(function (entry) {
+      if (!entry.title && !entry.group) return;
+      if (entry.group && labels.groupOrder.indexOf(entry.group) < 0) labels.groupOrder.push(entry.group);
+      var label = {title: entry.title, group: entry.group};
+      if (entry.run_id) labels.byRun[entry.run_id] = label;
+      else labels.byPrefix["antithesis-" + entry.sha256.slice(0, 20)] = label;
+    });
+    return labels;
   }
 
   function hex(buffer) {
@@ -43,6 +60,7 @@
     var manifestResponse = await get(manifestUrl, {credentials: "same-origin", cache: "no-cache"});
     if (!manifestResponse.ok) fail("manifest request failed");
     var entries = validateManifest(await manifestResponse.json(), manifestUrl, win.location.origin);
+    win.DwarfPortableRunLabels = runLabels(entries);
     var files = [];
     for (var i = 0; i < entries.length; i += 1) {
       var entry = entries[i], response = await get(entry.url, {credentials: "same-origin", cache: "default"});
@@ -64,7 +82,7 @@
     status.setAttribute("data-import-tone", "error");
   }
 
-  var api = {validateManifest: validateManifest, loadDefaultRuns: loadDefaultRuns, SCHEMA: SCHEMA};
+  var api = {validateManifest: validateManifest, loadDefaultRuns: loadDefaultRuns, runLabels: runLabels, SCHEMA: SCHEMA};
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root && root.document) {
     root.DwarfPortableDefaults = api;

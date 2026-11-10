@@ -9351,8 +9351,20 @@ body[data-offline-viewer] [data-offline-inventory] .dk-hand-wrap { width:max-con
 body[data-offline-viewer] [data-offline-inventory] .dk-hand,body[data-offline-viewer] [data-offline-inventory] .dk-hand-legend { justify-content:center; }
 body[data-offline-viewer] [data-offline-inventory] .dk-hand-legend { gap:12px; }
 body[data-offline-viewer] [data-offline-inventory] .dk-hand-legend span { display:inline-flex; align-items:center; justify-content:center; min-width:14px; cursor:help; }
-body[data-offline-viewer] [data-offline-inventory] .dk-grid--list { width:max-content; max-width:100%; margin-inline:auto; justify-items:center; }
-body[data-offline-viewer] [data-offline-inventory] .dk-grid--list .dk-card { width:max-content; max-width:100%; box-sizing:border-box; justify-self:center; }
+body[data-offline-viewer] [data-offline-inventory] .dk-grid--list { width:min(100%,64rem); margin-inline:auto; display:grid; gap:10px; }
+body[data-offline-viewer] [data-offline-inventory] .dk-grid--list .dk-card { width:100%; max-width:100%; box-sizing:border-box; }
+body[data-offline-viewer] [data-offline-inventory] .dk-grid--list .dk-item__title { flex:1 1 16rem; }
+body[data-offline-viewer] [data-offline-inventory] .dk-grid--list .dk-tags { margin-left:auto; justify-content:flex-end; }
+body[data-offline-viewer] .offline-run-group { border:1px solid var(--dk-line2); border-radius:10px; background:var(--dk-table2); }
+body[data-offline-viewer] .offline-run-group[hidden] { display:none; }
+body[data-offline-viewer] .offline-run-group__summary { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 14px; padding:10px 14px; cursor:pointer; list-style:none; font:500 .9rem/1.35 var(--dk-sans); color:var(--dk-ink); }
+body[data-offline-viewer] .offline-run-group__summary::-webkit-details-marker { display:none; }
+body[data-offline-viewer] .offline-run-group__summary::before { content:"▸"; color:var(--dk-gold); }
+body[data-offline-viewer] .offline-run-group[open] > .offline-run-group__summary::before { content:"▾"; }
+body[data-offline-viewer] .offline-run-group__name { color:var(--dk-gold); font-weight:600; }
+body[data-offline-viewer] .offline-run-group__count,body[data-offline-viewer] .offline-run-group__status { color:var(--dk-muted); font-size:.78rem; }
+body[data-offline-viewer] .offline-run-group__summary:focus-visible { outline:2px solid var(--dk-gold); outline-offset:2px; }
+body[data-offline-viewer] .offline-run-group__rows { display:grid; gap:6px; padding:0 10px 10px; }
 body[data-offline-viewer] .portable-run-manager { display:grid; gap:6px; width:max-content; max-width:100%; margin-inline:auto; }
 body[data-offline-viewer] .portable-run-manager-row { max-width:100%; min-width:0; border-radius:10px; }
 body[data-offline-viewer] .portable-run-manager-row > .dk-face__body { display:flex; flex-direction:row; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:9px 12px; box-sizing:border-box; }
@@ -10039,6 +10051,12 @@ document.querySelectorAll('.shell-main table:not(.no-responsive-table)').forEach
         var ok = !st.q || (it.getAttribute("data-search") || "").indexOf(st.q) !== -1;
         for (var f in st.facets) { if (st.facets[f] && toks.indexOf(" " + st.facets[f] + " ") === -1) { ok = false; } }
         it.hidden = !ok; if (ok) n++;
+      });
+      var filtering = Boolean(st.q) || Object.keys(st.facets).some(function (f) { return st.facets[f]; });
+      grid.querySelectorAll("details[data-run-group]").forEach(function (group) {
+        var any = Boolean(group.querySelector("[data-dk-item]:not([hidden])"));
+        group.hidden = !any;
+        if (filtering && any && !group.open) { group.setAttribute("data-auto-open", ""); group.open = true; setTimeout(function () { group.removeAttribute("data-auto-open"); }, 0); }
       });
       if (count) count.textContent = n + (n === items.length ? " " : " of " + items.length + " ") + label;
     }
@@ -12723,8 +12741,29 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   var seedCards = new Map((payload.runs || []).map(function (run) { return [run.run_id, run.card || {}]; }));
   var seedStates = new Map((payload.runs || []).map(function (run) { return [run.run_id, (run.row || {}).display_status]; }));
   var recent = doc.querySelector("[data-offline-recent]"), hand = doc.querySelector("[data-offline-inventory] .dk-hand");
+  // portable-defaults.js publishes short titles and list groups from the Pages run manifest.
+  function runLabel(record) {
+    var labels = root.DwarfPortableRunLabels, id = String(record.run_id || "");
+    if (!labels) return {};
+    return labels.byRun[id] || labels.byPrefix[id.split("-").slice(0, 2).join("-")] || {};
+  }
   function runTitle(record) {
-    return (seedCards.get(record.run_id) || {}).title || record.scenario_title || record.scenario_id || record.run_id;
+    return runLabel(record).title || (seedCards.get(record.run_id) || {}).title || record.scenario_title || record.scenario_id || record.run_id;
+  }
+  var groupOpen = Object.create(null);
+  function recentGroup(name, index, runs) {
+    var details = el("details", null, "offline-run-group"); details.setAttribute("data-run-group", name);
+    details.open = name in groupOpen ? groupOpen[name] : index === 0;
+    details.addEventListener("toggle", function () { if (!details.hasAttribute("data-auto-open")) groupOpen[name] = details.open; });
+    var summary = el("summary", null, "offline-run-group__summary"), counts = {};
+    runs.forEach(function (run) { var status = runStatus(run.record); counts[status] = (counts[status] || 0) + 1; });
+    summary.appendChild(el("span", name, "offline-run-group__name"));
+    summary.appendChild(el("span", runs.length + (runs.length === 1 ? " run" : " runs"), "offline-run-group__count"));
+    [["pass", "♦", "dk-g-pass"], ["fail", "▲", "dk-g-fail"], ["error", "✕", "dk-g-error"], ["none", "■", "dk-g-other"]].forEach(function (s) {
+      if (counts[s[0]]) summary.appendChild(el("span", s[1] + " " + counts[s[0]], "offline-run-group__status " + s[2]));
+    });
+    details.appendChild(summary); var rows = el("div", null, "offline-run-group__rows"); details.appendChild(rows);
+    return {details: details, rows: rows};
   }
   function runStatus(record) {
     var status = seedStates.get(record.run_id) || record.verdict || record.exit_status;
@@ -12733,7 +12772,15 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
   function renderRecent() {
     if (!recent && !hand) return;
     if (recent) clear(recent); if (hand) clear(hand);
-    store.snapshot().logical_runs.filter(function (run) { return run.included && run.state === "eligible"; }).forEach(function (run) {
+    var shown = store.snapshot().logical_runs.filter(function (run) { return run.included && run.state === "eligible"; });
+    // With manifest groups the list is one collapsible section per group, in manifest order.
+    var grouped = shown.some(function (run) { return runLabel(run.record).group; }), sections = new Map();
+    if (grouped) {
+      shown.forEach(function (run) { var name = runLabel(run.record).group || "Other runs"; if (!sections.has(name)) sections.set(name, []); sections.get(name).push(run); });
+      var order = (root.DwarfPortableRunLabels || {}).groupOrder || [], rank = function (name) { var i = order.indexOf(name); return i < 0 ? order.length : i; };
+      if (recent) Array.from(sections.keys()).sort(function (a, b) { return rank(a) - rank(b); }).forEach(function (name, index) { var section = recentGroup(name, index, sections.get(name)); sections.set(name, section); recent.appendChild(section.details); });
+    }
+    shown.forEach(function (run) {
       var record = run.record, status = runStatus(record), symbol = {pass: "♦", fail: "▲", error: "✕"}[status] || "■";
       var measured = Object.keys(record.metrics || {}).length > 0, title = runTitle(record), identity = [record.implementation, record.version].filter(Boolean).join(" ");
       if (hand) {
@@ -12751,7 +12798,8 @@ document.querySelectorAll('[data-mviz]').forEach(initMeasurementOverview);
       body.appendChild(kicker); body.appendChild(el("div", title, "dk-item__title"));
       var tags = el("div", null, "dk-tags");
       [record.implementation, record.runtime, identity, measured ? "measured" : ""].filter(Boolean).forEach(function (text) { var tag = el("span", text); tag.setAttribute("data-tag", text.toLowerCase()); tags.appendChild(tag); });
-      body.appendChild(tags); face.appendChild(body); card.appendChild(face); recent.appendChild(card);
+      body.appendChild(tags); face.appendChild(body); card.appendChild(face);
+      (grouped ? sections.get(runLabel(record).group || "Other runs").rows : recent).appendChild(card);
     });
     doc.dispatchEvent(new root.CustomEvent("dwarf-portable-recent-change"));
   }
