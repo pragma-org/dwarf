@@ -64,4 +64,4 @@ on its own socket) before `serve_crafted_block` forks the target onto the forged
 ## Legacy campaign scripts (kept for the scenarios that still name them)
 - build_block_segments.py, build_*.py — body builders from the forge-work campaign
 - assemble_blockjson.py, repoint-amaru-pair1.sh, block_apply_differential.sh — pair1 host layout
-  (/home/nigel/forge-work/pathb); not usable on a self-composed devnet.
+  (a host-specific forge-work folder); not usable on a self-composed devnet.

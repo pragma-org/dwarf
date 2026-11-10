@@ -62,7 +62,7 @@ def test_mac_homes_private_addresses_and_signing_keys_are_masked(tmp_path):
     run = tmp_path / "run1"
     (run / "outputs").mkdir(parents=True)
     log = run / "outputs" / "log.txt"
-    log.write_text("bundle at /Users/alice/work/x; peers 10.192.7.4:3001 172.20.0.3 192.168.30.16 "
+    log.write_text("bundle at /Users/alice/work/x; peers 10.77.7.4:3001 172.20.0.3 192.168.77.16 "
                    "public 172.233.144.9 version 10.11.20261029 node 11.1.2\n", encoding="utf-8")
     key = run / "outputs" / "utxo.skey"
     key.write_text(json.dumps({"type": "PaymentSigningKeyShelley_ed25519", "description": "Payment Signing Key",
@@ -75,7 +75,7 @@ def test_mac_homes_private_addresses_and_signing_keys_are_masked(tmp_path):
     scrub.scrub_tree(tmp_path, private_ips=True, signing_keys=True)
     text = log.read_text(encoding="utf-8")
     assert "/Users/alice" not in text and "/home/dwarf/work/x" in text
-    assert "10.192.7.4" not in text and "172.20.0.3" not in text and "192.168.30.16" not in text
+    assert "10.77.7.4" not in text and "172.20.0.3" not in text and "192.168.77.16" not in text
     assert "192.0.2.4:3001" in text
     assert "172.233.144.9" in text and "10.11.20261029" in text and "11.1.2" in text
     body = json.loads(key.read_text(encoding="utf-8"))

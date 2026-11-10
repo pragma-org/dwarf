@@ -1,7 +1,7 @@
 """Block-apply bridge: per-node verdict reading, pot alignment, forge plan, primitive contracts.
 
 Live runs 20261109T153516Z-3cae5421 / 20261109T153907Z-8fab3645 / 20261109T153133Z-33835cf1 failed
-because forge/serve were deferred stubs, the legacy scripts pointed at /home/nigel/forge-work, the
+because forge/serve were deferred stubs, the legacy scripts pointed at a host-specific forge-work folder, the
 assertions returned no ``data_points_used`` (runner TypeError) and fixtures were never staged.
 """
 from __future__ import annotations

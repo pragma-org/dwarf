@@ -36,7 +36,7 @@ def _container_runtime(root: Path, *, implementation: str = "cardano-node") -> P
         "listen_address": "127.0.0.1:39120", "log_path": str(log_path),
         "pid_file": str(root / "pids" / "node1.pid"),
         "container_name": "dwarf-profile-install-x-profile-g-node1-1",
-        "container_ip": "10.192.8.2", "container_network": "dwarf-profile-install-x-net",
+        "container_ip": "10.88.8.2", "container_network": "dwarf-profile-install-x-net",
     }
     if implementation == "cardano-node":
         db_dir = root / "env" / "node-data" / "node1" / "db"
@@ -97,7 +97,7 @@ def test_container_view_reads_the_per_node_record(tmp_path):
     root = _container_runtime(tmp_path / "current")
     view = rc.preview_node_view(root, "cardano-node")
     assert view.layout == "container"
-    assert (view.listen_host, view.listen_port) == ("10.192.8.2", 3001)
+    assert (view.listen_host, view.listen_port) == ("10.88.8.2", 3001)
     assert view.chain_dir == root / "env" / "node-data" / "node1" / "db"
     assert view.log_path == root / "logs" / "node1" / "stdout.log"
     assert view.container_name == "dwarf-profile-install-x-profile-g-node1-1"
@@ -107,7 +107,7 @@ def test_container_view_reads_the_per_node_record(tmp_path):
 def test_container_view_supports_amaru(tmp_path):
     root = _container_runtime(tmp_path / "current", implementation="amaru")
     view = rc.preview_node_view(root, "amaru")
-    assert (view.listen_host, view.listen_port) == ("10.192.8.2", 5001)
+    assert (view.listen_host, view.listen_port) == ("10.88.8.2", 5001)
     assert view.chain_dir == root / "amaru" / "node1" / "chain.preview.db"
     assert view.upstream_peer_address == UPSTREAM
 
@@ -166,7 +166,7 @@ class _NetnsRecorder:
         if script.startswith("ss "):
             out = self.ss_output
         elif "route get" in script:
-            out = "".join(f"{ip} via 10.192.8.1 dev {self.route_dev} src 10.192.8.2 uid 0\n"
+            out = "".join(f"{ip} via 10.88.8.1 dev {self.route_dev} src 10.88.8.2 uid 0\n"
                           for ip in ("1.2.3.4", "5.6.7.8") if ip in script)
         elif "tc qdisc del" in script:
             out = self.qdisc_after_remove
@@ -178,16 +178,16 @@ class _NetnsRecorder:
 
 
 SS_OUTPUT = (
-    "0      0      10.192.8.2:41234     1.2.3.4:3001\n"
-    "0      0      10.192.8.2:41236     [::ffff:5.6.7.8]:3001\n"
-    "0      0      10.192.8.2:3001      10.192.8.9:52000\n"
-    "0      0      10.192.8.2:41240     10.192.8.3:3001\n"
+    "0      0      10.88.8.2:41234     1.2.3.4:3001\n"
+    "0      0      10.88.8.2:41236     [::ffff:5.6.7.8]:3001\n"
+    "0      0      10.88.8.2:3001      10.88.8.9:52000\n"
+    "0      0      10.88.8.2:41240     10.88.8.3:3001\n"
 )
 
 
 def test_active_upstream_ips_come_from_the_node_namespace(tmp_path, monkeypatch):
     view = rc.preview_node_view(_container_runtime(tmp_path / "current"), "cardano-node")
-    view = rc.PreviewNodeView(**{**view.__dict__, "local_peer_ips": ("10.192.8.3",)})
+    view = rc.PreviewNodeView(**{**view.__dict__, "local_peer_ips": ("10.88.8.3",)})
     recorder = _NetnsRecorder(ss_output=SS_OUTPUT)
     monkeypatch.setattr(rc, "run_in_node_netns", recorder)
     assert rc.preview_active_upstream_ips(view, 3001) == ["1.2.3.4", "5.6.7.8"]
@@ -282,7 +282,7 @@ def test_parity_baseline_measures_a_container_profile(tmp_path, monkeypatch):
     root = _container_runtime(tmp_path / "topology-runtimes" / "profile-g" / "current")
     run_dir, recorder, probed = _wire(monkeypatch, parity, tmp_path, root)
     assert parity.run_baseline(scenario_path=_scenario(tmp_path), sample_seconds=1) == 0
-    assert probed == [("10.192.8.2", 3001)]
+    assert probed == [("10.88.8.2", 3001)]
     assert _metric(run_dir, "preview_log_bytes_delta") == len("block adopted\n")
     assert _metric(run_dir, "preview_progress_ok") == 1
     assert _metric(run_dir, "preview_listener_port") == 3001
@@ -347,7 +347,7 @@ def test_amaru_preview_proof_measures_a_container_profile(tmp_path, monkeypatch)
     root = _container_runtime(tmp_path / "topology-runtimes" / "profile-f" / "current", implementation="amaru")
     run_dir, _recorder, probed = _wire(monkeypatch, amaru_check, tmp_path, root, implementation="amaru")
     assert amaru_check.run_proof(runtime_root=root, sample_seconds=1) == 0
-    assert probed == [("10.192.8.2", 5001)]
+    assert probed == [("10.88.8.2", 5001)]
     assert _metric(run_dir, "amaru_preview_progress_ok") == 1
     assert _metric(run_dir, "amaru_preview_log_bytes_delta") == len("block adopted\n")
 
