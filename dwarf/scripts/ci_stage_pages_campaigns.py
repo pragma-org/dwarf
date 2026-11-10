@@ -17,8 +17,8 @@ _ANTITHESIS = "dwarf-antithesis-snapshots"
 _TAG = re.compile(r"campaign-[0-9a-f]{64}")
 _ASSET = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*\.tar\.gz")
 _SHA = re.compile(r"[0-9a-f]{64}")
-_MAX_ARCHIVES = 10
-# 95 MiB: GitHub rejects any file over 100 MB; 950 MiB: ten archives under the 1 GB Pages soft limit.
+_MAX_ARCHIVES = 128
+# 95 MiB: GitHub rejects any file over 100 MB; 950 MiB keeps the whole default set under the 1 GB Pages soft limit.
 _MAX_ARCHIVE_BYTES = 95 * 1024 * 1024
 _MAX_TOTAL_BYTES = 950 * 1024 * 1024
 

@@ -53,6 +53,465 @@
         }
       ],
       "coverage_exception": "Antithesis snapshot: bounded trace window, few taps"
+    },
+    {
+      "url": "runs/20261110T045053Z-d4c71ff4-bundle-export.tar.gz",
+      "size_bytes": 80509,
+      "sha256": "752e84d7b12f3c550c5b1e53021ffcc54e1a209bf56d4658560882fb2ef3e9bd",
+      "run_id": "20261110T045053Z-d4c71ff4",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T055507Z-ea58dd93-bundle-export.tar.gz",
+      "size_bytes": 235401,
+      "sha256": "d188f2bc8380ace635c2320955e9763ff4e2b953d531043b4484f71cfc078d80",
+      "run_id": "20261110T055507Z-ea58dd93",
+      "implementation": "amaru",
+      "version": "10.11.20260925",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T050740Z-dd95f897-bundle-export.tar.gz",
+      "size_bytes": 1433298,
+      "sha256": "2918e568ce517e3bb9883a9b3824cc0ad3139e0dd3ddb06c2c22e5dcc22a76f4",
+      "run_id": "20261110T050740Z-dd95f897",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T055027Z-2fde906c-bundle-export.tar.gz",
+      "size_bytes": 6259995,
+      "sha256": "68d9587b5c70e9147c135d09ddf33139c3ad8e75e3826f15ee473f7b5310bae1",
+      "run_id": "20261110T055027Z-2fde906c",
+      "implementation": "amaru",
+      "version": "10.11.20260925",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T055738Z-79d92d4c-bundle-export.tar.gz",
+      "size_bytes": 232164,
+      "sha256": "1a16af5d432bb98523e72308cf03b422f2be0c6b11571c6a718bd002632faae5",
+      "run_id": "20261110T055738Z-79d92d4c",
+      "implementation": "amaru",
+      "version": "10.11.20260925",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042108Z-f9407647-bundle-export.tar.gz",
+      "size_bytes": 56480,
+      "sha256": "86ff681d2be3960c48c3cdf07fe3c337e369419499214147d64a2114970dcf1b",
+      "run_id": "20261110T042108Z-f9407647",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042155Z-f34de3f8-bundle-export.tar.gz",
+      "size_bytes": 55169,
+      "sha256": "ad72cc24e518fdb63785ec7c8fa696e66c21325457c41f0bf13c3af0beeabc4b",
+      "run_id": "20261110T042155Z-f34de3f8",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042241Z-2963a583-bundle-export.tar.gz",
+      "size_bytes": 48138,
+      "sha256": "8db0303d32969e31a14440f8cad179c856323379f0c5462ca01372861ce78668",
+      "run_id": "20261110T042241Z-2963a583",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042327Z-7809e6f8-bundle-export.tar.gz",
+      "size_bytes": 48824,
+      "sha256": "beac4dce1baa5d3af40274cbfbd6af16986c3978d92bccdf0e39fe47613be1c7",
+      "run_id": "20261110T042327Z-7809e6f8",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042412Z-91427eea-bundle-export.tar.gz",
+      "size_bytes": 53260,
+      "sha256": "2d924a09c5317f98f5bd472cd961f1abbe4a4f6978f270a641cff10ba86e7fd4",
+      "run_id": "20261110T042412Z-91427eea",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042458Z-ccb1751f-bundle-export.tar.gz",
+      "size_bytes": 140146,
+      "sha256": "459c93d483586f8728a8146d5b3140a51cf8bea16dcc052892ef375e14ae6466",
+      "run_id": "20261110T042458Z-ccb1751f",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T051051Z-a77b0031-bundle-export.tar.gz",
+      "size_bytes": 317572,
+      "sha256": "b1126a2da2bfe2828ace230e7fc8c3985a1f02a66a7da63b18f96fa1d8bb007d",
+      "run_id": "20261110T051051Z-a77b0031",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T051219Z-45119ce1-bundle-export.tar.gz",
+      "size_bytes": 282697,
+      "sha256": "8597880eea193dfe526c0b590ef12fd79b9bc4e14d778429b677509d64ac5d5e",
+      "run_id": "20261110T051219Z-45119ce1",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T051340Z-ba80cf2d-bundle-export.tar.gz",
+      "size_bytes": 333759,
+      "sha256": "a81f8395afb0b403f56e3b68851db40dba112d0dad760211c851f0d4134ed672",
+      "run_id": "20261110T051340Z-ba80cf2d",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T051519Z-ee80512d-bundle-export.tar.gz",
+      "size_bytes": 311761,
+      "sha256": "17f2fd716d1b2efa9a2205161f0f547b218f9b8ade096f31698cf4c4180f712e",
+      "run_id": "20261110T051519Z-ee80512d",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T051654Z-bc4c080a-bundle-export.tar.gz",
+      "size_bytes": 349556,
+      "sha256": "865a3b0829478c01cdf1cb0d557444c6ba540aa71c2a6740c2830f4d23b0b347",
+      "run_id": "20261110T051654Z-bc4c080a",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T051825Z-3af4bb40-bundle-export.tar.gz",
+      "size_bytes": 162141,
+      "sha256": "959e2cec303a07c4dce68b7a14e070cf54213f11d1ab1677092e8886acca4f67",
+      "run_id": "20261110T051825Z-3af4bb40",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042531Z-0c446e9c-bundle-export.tar.gz",
+      "size_bytes": 859003,
+      "sha256": "0140a2392e805da604a9ac68972f12c71e77063c8782951e5119eb545450624d",
+      "run_id": "20261110T042531Z-0c446e9c",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T051932Z-192a0e7f-bundle-export.tar.gz",
+      "size_bytes": 293801,
+      "sha256": "32f177995ef25cc4a840d1336f9fd942a1f985ea5ffa0e2f5b82da95b4ec6f79",
+      "run_id": "20261110T051932Z-192a0e7f",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T052057Z-b5ccc95b-bundle-export.tar.gz",
+      "size_bytes": 262030,
+      "sha256": "2095b9ce04fc51a8a9e1d5f49f1c2801478ebb8f998832a485b94d2d8488413d",
+      "run_id": "20261110T052057Z-b5ccc95b",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T052222Z-ec5ab41b-bundle-export.tar.gz",
+      "size_bytes": 247015,
+      "sha256": "f780caf70f9ea65e8572a8197c5ec30a20e8e91b12ef8b8a48b4ad02d8ab5d10",
+      "run_id": "20261110T052222Z-ec5ab41b",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T050217Z-ed80efad-bundle-export.tar.gz",
+      "size_bytes": 262916,
+      "sha256": "55a8aff3be58a5915b7a3b37c5495d719249f0009209f8442e06cdb4d4071984",
+      "run_id": "20261110T050217Z-ed80efad",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T045541Z-23024601-bundle-export.tar.gz",
+      "size_bytes": 1252808,
+      "sha256": "4d4a0b5fd63c3160474dae46cb9fd08d9051b06dc18485ef3c55ccb12fead0b2",
+      "run_id": "20261110T045541Z-23024601",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T042812Z-503e6204-bundle-export.tar.gz",
+      "size_bytes": 826203,
+      "sha256": "072fd24dcfcb023a3fad9fb4098260318996a1cb3b6f1e3aab49744b5242b452",
+      "run_id": "20261110T042812Z-503e6204",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T052400Z-cabe26f3-bundle-export.tar.gz",
+      "size_bytes": 441793,
+      "sha256": "122e2685d61c67d200058ed97519f4d3dc07818f55a593cac7658c4f947a5b87",
+      "run_id": "20261110T052400Z-cabe26f3",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T052526Z-931cffa3-bundle-export.tar.gz",
+      "size_bytes": 1325114,
+      "sha256": "3f41741c888a0536ff690f170e77e276cbf645b2188505e592f062464cd7a235",
+      "run_id": "20261110T052526Z-931cffa3",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T050406Z-29373dd4-bundle-export.tar.gz",
+      "size_bytes": 165424,
+      "sha256": "0e218bf91efa3e2c41ae64d3a0978f9fcc025299753bccf58f1dbdba08e54a91",
+      "run_id": "20261110T050406Z-29373dd4",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T050514Z-c7426d52-bundle-export.tar.gz",
+      "size_bytes": 213941,
+      "sha256": "07d480ec6bc0b073e1e112901fdfdce7adf9b53f4744694a968aa912160527e5",
+      "run_id": "20261110T050514Z-c7426d52",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T043025Z-fb5bc845-bundle-export.tar.gz",
+      "size_bytes": 858497,
+      "sha256": "356f84d8b018530e76f9495fec80b3be042787f79ec8529618cd79662785f980",
+      "run_id": "20261110T043025Z-fb5bc845",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T045146Z-b5048544-bundle-export.tar.gz",
+      "size_bytes": 1682413,
+      "sha256": "7e8c01670e5846f9da06e693feca89514d31c3ac5196fe443cdb28d55a09b1c7",
+      "run_id": "20261110T045146Z-b5048544",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T053731Z-a4f727e3-bundle-export.tar.gz",
+      "size_bytes": 1301500,
+      "sha256": "d930076de5c8556ff823246735ce15b05e54a744a0b55ff020a73f26c13f255f",
+      "run_id": "20261110T053731Z-a4f727e3",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T052822Z-c16539c7-bundle-export.tar.gz",
+      "size_bytes": 288183,
+      "sha256": "6a5af195b898bacad88546c7dadc04d5f3f199716191716dbeb2d8eea17ef756",
+      "run_id": "20261110T052822Z-c16539c7",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T050051Z-f910e24e-bundle-export.tar.gz",
+      "size_bytes": 556996,
+      "sha256": "c975004a18d90839c3f33552fbf563aceae43ec97f145006f9ae2f32d7899985",
+      "run_id": "20261110T050051Z-f910e24e",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T052949Z-da59a042-bundle-export.tar.gz",
+      "size_bytes": 204111,
+      "sha256": "512d77f107e24060533b2fdce82514eccf155e81594db2ed54c616136b93f503",
+      "run_id": "20261110T052949Z-da59a042",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T044918Z-7b2b7f3f-bundle-export.tar.gz",
+      "size_bytes": 270058,
+      "sha256": "ebbf062650e917f558d74d21fb0697a23ddcb6c4e53f5366b7bfd8fa0892f2f6",
+      "run_id": "20261110T044918Z-7b2b7f3f",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T053100Z-7f1183c3-bundle-export.tar.gz",
+      "size_bytes": 2397814,
+      "sha256": "465df00fcfd7efc425bcd05e6e5ccfbd28e93d808a7fc7a805e24ad9af57da34",
+      "run_id": "20261110T053100Z-7f1183c3",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T054126Z-c14f8c27-bundle-export.tar.gz",
+      "size_bytes": 190270,
+      "sha256": "5a367c7d99ae6acebfa8e52b65e51101b92e15629164db83fc7af04cc1d6d24c",
+      "run_id": "20261110T054126Z-c14f8c27",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T053221Z-8104fc3d-bundle-export.tar.gz",
+      "size_bytes": 212149,
+      "sha256": "df01ef84b7c3d82b6a487bfd3b2dea7786d822e47764bad8ebaa827caa22d274",
+      "run_id": "20261110T053221Z-8104fc3d",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T043257Z-97004b14-bundle-export.tar.gz",
+      "size_bytes": 233369,
+      "sha256": "944a24ecaa562da36f14dbc16aafe241f9ab1b58701a96d51502b34d0a57e0d8",
+      "run_id": "20261110T043257Z-97004b14",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T053339Z-2736037c-bundle-export.tar.gz",
+      "size_bytes": 230286,
+      "sha256": "6f9b3b3a5ca0d11ffd7111c009aeeca1369553675024498ca7e9c71243f48423",
+      "run_id": "20261110T053339Z-2736037c",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T054233Z-15a2fffb-bundle-export.tar.gz",
+      "size_bytes": 184375,
+      "sha256": "93948f31ed1a8a14701a009bed0f4a2b46da8c87c2e0aef48a7eb48e8da15ba7",
+      "run_id": "20261110T054233Z-15a2fffb",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T053444Z-f389452e-bundle-export.tar.gz",
+      "size_bytes": 298034,
+      "sha256": "fc6781fd98e4e136b2945217e978440e011d3e60537cb7eace4d1895fd702434",
+      "run_id": "20261110T053444Z-f389452e",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T050631Z-cd364b6c-bundle-export.tar.gz",
+      "size_bytes": 201674,
+      "sha256": "afd799c46c0bf0dae715388a8138396f6d22fc1469f441da68e7990ec76d35c3",
+      "run_id": "20261110T050631Z-cd364b6c",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T054344Z-b1373a9a-bundle-export.tar.gz",
+      "size_bytes": 175099,
+      "sha256": "f4f34f529052232662bd3b4585d5b79a398572ee2d1f2a5f44d68d2983fa8adf",
+      "run_id": "20261110T054344Z-b1373a9a",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T054446Z-10eff026-bundle-export.tar.gz",
+      "size_bytes": 186450,
+      "sha256": "14b2f36197d340813fe505fa6ef5e79ad66cf1d1d7a8779320b1e9fe10b605e1",
+      "run_id": "20261110T054446Z-10eff026",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T054554Z-e93464fa-bundle-export.tar.gz",
+      "size_bytes": 536400,
+      "sha256": "65d5a897224d7ba5b15808e5bcd778f493c5066734c113afee7a35e799c5dcd0",
+      "run_id": "20261110T054554Z-e93464fa",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T054734Z-9cb8ffd5-bundle-export.tar.gz",
+      "size_bytes": 303841,
+      "sha256": "744504e490040beabbd8cf596b440233ce944b3a47feb7c1069cbbfb7ff84e2c",
+      "run_id": "20261110T054734Z-9cb8ffd5",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T054859Z-5659cd90-bundle-export.tar.gz",
+      "size_bytes": 292619,
+      "sha256": "25a182385c09ee30caf4bbebbab79e12749637e9b1fe294e1ca5606ba5020dd4",
+      "run_id": "20261110T054859Z-5659cd90",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T053620Z-fa638a5e-bundle-export.tar.gz",
+      "size_bytes": 189565,
+      "sha256": "7d95534dccb44103bbc2cbb008c3c9726ef5836972436b65ea212fb3b4d63295",
+      "run_id": "20261110T053620Z-fa638a5e",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T043526Z-683aead9-bundle-export.tar.gz",
+      "size_bytes": 831566,
+      "sha256": "632187aa23992ff1c7e093614ee3229fea5906e39c07610cf6f8544ff4c9dc33",
+      "run_id": "20261110T043526Z-683aead9",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
+    },
+    {
+      "url": "runs/20261110T043759Z-f9a860eb-bundle-export.tar.gz",
+      "size_bytes": 235656,
+      "sha256": "fab044ab75af31bbab63ecac1ca60c246e9d55dcb3e713265d934832be2bdbef",
+      "run_id": "20261110T043759Z-f9a860eb",
+      "implementation": "cardano-node",
+      "version": "11.1.2",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason"
     }
   ]
 }

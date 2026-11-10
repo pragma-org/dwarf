@@ -5,8 +5,8 @@
   "use strict";
 
   var SCHEMA = "dwarf.default-run-archives.v1";
-  var MAX_ARCHIVES = 10;
-  // 95 MiB: GitHub rejects files over 100 MB; 950 MiB: ten archives under the 1 GB Pages soft limit.
+  var MAX_ARCHIVES = 128;
+  // 95 MiB: GitHub rejects files over 100 MB; 950 MiB keeps the whole default set under the 1 GB Pages soft limit.
   var MAX_ARCHIVE_BYTES = 95 * 1024 * 1024;
   var MAX_TOTAL_BYTES = 950 * 1024 * 1024;
 

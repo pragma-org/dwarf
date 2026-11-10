@@ -18,7 +18,11 @@ def test_committed_default_archives_stage_with_validated_empty_campaign_catalog(
         trusted_publishers_path=ROOT / "docs/evidence/trusted-publishers.json")
     assert json.loads((output / "default-runs.json").read_text())["archives"]
     assert (output / "campaigns.json").is_file()
-    assert len(list((output / "runs").glob("*.tar.gz"))) == 5   # four coverage-rule workload reruns + the Antithesis snapshot
+    staged = {p.name for p in (output / "runs").glob("*.tar.gz")}
+    listed = {row["url"][5:] for row in json.loads((ROOT / "docs/evidence/default-runs.json").read_text())["archives"]}
+    assert staged == listed                              # every committed default stages, nothing extra
+    rules = [row for row in json.loads((output / "default-runs.json").read_text())["archives"] if row.get("coverage_rule")]
+    assert len(rules) == 4                               # the four coverage-rule workload legs stay defaults
 
 
 def test_rolling_defaults_retain_committed_antithesis_archive(tmp_path):
@@ -72,11 +76,11 @@ def test_stage_rejects_release_default_missing_from_trusted_catalog(tmp_path):
 def test_pages_caps_allow_full_workload_bundles_and_match_viewer():
     assert api._MAX_ARCHIVE_BYTES == 95 * 1024 * 1024
     assert api._MAX_TOTAL_BYTES == 950 * 1024 * 1024
-    assert api._MAX_ARCHIVES == 10
+    assert api._MAX_ARCHIVES == 128   # the full tapped campaign set (2026-11-10) plus the workload legs
     viewer = (ROOT / "docs/portable-defaults.js").read_text(encoding="utf-8")
     assert "var MAX_ARCHIVE_BYTES = 95 * 1024 * 1024;" in viewer
     assert "var MAX_TOTAL_BYTES = 950 * 1024 * 1024;" in viewer
-    assert "var MAX_ARCHIVES = 10;" in viewer
+    assert "var MAX_ARCHIVES = 128;" in viewer
 
 
 def test_pages_rejects_archive_above_github_file_limit():
