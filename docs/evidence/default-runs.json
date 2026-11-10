@@ -702,6 +702,17 @@
       "group": "Compound faults"
     },
     {
+      "url": "runs/20261110T194224Z-6c1bec82-bundle-export.tar.gz",
+      "size_bytes": 988177,
+      "sha256": "a48ef3886af31ff0aaabf4aff58a2c635f5dda645f404f597a4c0cd3a82503de",
+      "run_id": "20261110T194224Z-6c1bec82",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "coverage_exception": "Tapped scenario run (taps campaign 2026-11-10): default taps attached; metrics a scenario does not exercise carry their unavailable reason",
+      "title": "Local query + recovery",
+      "group": "Compound faults"
+    },
+    {
       "url": "runs/20261110T052526Z-931cffa3-bundle-export.tar.gz",
       "size_bytes": 1325114,
       "sha256": "3f41741c888a0536ff690f170e77e276cbf645b2188505e592f062464cd7a235",
