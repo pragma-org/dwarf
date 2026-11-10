@@ -620,3 +620,19 @@ def test_mempool_counts_20261029_amaru_mempool_target_messages(tmp_path):
     assert measurements["mempool_tx_count"]["maximum"] == 1
     assert measurements["mempool_size_bytes"]["maximum"] == 285
     assert measurements["mempool_terminal_latency"]["all"]["sample_count"] == 2
+
+
+def test_an_empty_amaru_trace_window_reports_no_counter_as_a_measured_zero(tmp_path):
+    """Same class as the 2026-11-09 cardano campaign runs with a 1-byte trace: when no
+    trace record reached the collector, no counter may read as an observed zero."""
+    from profile_manager.measurement_collectors.amaru_stock import STOCK_MEASUREMENT_IDS
+    empty = tmp_path / "empty.ndjson"
+    empty.write_text("\n")
+    for index, measurement_id in enumerate(STOCK_MEASUREMENT_IDS):
+        result = _collect_from_paths(
+            tmp_path / str(index), measurement_id, json_paths=[empty], otlp_paths=[],
+        )
+        assert result["export"]["source_record_count"] == 0
+        for name, metric in result["measurements"].items():
+            assert metric.get("status") != "available", (measurement_id, name, metric)
+            assert metric.get("value") is None, (measurement_id, name, metric)

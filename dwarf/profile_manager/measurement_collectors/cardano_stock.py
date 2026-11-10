@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
 
+from profile_manager.measurement_collectors import withhold_without_source
 from profile_manager.measurement_correlation import correlate_measurement_events
 from profile_manager.measurement_report import distribution_summary
 
@@ -157,7 +159,12 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any] | None:
             event["duration_micros"] = rtt * 1_000_000
             event["timing_source"] = "node-emitted-keepalive-rtt"
     elif normalized_kind == "mempool-synced":
-        duration = _number(data.get("enclosingTime"))
+        enclosing = data.get("enclosingTime")
+        # cardano-node 11.1.x traces an enclosing-time pair: {"edge": "Starting"}, then
+        # {"edge": <elapsed seconds>}. Only the second edge is a sample.
+        if isinstance(enclosing, dict):
+            enclosing = enclosing.get("edge")
+        duration = _number(enclosing)
         if duration is not None and duration >= 0:
             event["duration_micros"] = duration * 1_000_000
             event["timing_source"] = "node-emitted-mempool-sync-duration"
@@ -168,6 +175,14 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any] | None:
             if number is not None:
                 event[destination] = number
     return event
+
+
+_RUNTIME_TIMESTAMP = re.compile(rb"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z (?=\{)")
+
+
+def _strip_runtime_timestamp(line: bytes) -> bytes:
+    """Drop the `docker logs -t` prefix in front of a JSON trace record, if present."""
+    return _RUNTIME_TIMESTAMP.sub(b"", line, count=1)
 
 
 def _load_cardano_trace_bytes(
@@ -189,6 +204,7 @@ def _load_cardano_trace_bytes(
             if not line.strip():
                 continue
             source_count += 1
+            line = _strip_runtime_timestamp(line)
             try:
                 record = json.loads(line)
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -423,6 +439,9 @@ class CardanoStockCollector:
         correlations = correlate_measurement_events(loaded["events"])
         context.write_json("correlations.json", correlations)
         measurements, claims = _build_measurements(self.measurement_id, loaded["events"])
+        measurements = withhold_without_source(
+            measurements, source_record_count=loaded["source_record_count"]
+        )
         result = {
             "schema_version": "v1",
             "measurement_id": self.measurement_id,

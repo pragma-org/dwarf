@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from profile_manager.measurement_collectors import withhold_without_source
 from profile_manager.measurement_correlation import correlate_measurement_events
 from profile_manager.measurement_precision import precise_microseconds
 from profile_manager.measurement_report import distribution_summary
@@ -822,6 +823,9 @@ class AmaruStockCollector:
         context.write_json("correlations.json", correlations)
         measurements, claims = _build_measurements(
             self.measurement_id, loaded["events"]
+        )
+        measurements = withhold_without_source(
+            measurements, source_record_count=loaded["source_record_count"]
         )
         result = {
             "schema_version": "v1",

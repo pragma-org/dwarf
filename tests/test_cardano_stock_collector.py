@@ -192,3 +192,87 @@ def test_chain_lifecycle_rollback_zero_carries_the_chain_events_it_scanned():
     measurements, _notes = _build_measurements("cardano-stock-chain-lifecycle", events)
     assert measurements["rollbacks"]["value"] == 0
     assert measurements["rollbacks"]["offered_count"] == 2 == measurements["chain_events"]["value"]
+
+
+# Real cardano-node 11.1.2 lines (run 20261109T070545Z-26bb2c20, node1, Mempool at Debug).
+# The node traces each sync as an enclosing-time pair: a "Starting" edge, then the
+# elapsed seconds as the edge value. The collector read only a bare number, so the
+# 2026-11-04 Pages runs (460 Synced records) and this run reported no samples.
+REAL_MEMPOOL_SYNCED = (
+    '{"at":"2026-11-09T07:05:48.702221361Z","ns":"Mempool.Synced","data":{"enclosingTime":{"edge":"Starting"},"kind":"TraceMempoolSynced"},"sev":"Debug","thread":"31","host":"node1"}\n'
+    '{"at":"2026-11-09T07:05:48.702425602Z","ns":"Mempool.Synced","data":{"enclosingTime":{"edge":2.10363e-4},"kind":"TraceMempoolSynced"},"sev":"Debug","thread":"31","host":"node1"}\n'
+)
+# Real node1 line from the same run: one chain adoption.
+REAL_ADOPTED = (
+    '{"at":"2026-11-09T07:05:48.702055854Z","ns":"ChainDB.AddBlockEvent.AddedToCurrentChain","data":{"headers":[{"blockNo":"12","hash":"\\"aee1c6336c86302da89290b24185f89555068ffbf8b858c49ef40ae917c0bdf7\\"","kind":"ShelleyBlock","slotNo":"317"}],"kind":"AddedToCurrentChain","newSuffixSelectView":{"blockNo":12,"issueNo":0,"issuerHash":"12d74b9901f50f401196cb553c1c65b19c977d01d2235bc78ffabe11","kind":"PraosTiebreakerView","slotNo":317,"tieBreakVRF":"6b42fea74786ad06e7f51abf0a7508257e1e3d85625c9821d236e31775c29402d0735c0c29985b91d06bc1cc6e984a52306745231b71e597137c4e7716e0c5ee","weightBoost":0},"newtip":"aee1c6336c86302da89290b24185f89555068ffbf8b858c49ef40ae917c0bdf7@317","tipBlockHash":"aee1c6336c86302da89290b24185f89555068ffbf8b858c49ef40ae917c0bdf7","tipBlockIssuerVKeyHash":"12d74b9901f50f401196cb553c1c65b19c977d01d2235bc78ffabe11","tipBlockParentHash":"e7160aa16dfe73ffcb0aab8a0124b5f296bbaa55358674f732dd4af19249c91e"},"sev":"Notice","thread":"19","host":"node1"}\n'
+)
+
+
+def test_mempool_sync_duration_reads_the_enclosing_time_edge_of_real_11_1_2_records():
+    from profile_manager.measurement_collectors import cardano_stock
+    loaded = _load_cardano_trace_bytes([("node1.ndjson", REAL_MEMPOOL_SYNCED.encode(), False)])
+    metrics, _claims = cardano_stock._build_measurements("cardano-stock-txsubmission-mempool", loaded["events"])
+    sync = metrics["mempool_sync_duration"]
+    # One completed sync; the "Starting" edge is not a sample.
+    assert sync["status"] == "available"
+    assert sync["sample_count"] == 1
+    assert abs(sync["median"] - 210.363) < 1e-6
+
+
+def _finalize_stock(tmp_path, measurement_id, body: bytes):
+    trace = tmp_path / "node1.ndjson"
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    trace.write_bytes(body)
+    run_dir = tmp_path / "run"
+    context = CollectorContext(
+        measurement_id=measurement_id, definition={"id": measurement_id}, parameters={},
+        run_dir=run_dir, collector_dir=run_dir / "measurements" / "collectors" / measurement_id,
+    )
+    collector = CardanoStockCollector(
+        {"id": measurement_id, "definition": {"id": measurement_id}}, trace_paths=[trace], include_existing=True,
+    )
+    collector.prepare(context)
+    collector.start(context)
+    collector.stop(context)
+    return collector.finalize(context)
+
+
+def test_an_empty_trace_window_reports_no_counter_as_a_measured_zero(tmp_path):
+    """35 of 36 cardano runs of the 2026-11-09 campaign (e.g. 20261109T040750Z-62124416)
+    retained a 1-byte trace (source_record_count 0) yet reported chain_events,
+    adopted_blocks, served_blocks, mempool_accepted ... as available zeros."""
+    from profile_manager.measurement_collectors.cardano_stock import STOCK_MEASUREMENT_IDS
+    for index, measurement_id in enumerate(STOCK_MEASUREMENT_IDS):
+        result = _finalize_stock(tmp_path / str(index), measurement_id, b"\n")
+        assert result["export"]["source_record_count"] == 0
+        for name, metric in result["measurements"].items():
+            assert metric["status"] == "unavailable", (measurement_id, name, metric)
+            assert metric.get("value") is None, (measurement_id, name)
+            assert "no node trace record" in metric.get("reason", "") or name in {
+                "handler_queue_residence", "txsubmission_residence",
+                "epoch_transition_duration", "plutus_vm_duration",
+            }, (measurement_id, name, metric)
+
+
+def test_a_non_empty_window_keeps_its_counts(tmp_path):
+    result = _finalize_stock(tmp_path, "cardano-stock-chain-lifecycle", REAL_ADOPTED.encode())
+    assert result["measurements"]["adopted_blocks"] == {"status": "available", "unit": "blocks", "value": 1}
+    assert result["measurements"]["rollbacks"]["value"] == 0
+
+
+# Real line from a self-composed devnet node log (run 20261109T113615Z-5b45ab96,
+# outputs/substrate-teardown/node-logs/node1.log): `docker logs -t` prefixes each
+# JSON trace record with the container-runtime timestamp.
+REAL_DOCKER_PREFIXED = (
+    '2026-11-09T11:36:31.503327859Z {"at":"2026-11-09T11:36:31.502962731Z","ns":"ChainDB.AddBlockEvent.AddedToCurrentChain","data":{"kind":"AddedToCurrentChain","newSuffixSelectView":{"blockNo":0,"issueNo":0,"issuerHash":"247af59be0821c69b4872a37627302bb67091b5850b209e72f741677","kind":"PraosTiebreakerView","slotNo":5,"tieBreakVRF":"86a82346d6573a6bdd02b9367138e01d120e252547d9a420bf4c844aa6554037e6328ec84094064ad596830894c83c586e5780148c662bdd9312553c8ca44d60","weightBoost":0},"newtip":"31e24817a912dc5e32cc9f1860ecfd4ebfb4fd1ac1aab374b4ad0dbfc961910a@5"},"sev":"Notice","thread":"19","host":"node1"}\n'
+    '2026-11-09T11:36:16.867974730Z Node configuration: NodeConfiguration {ncSocketConfig = SocketConfig {}}\n'
+)
+
+
+def test_docker_timestamp_prefixed_node_logs_normalize_like_plain_traces():
+    loaded = _load_cardano_trace_bytes([("node1.log", REAL_DOCKER_PREFIXED.encode(), False)])
+    assert [event["kind"] for event in loaded["events"]] == ["chain-adopted"]
+    # The node's own trace time stays authoritative, not the runtime prefix.
+    assert loaded["events"][0]["timestamp"] == "2026-11-09T11:36:31.502962731Z"
+    # A prefixed non-JSON startup line is rejected, not silently dropped.
+    assert loaded["rejected_record_count"] == 1

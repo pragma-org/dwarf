@@ -41,6 +41,15 @@ def test_exception_catalog_is_well_formed():
     assert ("amaru", "header-arrival-offset") in concepts
 
 
+def test_mempool_sync_exception_is_provisional_until_a_rerun_of_the_fixed_collector():
+    """The retained cardano traces hold 460 Mempool.Synced records: the gap was the
+    collector reading enclosingTime as a bare number, not the node (2026-11-09)."""
+    row = next(r for r in load_coverage_exceptions()["exceptions"]
+               if (r["implementation"], r["concept"]) == ("cardano-node", "mempool-sync-time"))
+    assert row["provisional"] is True
+    assert "collector" in row["reason"] and "not the node" in row["reason"]
+
+
 @pytest.mark.parametrize("leg", sorted(WORKLOAD_ARCHIVES))
 def test_retained_workload_archives_hold_the_rule(leg):
     """The Pages default set: every bound concept carries a value or a documented exception."""

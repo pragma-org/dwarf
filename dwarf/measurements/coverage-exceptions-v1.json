@@ -58,8 +58,8 @@
         "patched"
       ],
       "concept": "mempool-sync-time",
-      "reason": "The 2026-11-04 workload reruns retained no TraceMempoolSynced record from cardano-node 11.1.2 even with the Mempool namespace at Debug; the stock collector reports mempool_sync_duration unavailable. Measured fact, not an assumption.",
-      "provisional": false
+      "reason": "A collector bug, not the node: cardano-node 11.1.2 traces each mempool sync as enclosingTime {edge: Starting} then {edge: <seconds>}, and the stock collector read only a bare number. The retained 2026-11-04 traces hold the records; the fixed collector replayed over them gives 111 (stock) and 119 (patched) samples. Remove this entry once a rerun of the fixed collector is retained.",
+      "provisional": true
     },
     {
       "implementation": "amaru",
