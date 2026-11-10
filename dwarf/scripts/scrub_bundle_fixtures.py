@@ -43,10 +43,11 @@ _MAC_HOME = re.compile(r"/Users/(?!Shared(?:/|\b))[A-Za-z0-9._-]+")
 _PRIVATE_IP = re.compile(
     r"(?<![\d.])(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.(\d{1,3})(?!\.?\d)")
 # The key bytes of a cardano-cli signing-key envelope (type ...SigningKey...), in either field order.
+# The type may carry any character but a quote: KES keys are "KesSigningKey_ed25519_kes_2^6".
 _SIGNING_KEY = re.compile(
-    r'("type"\s*:\s*"[A-Za-z0-9_]*SigningKey[A-Za-z0-9_]*"[^{}]*?"cborHex"\s*:\s*")[0-9a-fA-F]+(")')
+    r'("type"\s*:\s*"[^"]*SigningKey[^"]*"[^{}]*?"cborHex"\s*:\s*")[0-9a-fA-F]+(")')
 _SIGNING_KEY_REVERSED = re.compile(
-    r'("cborHex"\s*:\s*")[0-9a-fA-F]+("[^{}]*?"type"\s*:\s*"[A-Za-z0-9_]*SigningKey[A-Za-z0-9_]*")')
+    r'("cborHex"\s*:\s*")[0-9a-fA-F]+("[^{}]*?"type"\s*:\s*"[^"]*SigningKey[^"]*")')
 NEUTRAL_HOST = "dwarf-host"
 NEUTRAL_SUBNET = "192.0.2."
 REDACTED_KEY = "redacted-by-dwarf"

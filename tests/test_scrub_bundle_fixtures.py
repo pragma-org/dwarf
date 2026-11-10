@@ -82,3 +82,17 @@ def test_mac_homes_private_addresses_and_signing_keys_are_masked(tmp_path):
     assert body["type"] == "PaymentSigningKeyShelley_ed25519" and "ab" * 32 not in body["cborHex"]
     assert json.loads(vkey.read_text(encoding="utf-8"))["cborHex"] == "5820" + "cd" * 32
     assert scrub.remaining_host_details(tmp_path, private_ips=True, signing_keys=True) == []
+
+
+def test_kes_signing_keys_are_redacted(tmp_path):
+    """The KES envelope type carries a caret ("KesSigningKey_ed25519_kes_2^6"); the 2026-11-09 examples
+    and the tapped Pages set kept 13 throwaway devnet KES keys because the type pattern stopped at it."""
+    from scripts import scrub_bundle_fixtures as scrub
+    run = tmp_path / "run"
+    run.mkdir()
+    key = run / "kes.skey"
+    key.write_text('{\n    "type": "KesSigningKey_ed25519_kes_2^6",\n    "description": "KES Signing Key",\n'
+                   '    "cborHex": "590260' + "ab" * 40 + '"\n}\n')
+    scrub.scrub_tree(tmp_path, signing_keys=True)
+    assert '"cborHex": "redacted-by-dwarf"' in key.read_text()
+    assert scrub.remaining_host_details(tmp_path, signing_keys=True) == []
