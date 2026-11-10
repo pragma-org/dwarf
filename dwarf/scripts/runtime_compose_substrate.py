@@ -462,6 +462,22 @@ def _enable_cardano_observability_traces(config_path: Path) -> dict:
     return {"enabled": True, "namespaces": sorted(CARDANO_OBSERVABILITY_TRACE_NAMESPACES), "config_path": str(config_path)}
 
 
+def _machine_format_stdout(options: dict) -> dict:
+    """F161: the tap collectors read JSON records, so stdout must be "Stdout MachineFormat".
+    Some env templates write "Stdout HumanFormatColoured"; swap only the Stdout backend and keep
+    every other backend. Returns the before/after Stdout backend for the runtime record."""
+    root = dict(options.get("")) if isinstance(options.get(""), dict) else {}
+    backends = [str(b) for b in root.get("backends") or []]
+    before = next((b for b in backends if b.startswith("Stdout ")), None)
+    if before is None:
+        backends.append("Stdout MachineFormat")
+    else:
+        backends = ["Stdout MachineFormat" if b == before else b for b in backends]
+    root["backends"] = backends
+    options[""] = root
+    return {"before": before, "after": "Stdout MachineFormat"}
+
+
 def _enable_cardano_measurement_traces(config_path: Path) -> dict:
     """Enable audited machine namespaces only for an opt-in measurement profile."""
     body = json.loads(config_path.read_text(encoding="utf-8"))
@@ -508,11 +524,13 @@ def _enable_cardano_tap_trace_namespaces(config_path: Path) -> dict:
             "detail": "DDetailed",
         })
         options[namespace] = configured
+    stdout_format = _machine_format_stdout(options)
     body["TraceOptions"] = options
     config_path.write_text(json.dumps(body, indent=4) + "\n", encoding="utf-8")
     return {
         "enabled": True,
         "source": "measurement-taps",
+        "stdout_format": stdout_format,
         "namespaces": sorted(CARDANO_MEASUREMENT_TRACE_NAMESPACES),
         "config_path": str(config_path),
         "node_settings": {},
