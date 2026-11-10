@@ -1,0 +1,29 @@
+{
+  "scenario_id": "phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo",
+  "run_id": "20261110T000148Z-180113db",
+  "started_at": "2026-11-09T19:01:24",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "b5b8743117fb195e21bcc684ed245cd10036dd17",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    },
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    },
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    },
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

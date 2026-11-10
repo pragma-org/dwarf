@@ -1,0 +1,21 @@
+{
+  "scenario_id": "runtime-substrate-blockfetch-continuity-failure-example-smoke",
+  "run_id": "20261109T175720Z-ff4e9348",
+  "started_at": "2026-11-09T12:57:18",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "091cead214939c838078533e4186e7747e912416",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "blockfetch_continuity_failure_rejected",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

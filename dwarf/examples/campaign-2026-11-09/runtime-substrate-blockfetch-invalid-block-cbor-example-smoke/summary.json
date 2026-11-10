@@ -1,0 +1,21 @@
+{
+  "scenario_id": "runtime-substrate-blockfetch-invalid-block-cbor-example-smoke",
+  "run_id": "20261109T113615Z-5b45ab96",
+  "started_at": "2026-11-09T06:36:13",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "ff9a3115494d349b1546ee1ff259cbce8e669c1b",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "blockfetch_invalid_block_rejected",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

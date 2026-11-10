@@ -1,0 +1,17 @@
+{
+  "scenario_id": "consensus-chainhold-upstream-differential",
+  "run_id": "20261109T121748Z-a2d9d6ac",
+  "started_at": "2026-11-09T07:17:46",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "d50d15e1d2dfc3657e0c7ffd74f8344bc1c6b4c3",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "chain_select_differential",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

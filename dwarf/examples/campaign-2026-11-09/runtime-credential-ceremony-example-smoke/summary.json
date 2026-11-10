@@ -1,0 +1,17 @@
+{
+  "scenario_id": "runtime-credential-ceremony-example-smoke",
+  "run_id": "20261108T134446Z-1e25a12d",
+  "started_at": "2026-11-08T08:44:45",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "credential_ceremony_recorded_clean",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

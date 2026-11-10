@@ -1,0 +1,21 @@
+{
+  "scenario_id": "runtime-substrate-blockfetch-invalid-range-example-smoke",
+  "run_id": "20261109T180919Z-16eb8917",
+  "started_at": "2026-11-09T13:09:17",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "e22392c08bbfe2e79e87e2a7f97b9e3a15175cd4",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "blockfetch_invalid_range_rejected",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

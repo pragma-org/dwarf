@@ -1,0 +1,37 @@
+{
+  "scenario_id": "runtime-substrate-compound-eclipse-recovery-example-smoke",
+  "run_id": "20261109T193100Z-80d41390",
+  "started_at": "2026-11-09T14:30:59",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "acb694810115757030dc30ebee8c53de03864b19",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "honest_peer_set_uncompromised",
+      "result": "pass"
+    },
+    {
+      "primitive": "peer_connectivity_observed",
+      "result": "pass"
+    },
+    {
+      "primitive": "reconnection_clean",
+      "result": "pass"
+    },
+    {
+      "primitive": "chainsync_responder_rollback_then_forward_clean",
+      "result": "pass"
+    },
+    {
+      "primitive": "substrate_quorum_observed",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

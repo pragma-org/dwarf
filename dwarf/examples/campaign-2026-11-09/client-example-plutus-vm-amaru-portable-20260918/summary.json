@@ -1,0 +1,25 @@
+{
+  "scenario_id": "client-example-plutus-vm-amaru-portable-20260918",
+  "run_id": "20261109T072712Z-aaca9353",
+  "started_at": "2026-11-09T02:12:59",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "c7228e01d1d2cee05ea091a60de1b7d0dcdb9621",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "plutus_result_and_budget_match",
+      "result": "pass"
+    },
+    {
+      "primitive": "plutus_live_outcomes_observed",
+      "result": "pass"
+    },
+    {
+      "primitive": "target_progress_continues",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

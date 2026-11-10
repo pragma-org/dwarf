@@ -1,0 +1,29 @@
+{
+  "scenario_id": "phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo",
+  "run_id": "20261109T232949Z-cee0b9ef",
+  "started_at": "2026-11-09T18:29:25",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "6bcb3b9bdf3537f7202c7c8d6ee9ae12dbb8f511",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    },
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    },
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    },
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

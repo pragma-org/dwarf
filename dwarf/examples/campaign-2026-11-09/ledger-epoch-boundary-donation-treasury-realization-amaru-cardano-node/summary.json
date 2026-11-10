@@ -1,0 +1,25 @@
+{
+  "scenario_id": "ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node",
+  "run_id": "20261109T234647Z-8f3de518",
+  "started_at": "2026-11-09T18:46:46",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "e33e54e262a564946c1fcee85a8ac9dfbfc547a1",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "block_apply_outcome_matches",
+      "result": "pass"
+    },
+    {
+      "primitive": "epoch_boundary_pots_match",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

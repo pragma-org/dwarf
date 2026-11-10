@@ -1,0 +1,33 @@
+{
+  "scenario_id": "runtime-substrate-eclipse-topology-example-smoke",
+  "run_id": "20261109T225046Z-be341678",
+  "started_at": "2026-11-09T17:50:44",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "a88304d3978d69b3a9561d63315335c101d5e9cc",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_started_clean",
+      "result": "pass"
+    },
+    {
+      "primitive": "honest_peer_set_uncompromised",
+      "result": "pass"
+    },
+    {
+      "primitive": "hot_warm_churn_within_bounds",
+      "result": "pass"
+    },
+    {
+      "primitive": "ledger_peer_stake_weight_preserved",
+      "result": "pass"
+    },
+    {
+      "primitive": "big_ledger_peer_quorum_intact",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

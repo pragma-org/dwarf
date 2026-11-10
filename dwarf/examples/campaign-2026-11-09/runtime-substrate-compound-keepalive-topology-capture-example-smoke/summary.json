@@ -1,0 +1,29 @@
+{
+  "scenario_id": "runtime-substrate-compound-keepalive-topology-capture-example-smoke",
+  "run_id": "20261109T115802Z-bc393a44",
+  "started_at": "2026-11-09T06:58:00",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "keepalive_failure_budget_bounded",
+      "result": "pass"
+    },
+    {
+      "primitive": "honest_peer_set_uncompromised",
+      "result": "pass"
+    },
+    {
+      "primitive": "substrate_quorum_observed",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

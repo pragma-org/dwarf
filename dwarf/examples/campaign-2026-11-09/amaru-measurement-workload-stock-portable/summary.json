@@ -1,0 +1,33 @@
+{
+  "scenario_id": "amaru-measurement-workload-stock-portable",
+  "run_id": "20261108T205422Z-a883b309",
+  "started_at": "2026-11-08T15:40:07",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "42fdc8f02cf7723c93a1ee99d865f2c9f91238fc",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    },
+    {
+      "primitive": "restart_readiness_complete",
+      "result": "pass"
+    },
+    {
+      "primitive": "controlled_sync_range_complete",
+      "result": "pass"
+    },
+    {
+      "primitive": "target_progress_continues",
+      "result": "pass"
+    },
+    {
+      "primitive": "no_target_fatal_signal",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

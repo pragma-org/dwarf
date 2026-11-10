@@ -1,0 +1,17 @@
+{
+  "scenario_id": "phase3-runtime-generated-haskell3-node1-invalid-cbor",
+  "run_id": "20261108T125203Z-62526faf",
+  "started_at": "2026-11-08T07:51:38",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "bfa87d7c16a0c46382b00487103d50fba6bf1912",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

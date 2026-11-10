@@ -1,0 +1,25 @@
+{
+  "scenario_id": "runtime-substrate-compound-panic-bootstrap-example-smoke",
+  "run_id": "20261109T161702Z-5a5a914a",
+  "started_at": "2026-11-09T11:17:00",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "65e94365b87fdf3252abd617ee39ce384fe69711",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "bootstrap_assumptions_safe",
+      "result": "pass"
+    },
+    {
+      "primitive": "panic_path_contained",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

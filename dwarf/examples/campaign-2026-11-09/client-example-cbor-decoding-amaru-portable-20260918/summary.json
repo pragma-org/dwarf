@@ -1,0 +1,35 @@
+{
+  "scenario_id": "client-example-cbor-decoding-amaru-portable-20260918",
+  "run_id": "20261109T065721Z-64e0cb13",
+  "started_at": "2026-11-09T01:43:10",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "eb82444a14bab99e6b3a257010f27fb19edb8c10",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "cbor_conformance_clean",
+      "result": "pass"
+    },
+    {
+      "primitive": "cbor_roundtrip_consistent",
+      "result": "pass"
+    },
+    {
+      "primitive": "invalid_protocol_cases_contained",
+      "result": "pass"
+    },
+    {
+      "primitive": "target_progress_continues",
+      "result": "pass"
+    }
+  ],
+  "removed_files": [
+    {
+      "path": "outputs/cbor-conformance-adapter/adapter",
+      "sha256": "1a7a62f36079ffed0223b56f97c3b38cd8a6602f738fe1c49c7a66f9a476bce7",
+      "reason": "compiled adapter binary; embeds build-host paths"
+    }
+  ]
+}

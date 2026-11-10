@@ -1,0 +1,17 @@
+{
+  "scenario_id": "phase1-runtime-live-amaru-parity-baseline",
+  "run_id": "20261109T210227Z-c99cde27",
+  "started_at": "2026-11-09T16:01:56",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "ac3f83b6d0a3106ecccf2acf89a5fe42135227ad",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

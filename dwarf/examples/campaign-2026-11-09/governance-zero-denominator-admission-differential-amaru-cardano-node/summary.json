@@ -1,0 +1,21 @@
+{
+  "scenario_id": "governance-zero-denominator-admission-differential-amaru-cardano-node",
+  "run_id": "20261109T024832Z-c39286dd",
+  "started_at": "2026-11-08T21:48:30",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "7da80c775687e3a0e8e1faaa97e4c4b316dc394d",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "governance_zero_denominator_admission_matches",
+      "result": "pass"
+    },
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

@@ -1,0 +1,25 @@
+{
+  "scenario_id": "client-example-simple-transfer-amaru-portable-20260918",
+  "run_id": "20261108T174418Z-f25dbd6d",
+  "started_at": "2026-11-08T12:43:43",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "simple_transfers_observed",
+      "result": "pass"
+    },
+    {
+      "primitive": "target_progress_continues",
+      "result": "pass"
+    },
+    {
+      "primitive": "no_target_fatal_signal",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

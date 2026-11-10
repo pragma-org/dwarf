@@ -1,0 +1,17 @@
+{
+  "scenario_id": "runtime-bundle-chain-verify-example-smoke",
+  "run_id": "20261109T045252Z-c5cc4908",
+  "started_at": "2026-11-08T23:52:50",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "35913370f416721a56b35baf774d363db2a7d0fa",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "bundle_chain_verify_clean",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

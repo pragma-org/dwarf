@@ -1,0 +1,25 @@
+{
+  "scenario_id": "conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node",
+  "run_id": "20261109T225852Z-d9aa3a16",
+  "started_at": "2026-11-09T17:58:50",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "5b73f4e6b4a2794df120337f7890d8ed714c2093",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "block_apply_outcome_matches",
+      "result": "pass"
+    },
+    {
+      "primitive": "submit_outcome_matches",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

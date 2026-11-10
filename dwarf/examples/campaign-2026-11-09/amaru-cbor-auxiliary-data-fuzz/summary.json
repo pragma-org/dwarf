@@ -1,0 +1,17 @@
+{
+  "scenario_id": "amaru-cbor-auxiliary-data-fuzz",
+  "run_id": "20261108T134121Z-0542cb94",
+  "started_at": "2026-11-08T08:41:20",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "parse_succeeds_or_clean_error",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

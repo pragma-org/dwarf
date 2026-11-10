@@ -1,0 +1,17 @@
+{
+  "scenario_id": "cardano-lsq-extract-debug-epoch-state",
+  "run_id": "20261109T083145Z-31554876",
+  "started_at": "2026-11-09T03:31:43",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "e6406c506cd8bc563fce3e3275f54480f8bfc9ec",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

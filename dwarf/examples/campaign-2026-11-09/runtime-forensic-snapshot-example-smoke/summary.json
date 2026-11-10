@@ -1,0 +1,17 @@
+{
+  "scenario_id": "runtime-forensic-snapshot-example-smoke",
+  "run_id": "20261109T002738Z-bf820a64",
+  "started_at": "2026-11-08T19:27:37",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "343ee0c1819445e5b5a67a5142dd87f1fc2ca639",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "forensic_snapshot_emitted_clean",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

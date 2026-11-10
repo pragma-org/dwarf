@@ -1,0 +1,17 @@
+{
+  "scenario_id": "phase3-runtime-generated-haskell3-gc-capture-primitive",
+  "run_id": "20261109T075954Z-fcc56ae6",
+  "started_at": "2026-11-09T02:59:07",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "a9461e007d0b8111a1e9f5c055143227b4e0004b",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

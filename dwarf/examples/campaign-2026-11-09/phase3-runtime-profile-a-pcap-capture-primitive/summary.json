@@ -1,0 +1,17 @@
+{
+  "scenario_id": "phase3-runtime-profile-a-pcap-capture-primitive",
+  "run_id": "20261109T080413Z-4cafe134",
+  "started_at": "2026-11-09T03:03:26",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "cd522f5b23fc19e1e1b891651b1d8e6f0798b19e",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

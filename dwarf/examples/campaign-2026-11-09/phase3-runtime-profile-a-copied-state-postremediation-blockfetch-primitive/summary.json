@@ -1,0 +1,17 @@
+{
+  "scenario_id": "phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive",
+  "run_id": "20261109T105955Z-2c920e26",
+  "started_at": "2026-11-09T05:59:31",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "d776e5060c9e09068c00b1ce31c5ae3c68e5765e",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "load_events_are_ok",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

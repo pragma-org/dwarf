@@ -1,0 +1,821 @@
+[
+  {
+    "scenario_id": "amaru-cbor-auxiliary-data-fuzz",
+    "run_id": "20261108T134121Z-0542cb94",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "amaru-cbor-auxiliary-data-fuzz-structured",
+    "run_id": "20261108T134035Z-0bf053cf",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "amaru-measurement-boundary-control-stock",
+    "run_id": "20261108T220759Z-15a9ab02",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "42fdc8f02cf7723c93a1ee99d865f2c9f91238fc"
+  },
+  {
+    "scenario_id": "amaru-measurement-workload-stock-portable",
+    "run_id": "20261108T205422Z-a883b309",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "42fdc8f02cf7723c93a1ee99d865f2c9f91238fc"
+  },
+  {
+    "scenario_id": "cardano-amaru-cbor-dataset-auxiliary-data-differential",
+    "run_id": "20261109T184305Z-d451db5d",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "be15447b2e8abd18a42d1036b01fc19e1c1ab7a5"
+  },
+  {
+    "scenario_id": "cardano-lsq-extract-debug-epoch-state",
+    "run_id": "20261109T083145Z-31554876",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "e6406c506cd8bc563fce3e3275f54480f8bfc9ec"
+  },
+  {
+    "scenario_id": "cardano-n2n-handshake-version-table-forward-compat-1112",
+    "run_id": "20261109T070545Z-26bb2c20",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "eb82444a14bab99e6b3a257010f27fb19edb8c10"
+  },
+  {
+    "scenario_id": "cardano-node-cov-applyblock-aflpp-smoke",
+    "run_id": "20261108T134052Z-21f52a02",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "cbor-strictness-witness-arity-vkey-noncurve-differential-amaru-cardano-node",
+    "run_id": "20261109T120706Z-4d150276",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "client-example-block-application-amaru-portable-20260918",
+    "run_id": "20261108T173246Z-d32669a8",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "client-example-cbor-decoding-amaru-portable-20260918",
+    "run_id": "20261109T065721Z-64e0cb13",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "eb82444a14bab99e6b3a257010f27fb19edb8c10"
+  },
+  {
+    "scenario_id": "client-example-invalid-mini-protocol-amaru-portable-20260918",
+    "run_id": "20261108T173800Z-f199faa5",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "client-example-plutus-vm-amaru-portable-20260918",
+    "run_id": "20261109T072712Z-aaca9353",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "c7228e01d1d2cee05ea091a60de1b7d0dcdb9621"
+  },
+  {
+    "scenario_id": "client-example-simple-transfer-amaru-portable-20260918",
+    "run_id": "20261108T174418Z-f25dbd6d",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "client-example-txsubmission-window-amaru-portable-20260918",
+    "run_id": "20261108T125037Z-350a0fba",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "bfa87d7c16a0c46382b00487103d50fba6bf1912"
+  },
+  {
+    "scenario_id": "consensus-chainhold-upstream-differential",
+    "run_id": "20261109T121748Z-a2d9d6ac",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d50d15e1d2dfc3657e0c7ffd74f8344bc1c6b4c3"
+  },
+  {
+    "scenario_id": "consensus-threshold-delay-probe",
+    "run_id": "20261109T115426Z-03a18ccc",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "conway-gov-scriptcontext-proposals-votes-fidelity-amaru-cardano-node",
+    "run_id": "20261109T225852Z-d9aa3a16",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "5b73f4e6b4a2794df120337f7890d8ed714c2093"
+  },
+  {
+    "scenario_id": "conway-phase1-validation-rules-differential-amaru-cardano-node",
+    "run_id": "20261109T120926Z-bc553505",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "edge-cases-cbor-tx-body-amaru",
+    "run_id": "20261108T134440Z-0b8dcb5e",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "governance-zero-denominator-admission-differential-amaru-cardano-node",
+    "run_id": "20261109T024832Z-c39286dd",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7da80c775687e3a0e8e1faaa97e4c4b316dc394d"
+  },
+  {
+    "scenario_id": "ledger-block-apply-isvalid-false-donation-value-creation-amaru-cardano-node",
+    "run_id": "20261109T233811Z-c51b0c6b",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "e33e54e262a564946c1fcee85a8ac9dfbfc547a1"
+  },
+  {
+    "scenario_id": "ledger-epoch-boundary-donation-treasury-realization-amaru-cardano-node",
+    "run_id": "20261109T234647Z-8f3de518",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "e33e54e262a564946c1fcee85a8ac9dfbfc547a1"
+  },
+  {
+    "scenario_id": "ledger-submit-empty-redeemers-container-differential-amaru-cardano-node",
+    "run_id": "20261109T033506Z-a2967e54",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "ledger-submit-inline-datum-tag24-trailing-differential-amaru-cardano-node",
+    "run_id": "20261109T045314Z-1a7c1eda",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "35913370f416721a56b35baf774d363db2a7d0fa"
+  },
+  {
+    "scenario_id": "ledger-submit-multiasset-compact-boundary-differential-amaru-cardano-node",
+    "run_id": "20261109T045947Z-6894ce18",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "35913370f416721a56b35baf774d363db2a7d0fa"
+  },
+  {
+    "scenario_id": "ledger-submit-transaction-array-arity-differential-amaru-cardano-node",
+    "run_id": "20261108T200345Z-0a76c4fd",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "42fdc8f02cf7723c93a1ee99d865f2c9f91238fc"
+  },
+  {
+    "scenario_id": "ledger-submit-uplc-deep-delay-stack-safety-differential-amaru-cardano-node",
+    "run_id": "20261109T183310Z-93335bc3",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "94527ef26b96eb3dc3c8a1f4744aac33f86443bd"
+  },
+  {
+    "scenario_id": "ledger-submit-value-coin-i64-overflow-regression-latest-amaru",
+    "run_id": "20261109T183751Z-499334eb",
+    "run_outcome": "fail",
+    "validated_end_to_end": true,
+    "framework_commit": "94527ef26b96eb3dc3c8a1f4744aac33f86443bd"
+  },
+  {
+    "scenario_id": "m3-runtime-blockfetch-historical-range-burst",
+    "run_id": "20261109T014228Z-5b8756be",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "343ee0c1819445e5b5a67a5142dd87f1fc2ca639"
+  },
+  {
+    "scenario_id": "m3-runtime-blockfetch-multi-peer-historical-range",
+    "run_id": "20261109T014303Z-c60f72d0",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "343ee0c1819445e5b5a67a5142dd87f1fc2ca639"
+  },
+  {
+    "scenario_id": "m3-runtime-blockfetch-port-delay-bounded-success",
+    "run_id": "20261109T040206Z-e4ef5a7f",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "m3-runtime-blockfetch-port-drop-isolated-peer",
+    "run_id": "20261109T040125Z-90579308",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "m3-runtime-blockfetch-port-drop-timeout",
+    "run_id": "20261109T040242Z-68c3ef50",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "m3-runtime-blockfetch-stale-single-point-rejection",
+    "run_id": "20261109T040337Z-95b967ca",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "m3-runtime-chainsync-historical-point-burst",
+    "run_id": "20261109T040414Z-dc3de088",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "m3-runtime-node2-copied-state-recovery",
+    "run_id": "20261109T104935Z-c88eb83e",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d776e5060c9e09068c00b1ce31c5ae3c68e5765e"
+  },
+  {
+    "scenario_id": "m3-runtime-profile-restart-tip-recovery",
+    "run_id": "20261109T040450Z-aec25624",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "phase1-runtime-live-amaru-parity-baseline",
+    "run_id": "20261109T210227Z-c99cde27",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "ac3f83b6d0a3106ecccf2acf89a5fe42135227ad"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-capability-demo",
+    "run_id": "20261108T203706Z-4e03a291",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "42fdc8f02cf7723c93a1ee99d865f2c9f91238fc"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-connection-state-freeze-rollup-capability-demo",
+    "run_id": "20261109T075146Z-e3db7c36",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "666e2b407df2da1d3ab4514f3ba64de718f8c249"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-freeze-recover-port-drop-capability-demo",
+    "run_id": "20261109T050724Z-ab69e934",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "35913370f416721a56b35baf774d363db2a7d0fa"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-gc-capture-primitive",
+    "run_id": "20261109T075954Z-fcc56ae6",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a9461e007d0b8111a1e9f5c055143227b4e0004b"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-node1-invalid-cbor",
+    "run_id": "20261108T125203Z-62526faf",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "bfa87d7c16a0c46382b00487103d50fba6bf1912"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-node1-malformed-blockfetch",
+    "run_id": "20261108T125238Z-0962ad7f",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "bfa87d7c16a0c46382b00487103d50fba6bf1912"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-node1-malformed-handshake",
+    "run_id": "20261108T125310Z-b2a85947",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "bfa87d7c16a0c46382b00487103d50fba6bf1912"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-node1-malformed-txsubmission",
+    "run_id": "20261108T125342Z-363b9fa3",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "bfa87d7c16a0c46382b00487103d50fba6bf1912"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-node1-wrong-version-handshake",
+    "run_id": "20261108T125414Z-bb265fcc",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "bfa87d7c16a0c46382b00487103d50fba6bf1912"
+  },
+  {
+    "scenario_id": "phase3-runtime-generated-haskell3-rich-capability-demo",
+    "run_id": "20261108T183528Z-79ff6f5c",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "42fdc8f02cf7723c93a1ee99d865f2c9f91238fc"
+  },
+  {
+    "scenario_id": "phase3-runtime-haskell-preview2-baseline-delay-loss-recheck-capability-demo",
+    "run_id": "20261110T000148Z-180113db",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "b5b8743117fb195e21bcc684ed245cd10036dd17"
+  },
+  {
+    "scenario_id": "phase3-runtime-haskell-preview2-baseline-drop-reset-recheck-capability-demo",
+    "run_id": "20261109T232949Z-cee0b9ef",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "6bcb3b9bdf3537f7202c7c8d6ee9ae12dbb8f511"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-bundle-dedupe-primitive",
+    "run_id": "20261108T163618Z-3ca996a9",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-bundle-export-primitive",
+    "run_id": "20261108T163652Z-5b01103d",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": null
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-bundle-sign-primitive",
+    "run_id": "20261108T164805Z-467e502b",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-bundle-triage-primitive",
+    "run_id": "20261108T164851Z-16e9fa42",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-copied-state-chainsync-divergence-primitive",
+    "run_id": "20261109T105122Z-c66a3dde",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d776e5060c9e09068c00b1ce31c5ae3c68e5765e"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-copied-state-divergence-primitive",
+    "run_id": "20261109T105537Z-8f293944",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d776e5060c9e09068c00b1ce31c5ae3c68e5765e"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-copied-state-postremediation-blockfetch-primitive",
+    "run_id": "20261109T105955Z-2c920e26",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d776e5060c9e09068c00b1ce31c5ae3c68e5765e"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-observability-port-delay-timeout-rollup-capability-demo",
+    "run_id": "20261109T050431Z-6a17eb67",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "35913370f416721a56b35baf774d363db2a7d0fa"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-partition-rejoin-capability-demo",
+    "run_id": "20261109T060748Z-ea111311",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "eb82444a14bab99e6b3a257010f27fb19edb8c10"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-pcap-capture-primitive",
+    "run_id": "20261109T080413Z-4cafe134",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "cd522f5b23fc19e1e1b891651b1d8e6f0798b19e"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-resource-profile-primitive",
+    "run_id": "20261108T165611Z-85692048",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-restart-postrecovery-blockfetch-primitive",
+    "run_id": "20261109T040750Z-62124416",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "39834874435318d15cbbb0305a5cb9cbb38e6bf1"
+  },
+  {
+    "scenario_id": "phase3-runtime-profile-a-syscall-trace-primitive",
+    "run_id": "20261109T075025Z-2c7316fd",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "666e2b407df2da1d3ab4514f3ba64de718f8c249"
+  },
+  {
+    "scenario_id": "plutus-onchain-bls12-381-builtins-differential-amaru-cardano-node",
+    "run_id": "20261108T225048Z-ac49fe50",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "2ef565b83b74f10cef9116921a87a7ae6ff54af9"
+  },
+  {
+    "scenario_id": "plutus-onchain-cek-integer-division-differential-amaru-cardano-node",
+    "run_id": "20261108T231303Z-54711988",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "343ee0c1819445e5b5a67a5142dd87f1fc2ca639"
+  },
+  {
+    "scenario_id": "plutus-onchain-cek-value-structure-differential-amaru-cardano-node",
+    "run_id": "20261108T230326Z-c615b740",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "b533cb261a553473cbed03ea9c5c387ce6e7cf13"
+  },
+  {
+    "scenario_id": "plutus-onchain-crypto-builtins-differential-amaru-cardano-node",
+    "run_id": "20261108T230715Z-e67d2410",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "b533cb261a553473cbed03ea9c5c387ce6e7cf13"
+  },
+  {
+    "scenario_id": "runtime-bundle-attestation-example-smoke",
+    "run_id": "20261108T164000Z-aaf4dfef",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "runtime-bundle-chain-verify-example-smoke",
+    "run_id": "20261109T045252Z-c5cc4908",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "35913370f416721a56b35baf774d363db2a7d0fa"
+  },
+  {
+    "scenario_id": "runtime-bundle-diff-example-divergence",
+    "run_id": "20261109T045303Z-65216b5f",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "35913370f416721a56b35baf774d363db2a7d0fa"
+  },
+  {
+    "scenario_id": "runtime-bundle-export-sarif-example-smoke",
+    "run_id": "20261108T134101Z-542886b3",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "runtime-bundle-summary-compose-example-smoke",
+    "run_id": "20261109T002729Z-13b1ae09",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "343ee0c1819445e5b5a67a5142dd87f1fc2ca639"
+  },
+  {
+    "scenario_id": "runtime-bundle-timeline-example-smoke",
+    "run_id": "20261108T134111Z-b5ec0ddf",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "runtime-credential-ceremony-example-smoke",
+    "run_id": "20261108T134446Z-1e25a12d",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "runtime-forensic-snapshot-example-smoke",
+    "run_id": "20261109T002738Z-bf820a64",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "343ee0c1819445e5b5a67a5142dd87f1fc2ca639"
+  },
+  {
+    "scenario_id": "runtime-substrate-blockfetch-continuity-failure-example-smoke",
+    "run_id": "20261109T175720Z-ff4e9348",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "091cead214939c838078533e4186e7747e912416"
+  },
+  {
+    "scenario_id": "runtime-substrate-blockfetch-invalid-block-cbor-example-smoke",
+    "run_id": "20261109T113615Z-5b45ab96",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "ff9a3115494d349b1546ee1ff259cbce8e669c1b"
+  },
+  {
+    "scenario_id": "runtime-substrate-blockfetch-invalid-range-example-smoke",
+    "run_id": "20261109T180919Z-16eb8917",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "e22392c08bbfe2e79e87e2a7f97b9e3a15175cd4"
+  },
+  {
+    "scenario_id": "runtime-substrate-blockfetch-range-mismatch-example-smoke",
+    "run_id": "20261109T180119Z-c0c4e014",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "091cead214939c838078533e4186e7747e912416"
+  },
+  {
+    "scenario_id": "runtime-substrate-blockfetch-range-pressure-example-smoke",
+    "run_id": "20261109T193713Z-7d104c7f",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "acb694810115757030dc30ebee8c53de03864b19"
+  },
+  {
+    "scenario_id": "runtime-substrate-bootstrap-topology-concentration-example-smoke",
+    "run_id": "20261109T121439Z-3c3a1fd0",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d50d15e1d2dfc3657e0c7ffd74f8344bc1c6b4c3"
+  },
+  {
+    "scenario_id": "runtime-substrate-byzantine-blockfetch-example-smoke",
+    "run_id": "20261109T114721Z-fc111f02",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-chainsync-nonincrementing-height-example-smoke",
+    "run_id": "20261109T180240Z-8a20318a",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "091cead214939c838078533e4186e7747e912416"
+  },
+  {
+    "scenario_id": "runtime-substrate-chainsync-nonmonotonic-slot-example-smoke",
+    "run_id": "20261109T181030Z-366fc4bb",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "e22392c08bbfe2e79e87e2a7f97b9e3a15175cd4"
+  },
+  {
+    "scenario_id": "runtime-substrate-chainsync-parent-discontinuity-example-smoke",
+    "run_id": "20261109T180516Z-0ace18cf",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "091cead214939c838078533e4186e7747e912416"
+  },
+  {
+    "scenario_id": "runtime-substrate-checkpoint-resume-recovers-example-smoke",
+    "run_id": "20261109T093622Z-ef2bde26",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "356029e3bd01c5ef047e5a5650c9a5883fae8b6e"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-eclipse-recovery-example-smoke",
+    "run_id": "20261109T193100Z-80d41390",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "acb694810115757030dc30ebee8c53de03864b19"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-eclipse-txsubmission-example-smoke",
+    "run_id": "20261109T150820Z-4776d7e3",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "48d6f5f34cd8b764a3c74f7bab1b4cb44a1de259"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-keepalive-topology-capture-example-smoke",
+    "run_id": "20261109T115802Z-bc393a44",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-local-query-recovery-example-smoke",
+    "run_id": "20261109T193323Z-6efebc51",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "acb694810115757030dc30ebee8c53de03864b19"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-mempool-relay-epoch-boundary-example-smoke",
+    "run_id": "20261109T211127Z-86720354",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a9d1b14d20b0e544b56765b975d9b8d3ed1556c4"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-panic-bootstrap-example-smoke",
+    "run_id": "20261109T161702Z-5a5a914a",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "65e94365b87fdf3252abd617ee39ce384fe69711"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-parser-overlay-forging-example-smoke",
+    "run_id": "20261109T115220Z-b3bdafb3",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-snapshot-pause-txsubmission-example-smoke",
+    "run_id": "20261109T104405Z-25a0c8d9",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d776e5060c9e09068c00b1ce31c5ae3c68e5765e"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-stake-snapshot-hf-boundary-example-smoke",
+    "run_id": "20261109T210732Z-19d1a88c",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a9d1b14d20b0e544b56765b975d9b8d3ed1556c4"
+  },
+  {
+    "scenario_id": "runtime-substrate-compound-time-skew-epoch-boundary-example-smoke",
+    "run_id": "20261109T211408Z-e15f8745",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a9d1b14d20b0e544b56765b975d9b8d3ed1556c4"
+  },
+  {
+    "scenario_id": "runtime-substrate-duplex-promotion-pressure-example-smoke",
+    "run_id": "20261109T174702Z-b3b07327",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "5fce6e2cf33f10573dc3a2563652ac536da14983"
+  },
+  {
+    "scenario_id": "runtime-substrate-eclipse-topology-example-smoke",
+    "run_id": "20261109T225046Z-be341678",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a88304d3978d69b3a9561d63315335c101d5e9cc"
+  },
+  {
+    "scenario_id": "runtime-substrate-era-transition-example-smoke",
+    "run_id": "20261108T153956Z-4b10c0c5",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "runtime-substrate-honest-baseline-example-smoke",
+    "run_id": "20261108T143512Z-17cbd6f1",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "2e91f0c7da1b727ef284cac7e617e91bc55fc2b0"
+  },
+  {
+    "scenario_id": "runtime-substrate-local-submit-stress-example-smoke",
+    "run_id": "20261109T121636Z-80735138",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d50d15e1d2dfc3657e0c7ffd74f8344bc1c6b4c3"
+  },
+  {
+    "scenario_id": "runtime-substrate-localtxmonitor-fault-example-smoke",
+    "run_id": "20261108T154432Z-f7995642",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "runtime-substrate-mempool-failure-containment-example-smoke",
+    "run_id": "20261108T154112Z-87bfd3d6",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "runtime-substrate-mempool-failure-containment-mixed-amaru",
+    "run_id": "20261108T133020Z-93a1b33d",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "4ad3f63c29cf404f7534a2b0c929b6dc64a88fca"
+  },
+  {
+    "scenario_id": "runtime-substrate-mux-ingress-overrun-example-smoke",
+    "run_id": "20261109T120021Z-c0dd0ccd",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-peersharing-fault-example-smoke",
+    "run_id": "20261108T154504Z-eb1932ac",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "runtime-substrate-praos-header-assertion-example-smoke",
+    "run_id": "20261109T194125Z-53af85bf",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "acb694810115757030dc30ebee8c53de03864b19"
+  },
+  {
+    "scenario_id": "runtime-substrate-real-adapter-blocking-work-starvation-example-smoke",
+    "run_id": "20261109T115327Z-d2811119",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-real-adapter-handshake-pressure-example-smoke",
+    "run_id": "20261109T122851Z-43004868",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "77e65b34e2a57433521e41b630b7af0bfed0780e"
+  },
+  {
+    "scenario_id": "runtime-substrate-real-adapter-runtime-starvation-example-smoke",
+    "run_id": "20261109T120210Z-b4d5aa49",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-resource-disk-full-during-sync-example-smoke",
+    "run_id": "20261109T120307Z-6b25ce50",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-resource-slow-loris-chainsync-example-smoke",
+    "run_id": "20261109T120431Z-af72510c",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-resource-sync-bandwidth-throttle-example-smoke",
+    "run_id": "20261109T120547Z-ae30e831",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "7ebcb914a56a97ff4f78030edb11e1ba17bd24c5"
+  },
+  {
+    "scenario_id": "runtime-substrate-serdes-txsubmission-unexpected-body-example-smoke",
+    "run_id": "20261108T154318Z-397b1ce2",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "a991dc1103254d67b89a14310417b3e008322ad3"
+  },
+  {
+    "scenario_id": "runtime-substrate-snapshot-mid-run-corrupt-recovery-example-smoke",
+    "run_id": "20261109T104623Z-2e97a59d",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "d776e5060c9e09068c00b1ce31c5ae3c68e5765e"
+  },
+  {
+    "scenario_id": "runtime-substrate-txsubmission-unexpected-body-mixed-amaru",
+    "run_id": "20261109T002217Z-d3b64505",
+    "run_outcome": "pass",
+    "validated_end_to_end": true,
+    "framework_commit": "343ee0c1819445e5b5a67a5142dd87f1fc2ca639"
+  }
+]

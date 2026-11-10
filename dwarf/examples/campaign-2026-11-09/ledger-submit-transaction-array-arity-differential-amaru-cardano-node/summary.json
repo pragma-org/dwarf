@@ -1,0 +1,21 @@
+{
+  "scenario_id": "ledger-submit-transaction-array-arity-differential-amaru-cardano-node",
+  "run_id": "20261108T200345Z-0a76c4fd",
+  "started_at": "2026-11-08T15:03:44",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "42fdc8f02cf7723c93a1ee99d865f2c9f91238fc",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "transaction_array_arity_differential_matches",
+      "result": "pass"
+    },
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}

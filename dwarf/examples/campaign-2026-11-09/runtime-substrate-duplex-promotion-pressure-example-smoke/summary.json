@@ -1,0 +1,21 @@
+{
+  "scenario_id": "runtime-substrate-duplex-promotion-pressure-example-smoke",
+  "run_id": "20261109T174702Z-b3b07327",
+  "started_at": "2026-11-09T12:47:00",
+  "run_outcome": "pass",
+  "validated_end_to_end": true,
+  "validated_by_detection": null,
+  "framework_commit": "5fce6e2cf33f10573dc3a2563652ac536da14983",
+  "exit_status": "pass",
+  "assertions": [
+    {
+      "primitive": "all_nodes_responsive",
+      "result": "pass"
+    },
+    {
+      "primitive": "duplex_promotion_slot_limit_enforced",
+      "result": "pass"
+    }
+  ],
+  "removed_files": []
+}
