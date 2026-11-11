@@ -788,6 +788,40 @@ OBSERVATION_MEASUREMENT_KEYS = frozenset({
 })
 
 
+def _tip_ancestry(latest_tips: dict[str, dict], nodes: dict[str, dict], *, network_magic: int, probe) -> dict[str, dict]:
+    """F192: for every node whose final tip differs from another node's, ask that other node (ChainSync
+    FindIntersect over N2N) whether the tip is on its chain. ``result[owner][other]`` is True
+    (IntersectFound), False (IntersectNotFound) or None (the node could not be asked). Nodes that share
+    a tip are asked once per other node. Lag shows as True in every direction that matters; a fork as
+    False."""
+    groups: dict[tuple[str, int], list[str]] = {}
+    for node_id, tip in latest_tips.items():
+        if tip.get("hash"):
+            groups.setdefault((str(tip["hash"]), int(tip.get("slot") or 0)), []).append(node_id)
+    result: dict[str, dict] = {}
+    if len(groups) < 2:
+        return result
+    for (block_hash, slot), owners in groups.items():
+        for other_id, other_tip in latest_tips.items():
+            if other_id in owners:
+                continue
+            node = nodes.get(other_id) or {}
+            try:
+                from runtime_common import node_wire_endpoint  # noqa: PLC0415
+                host, port = node_wire_endpoint(node)
+            except Exception:  # noqa: BLE001 - fall back to the recorded endpoint
+                host, port = node.get("host"), node.get("port")
+            answer = None
+            if host and port:
+                try:
+                    answer = probe(str(host), int(port), network_magic=int(network_magic), slot=slot, block_hash=block_hash)
+                except Exception:  # noqa: BLE001 - an unanswered probe is None, never a verdict
+                    answer = None
+            for owner in owners:
+                result.setdefault(owner, {})[other_id] = answer
+    return result
+
+
 def _summarize_observation(per_node: dict[str, dict], node_ids: list[str], metadata: dict | None = None) -> dict:
     latest_tips = {}
     responsive_nodes = []
@@ -1015,6 +1049,11 @@ def run_multi_node_observation(
     timeline = _correlated_timeline(per_node)
     _write_json(output_dir / "correlated-timeline.json", timeline)
     summary = _summarize_observation(per_node, resolved_node_ids, metadata)
+    if "tip_state" in requested and len({(t.get("hash"), t.get("slot")) for t in (summary.get("latest_tips") or {}).values()}) > 1:
+        from runtime_recovery_fault import find_intersect  # noqa: PLC0415
+
+        summary["tip_ancestry"] = _tip_ancestry(summary["latest_tips"], nodes, network_magic=resolved_network_magic,
+                                                probe=find_intersect)
     result = {
         "runtime_metadata_path": str(runtime_metadata_path),
         "node_ids": resolved_node_ids,

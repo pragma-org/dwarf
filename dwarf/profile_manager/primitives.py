@@ -20851,6 +20851,19 @@ class ChainSelectDifferential(AssertionPrimitive):
                 slot_gap = abs(int(ref_tip.get("slot", 0) or 0) - int(tgt_tip.get("slot", 0) or 0))
                 if tolerance_slots > 0 and slot_gap <= tolerance_slots:
                     agree, agreement_kind = True, "within_slot_tolerance"
+                # F192: chain ancestry from the observation's FindIntersect probes decides lag vs fork.
+                ancestry = summary.get("tip_ancestry") or {}
+                tgt_owner = next((n for n, t in tgt_nodes.items() if t.get("hash") == tgt_tip.get("hash")), None)
+                ref_owner = next((n for n, t in ref_nodes.items() if t.get("hash") == ref_tip.get("hash")), None)
+                on_reference = [(ancestry.get(tgt_owner) or {}).get(n) for n in reference_ids]
+                on_target = [(ancestry.get(ref_owner) or {}).get(n) for n in target_ids]
+                tgt_behind = int(tgt_tip.get("slot", 0) or 0) <= int(ref_tip.get("slot", 0) or 0)
+                if on_reference and all(a is True for a in on_reference) and tgt_behind:
+                    agree, agreement_kind = True, "lagging_ancestor"
+                elif on_target and all(a is True for a in on_target) and not tgt_behind:
+                    agree, agreement_kind = True, "leading_ancestor"
+                elif (on_reference and all(a is False for a in on_reference)) or (on_target and all(a is False for a in on_target)):
+                    agree, agreement_kind = False, "none"     # a proven fork is never within tolerance
 
         enough = (
             latest is not None
@@ -20874,7 +20887,8 @@ class ChainSelectDifferential(AssertionPrimitive):
                 "chain-selection divergence across implementations: reference tip "
                 f"{ref_tip.get('hash')}@{ref_tip.get('slot')} != target tip "
                 f"{tgt_tip.get('hash')}@{tgt_tip.get('slot')} "
-                f"(slot_gap={slot_gap}, tolerance_slots={tolerance_slots})"
+                f"(slot_gap={slot_gap}, tolerance_slots={tolerance_slots}"
+                + (", ancestry: the target tip is not on the reference chain)" if (summary.get("tip_ancestry") or {}) else ")")
             )
         else:
             note = "insufficient real-tip evidence for a cross-implementation chain-selection differential"
