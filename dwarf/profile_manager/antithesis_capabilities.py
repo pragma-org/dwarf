@@ -68,10 +68,16 @@ def classify(scenario):
     # defect, not a package gap, so the assertion keeps its own status.
     present = {primitive for _, _, primitive, _ in steps}
     skipped_producers = {primitive for _, _, primitive, _ in steps if _entry(matrix, primitive)['status'] in _SKIPPED}
-    rows, gaps, runnable_load, degraded = [], [], False, False
+    rows, gaps, runnable_load, degraded, unproven = [], [], False, False, False
     for label, phase, primitive, params in steps:
         entry = _entry(matrix, primitive)
         status, note, code = entry['status'], entry.get('note', ''), _GAP_CODES.get(entry['status'])
+        command = str(params.get('command') or '')
+        for marker, why in (entry.get('unsupported_when_command_contains') or {}).items():
+            if marker in command and status in _RUNNABLE:
+                # A shell load that drives host node sessions cannot run in the package (F170).
+                status, note, code = 'unsupported', 'command runs ' + marker + ': ' + why, _GAP_CODES['unsupported']
+                break
         producer = entry.get('evidence_producer')
         if producer in present and producer in skipped_producers and status in _RUNNABLE:
             status = 'unsupported'
@@ -85,6 +91,12 @@ def classify(scenario):
                          'message': primitive + ': ' + (note or status)})
         # A primitive that runs can still be asked for parts that need process access the package lacks
         # (F168): it runs, reports those parts unavailable, and the scenario is partial with a named gap.
+        if status in _RUNNABLE and not entry.get('proven_by'):
+            # 'runs' is the matrix's claim; only a recorded package smoke proves it (F170).
+            unproven = True
+            gaps.append({'kind': 'implementation-gap', 'code': 'unproven-in-package', 'field': 'scenario_id',
+                         'primitive': primitive, 'phase': label,
+                         'message': primitive + ': listed as runnable but not yet proven by a package smoke.'})
         unavailable = sorted(value for key, values in (entry.get('unavailable_params') or {}).items()
                              for value in values if value in (params.get(key) or []))
         if unavailable and status in _RUNNABLE:
@@ -113,7 +125,7 @@ def classify(scenario):
         reason = 'no-evaluable-assertion'
     if reason:
         level = 'none'
-    elif degraded or any(row['status'] == 'unsupported' for row in rows):
+    elif degraded or unproven or any(row['status'] == 'unsupported' for row in rows):
         level = 'partial'
     else:
         level = 'full'

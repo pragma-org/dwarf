@@ -11,7 +11,13 @@
   "primitives": {
     "all_nodes_responsive": {
       "status": "runs",
-      "note": ""
+      "note": "",
+      "proven_by": {
+        "scenario": "runtime-substrate-txsubmission-window-pressure-example-smoke",
+        "build": "31cccac82edce9eeb4263e6274913fb9",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: window 3, 4 txids offered, overflow rejected; 2/2 nodes responsive"
+      }
     },
     "peer_connectivity_observed": {
       "status": "unsupported",
@@ -23,7 +29,13 @@
     },
     "all_nodes_started_clean": {
       "status": "runs",
-      "note": ""
+      "note": "",
+      "proven_by": {
+        "scenario": "runtime-substrate-resource-cpu-host-pressure-example-smoke",
+        "build": "b14cfaa5daad40cbc1bc5d352944af48",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: stressor shell loads ran, 2/2 nodes started clean and responsive"
+      }
     },
     "load_events_are_ok": {
       "status": "runs",
@@ -63,6 +75,12 @@
           "resource_profile",
           "syscall_trace"
         ]
+      },
+      "proven_by": {
+        "scenario": "runtime-substrate-txsubmission-window-pressure-example-smoke",
+        "build": "31cccac82edce9eeb4263e6274913fb9",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: window 3, 4 txids offered, overflow rejected; 2/2 nodes responsive"
       }
     },
     "runtime_substrate_tip_warmup": {
@@ -79,11 +97,26 @@
     },
     "runtime_txsubmission_window_pressure": {
       "status": "runs-with-note",
-      "note": "The target host comes from the package runtime.json service name; 127.0.0.1 is not the node."
+      "note": "The target host comes from the package runtime.json service name; 127.0.0.1 is not the node.",
+      "proven_by": {
+        "scenario": "runtime-substrate-txsubmission-window-pressure-example-smoke",
+        "build": "31cccac82edce9eeb4263e6274913fb9",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: window 3, 4 txids offered, overflow rejected; 2/2 nodes responsive"
+      }
     },
     "load_shell_command": {
       "status": "runs-with-note",
-      "note": "The command's tool must exist in the dwarf-workload image (controller image lineage)."
+      "note": "The command's tool must exist in the dwarf-workload image (controller image lineage).",
+      "unsupported_when_command_contains": {
+        "runtime_profile_recovery_check.py": "it starts, stops and replaces profile-a node sessions on the host; the package has no process control over other services"
+      },
+      "proven_by": {
+        "scenario": "runtime-substrate-resource-cpu-host-pressure-example-smoke",
+        "build": "b14cfaa5daad40cbc1bc5d352944af48",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: stressor shell loads ran, 2/2 nodes started clean and responsive"
+      }
     },
     "runtime_install_version": {
       "status": "delegated",
@@ -201,11 +234,23 @@
     "txsubmission_window_enforced": {
       "status": "runs",
       "note": "",
-      "evidence_producer": "runtime_txsubmission_window_pressure"
+      "evidence_producer": "runtime_txsubmission_window_pressure",
+      "proven_by": {
+        "scenario": "runtime-substrate-txsubmission-window-pressure-example-smoke",
+        "build": "31cccac82edce9eeb4263e6274913fb9",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: window 3, 4 txids offered, overflow rejected; 2/2 nodes responsive"
+      }
     },
     "chain_select_differential": {
       "status": "runs",
-      "note": "Compares node tips from the in-package observation (cardano-cli for cardano-node, the node log for Amaru)."
+      "note": "Compares node tips from the in-package observation (cardano-cli for cardano-node, the node log for Amaru).",
+      "proven_by": {
+        "scenario": "consensus-chainhold-upstream-differential",
+        "build": "45412967322b9ed7f55ea5fa19b821a1",
+        "date": "2026-11-11",
+        "note": "mixed Amaru 20261029 + cardano-node 10.7.1 package smoke: tips hash-identical, reference converged"
+      }
     },
     "chain_select_consistent": {
       "status": "runs",

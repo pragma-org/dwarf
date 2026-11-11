@@ -54,7 +54,8 @@ def test_unsupported_only_load_is_none_no_runnable_load():
     assert result['runnable_load'] is False
 
 
-def test_unknown_primitive_defaults_to_unsupported_and_fault_is_delegated():
+def test_unknown_primitive_defaults_to_unsupported_and_fault_is_delegated(monkeypatch):
+    _matrix_with(monkeypatch, {'load_shell_command', 'load_events_are_ok'})
     result = classify(scenario_from_body(FREEZE_YAML))
     statuses = {row['primitive']: row['status'] for row in result['primitives']}
     assert statuses['fault_node_freeze'] == 'delegated-fault'
@@ -67,7 +68,8 @@ def test_unknown_primitive_defaults_to_unsupported_and_fault_is_delegated():
                                    'load_shell_command': 'runs-with-note'}
 
 
-def test_full_when_every_primitive_runs_or_is_delegated():
+def test_full_when_every_primitive_runs_or_is_delegated(monkeypatch):
+    _matrix_with(monkeypatch, {'load_shell_command', 'load_events_are_ok'})
     body = json.loads(FREEZE_YAML)
     body['assertions'] = [{'primitive': 'load_events_are_ok'}]
     result = classify(scenario_from_body(json.dumps(body).encode()))
@@ -85,7 +87,8 @@ def test_matrix_names_exist_in_registry_and_statuses_are_known():
     assert all(row['note'] for row in matrix['primitives'].values() if row['status'] != 'runs')
 
 
-def test_phases_are_flattened_in_order():
+def test_phases_are_flattened_in_order(monkeypatch):
+    _matrix_with(monkeypatch, {'load_shell_command', 'load_events_are_ok'})
     body = json.loads(FREEZE_YAML)
     body.pop('load'); body.pop('faults'); body.pop('assertions')
     body['phases'] = [
@@ -215,3 +218,62 @@ def test_process_observations_make_the_scenario_partial_with_a_named_gap():
     assert 'resource_profile' in gaps[0]['message']
     window = classify(catalog('runtime-substrate-txsubmission-window-pressure-example-smoke'))
     assert window['level'] == 'full' and not window['gaps']
+
+
+def _matrix_with(monkeypatch, proven):
+    """The committed matrix with proven_by set only on the named primitives."""
+    from profile_manager import antithesis_capabilities as caps
+    matrix = json.loads(caps.MATRIX_PATH.read_text(encoding='utf-8'))
+    for name, row in matrix['primitives'].items():
+        row.pop('proven_by', None)
+        if name in proven:
+            row['proven_by'] = {'scenario': 'x', 'build': 'b', 'date': '2026-11-11'}
+    monkeypatch.setattr(caps, 'load_matrix', lambda: matrix)
+
+
+def test_a_runnable_primitive_never_proven_in_a_package_keeps_the_scenario_partial(monkeypatch):
+    """'runs' in the matrix is a claim; 'full' needs every runnable step proven by a package smoke."""
+    _matrix_with(monkeypatch, {'load_events_are_ok'})
+    body = json.loads(FREEZE_YAML)
+    body['assertions'] = [{'primitive': 'load_events_are_ok'}]
+    result = classify(scenario_from_body(json.dumps(body).encode()))
+    assert result['level'] == 'partial'
+    unproven = [g for g in result['gaps'] if g['code'] == 'unproven-in-package']
+    assert [g['primitive'] for g in unproven] == ['load_shell_command']
+
+
+def test_full_when_every_runnable_primitive_is_proven(monkeypatch):
+    _matrix_with(monkeypatch, {'load_events_are_ok', 'load_shell_command'})
+    body = json.loads(FREEZE_YAML)
+    body['assertions'] = [{'primitive': 'load_events_are_ok'}]
+    result = classify(scenario_from_body(json.dumps(body).encode()))
+    assert result['level'] == 'full'
+    assert not [g for g in result['gaps'] if g['code'] == 'unproven-in-package']
+
+
+def test_every_recorded_proof_names_a_catalog_scenario_that_uses_the_primitive():
+    from profile_manager.antithesis_capabilities import _steps
+    matrix = load_matrix()
+    for name, row in matrix['primitives'].items():
+        proof = row.get('proven_by')
+        if not proof:
+            continue
+        assert row['status'] in ('runs', 'runs-with-note'), name
+        scenario = catalog(proof['scenario'])
+        assert name in {step[2] for step in _steps(scenario)}, (name, proof['scenario'])
+        assert proof.get('build') and proof.get('date'), name
+
+
+@pytest.mark.parametrize('identifier', [
+    'm3-runtime-profile-restart-postrecovery-blockfetch', 'm3-runtime-node2-copied-state-bounded-divergence',
+    'm3-runtime-node2-copied-state-chainsync-divergence', 'm3-runtime-node2-copied-state-postremediation-blockfetch'])
+def test_shell_load_that_controls_host_node_sessions_is_refused(identifier):
+    """F170: these loads run runtime_profile_recovery_check.py, which starts, stops and replaces
+    profile-a node sessions; a package has no process control over other services (package smoke:
+    'can't open file …/scripts/runtime_profile_recovery_check.py', and the session control would
+    fail next). 'Full' was the matrix's blanket claim for load_shell_command."""
+    result = classify(catalog(identifier))
+    assert result['level'] == 'none' and result['reason'] == 'no-runnable-load'
+    gap = [g for g in result['gaps'] if g['primitive'] == 'load_shell_command']
+    assert gap and gap[0]['code'] == 'primitive-unsupported-on-antithesis'
+    assert 'runtime_profile_recovery_check.py' in gap[0]['message']

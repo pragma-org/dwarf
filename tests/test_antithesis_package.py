@@ -364,9 +364,10 @@ def test_devnet_scenario_previews_through_the_generated_workload(monkeypatch):
 
 
 def test_profile_scenario_without_versions_is_recorded_with_binding_gaps():
-    result = generate(request(scenario_id='m3-runtime-profile-restart-postrecovery-blockfetch'))
+    # The m3 profile scenarios drive host node sessions and are refused since F170; this one stays runnable.
+    result = generate(request(scenario_id='phase3-runtime-generated-haskell3-capability-demo'))
     assert result['workload_binding']['source'] == 'dwarf-workload'
-    assert result['capabilities']['level'] == 'full'
+    assert result['capabilities']['level'] == 'partial'
     assert 'environment/dwarf-workload/package/runtime.json' in result['files']
     assert result['version_binding']['source'] == 'generated-rig'
     assert result['engine_handoff']['renderer'] == 'scenario-rig'
@@ -383,7 +384,7 @@ def _catalog(monkeypatch):
 def test_cardano_only_scenario_starts_only_cardano_containers(monkeypatch):
     _catalog(monkeypatch)
     versions = {'policy': 'exact', 'versions': {'cardano-node': '10.7.1'}, 'build_variant': 'stock', 'experimental_intent': False}
-    result = generate(request(scenario_id='m3-runtime-node2-copied-state-bounded-divergence', versions=versions))
+    result = generate(request(scenario_id='phase3-runtime-generated-haskell3-capability-demo', versions=versions))
     assert result['version_binding']['status'] == 'applied', result['version_binding']['issues']
     assert result['workload_binding']['status'] == 'applied' and result['workload_binding']['rig']['shape'] == 'cardano-only'
     compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
