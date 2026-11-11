@@ -68,8 +68,9 @@ same package, never crashed in any run.
   faulting instruction.
 - It is a crash of cardano-node itself, inside the Haskell runtime's GC, not of DWARF and not of
   the Amaru node.
-- The trigger is "restart after SIGKILL". A fresh start of the same image and configuration does
-  not crash.
+- The trigger is "restart after SIGKILL" *on the platform*. A fresh start of the same image and
+  configuration does not crash, and one SIGKILL-and-restart on a plain Docker host with the same
+  image digest does not crash either (local run below).
 
 ## What is not established
 
@@ -111,12 +112,19 @@ deterministic trigger and a stack.
    artifact of the finding. Backtrace it against the binary from the image above:
    `gdb -batch -ex "bt" ./cardano-node core`.
 
-**Local path (proposed, not yet run):** a DWARF scenario that composes the same two-producer
-devnet (cardano-node 10.7.1, same configuration policies), runs load for a few minutes, applies
-`runtime_kill_node` (SIGKILL) to one producer, and `runtime_restart_node`, then observes the
-restarted node with `runtime_multi_node_observation`. A pass of `all_nodes_responsive` after the
-restart, with the same image, would show the crash needs the platform; a crash would confirm it
-outside the platform. This scenario is not in the catalog yet.
+**Local path (done 2026-11-11, no crash):** catalog scenario
+`runtime-substrate-restart-after-sigkill-example-smoke` composes the same two-producer devnet with
+the **same image digest** (`sha256:3275d357…`, source revision `045bc187`), runs the TxSubmission
+window load on node1, applies `runtime_kill_node` with `signal: KILL` to node2 (`docker kill -s
+KILL`, verified down), `runtime_restart_node` (verified up), then a 20 s
+`runtime_multi_node_observation`. Run `20261111T130152Z-09bed302`: node2 came back 8 s later,
+validated its 12 ImmutableDB chunks (the unclean-shutdown path), rejoined node1 and advanced from
+block 31 to 48 during the window; `all_nodes_started_clean`, `all_nodes_responsive` and
+`reconnection_clean` all pass. So one SIGKILL-and-restart on a plain Docker host does **not**
+reproduce the crash with this binary. What the platform adds and the local path does not: the
+`libvoidstar` preload, the deterministic scheduler, and a kill moment chosen by the fault
+injector. The next step is the instrumentation-off platform run (DWARF request field
+`instrumentation: off`, which reaches MOOG as `--no-instrumentation`).
 
 ## Recommendations
 
@@ -124,4 +132,5 @@ outside the platform. This scenario is not in the catalog yet.
    reference ouroboros-consensus #1885.
 2. Run the same package once with the platform's instrumentation off, to separate the node from
    the preload.
-3. Build and run the local kill-and-restart scenario above.
+3. ~~Build and run the local kill-and-restart scenario~~ — done, no crash; repeat it several times
+   (different kill moments) before calling the local path clean.
