@@ -47,7 +47,8 @@
   function render(job) {
     row = job;
     const labels = {ready: 'Ready for submission', submitted: 'Submitted to MOOG', pending: 'Pending', running: 'Running',
-      completed: job.outcome === 'failure' ? 'Completed with findings' : 'Completed', failed: 'Execution failed'};
+      completed: job.outcome === 'failure' ? 'Completed with findings' : 'Completed', failed: 'Execution failed',
+      rejected: 'Rejected by MOOG'};
     status(job.state, `${labels[job.state] || job.state} · ${job.message || ''}${job.refresh_error ? ' ' + job.refresh_error : ''}`);
     // Prerequisite checklist: one group per area; external failures say so and point outside DWARF.
     const groups = new Map();

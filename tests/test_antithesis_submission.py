@@ -720,3 +720,17 @@ def test_public_network_scenario_is_blocked_with_the_platform_reason(ready_env,s
     row=check(ready_env);checks={c['id']:c for c in row['checks']}
     assert checks['scenario_capabilities']['state']=='error' and row['state']=='blocked'
     assert 'public network' in checks['scenario_capabilities']['detail'] and 'no internet' in checks['scenario_capabilities']['detail']
+
+
+def test_moog_validation_rejection_is_a_named_failure_not_uncertain(ready_env,monkeypatch):
+    """F180: MOOG answered a try-2 request for a new commit with exit 0 and
+    {"validationFailed":{"createTestRunRejections":["Unacceptable try index. ..."]}}; DWARF showed
+    'uncertain' (which never replays) and hid the reason. Nothing was created, so the row is
+    'rejected' with MOOG's reason and the target may be corrected and submitted again."""
+    m=module();row=check(ready_env)
+    reason='Unacceptable try index. Expecting exactly 1 try for this commit'
+    stdout=json.dumps({'validationFailed':{'createTestRunRejections':[reason]}})
+    monkeypatch.setattr(m.remote,'run_moog_create_test',lambda *a,**kw:m.remote.CommandResult(0,stdout,'',''))
+    row=wait(m.submit(row['id'])['id'])
+    assert row['state']=='rejected' and reason in row['message'] and row['submission_attempted']
+    assert row.get('test_run_id') is None

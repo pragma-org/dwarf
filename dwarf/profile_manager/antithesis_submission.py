@@ -556,6 +556,21 @@ def _bind_observed_fact(row, fact):
         link_evidence={'test_run_id': identifier, 'source': 'moog-facts', 'target': row['target'], 'facts': [_redacted_fact(fact)]})
 
 
+def _moog_rejections(stdout):
+    """MOOG's validation rejections ({"validationFailed":{"createTestRunRejections":[...]}}): a
+    request it refused outright, with no fact created (F180)."""
+    for document in [str(stdout or ''), *str(stdout or '').splitlines()]:
+        try:
+            payload = json.loads(document)
+        except (TypeError, ValueError):
+            continue
+        failed = payload.get('validationFailed') if isinstance(payload, dict) else None
+        reasons = failed.get('createTestRunRejections') if isinstance(failed, dict) else None
+        if isinstance(reasons, list) and reasons:
+            return [str(reason)[:300] for reason in reasons[:5]]
+    return []
+
+
 def _acknowledged_test_id(stdout):
     """Adapt the release CLI's WithTxHash wrapper without changing Local parsing."""
     text = str(stdout or '')
@@ -637,6 +652,11 @@ def _submit(row):
                 {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr})
     row['transport_exit_code'] = result.returncode
     identifier = _acknowledged_test_id(result.stdout)
+    rejections = _moog_rejections(result.stdout)
+    if rejections and not identifier:
+        row.update(state='rejected', message='MOOG rejected the request: ' + '; '.join(rejections)
+                   + '. Nothing was submitted; correct the target and run readiness again.')
+        return
     if result.returncode != 0 or not re.fullmatch(r'[a-f0-9]{64}', identifier or ''):
         row.update(state='uncertain', message='MOOG did not provide an unambiguous successful acknowledgement. Refresh this request; it will not be resubmitted.')
         return
