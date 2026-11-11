@@ -734,3 +734,17 @@ def test_moog_validation_rejection_is_a_named_failure_not_uncertain(ready_env,mo
     row=wait(m.submit(row['id'])['id'])
     assert row['state']=='rejected' and reason in row['message'] and row['submission_attempted']
     assert row.get('test_run_id') is None
+
+
+def test_readiness_refuses_a_try_index_that_moog_would_reject(ready_env,monkeypatch):
+    """F180: MOOG accepts try N only after tries 1..N-1 exist for that commit and directory. A
+    first attempt with try 2 is blocked here, before the on-chain request."""
+    m=module()
+    ready_env['target']['try_number']=2
+    row=check(ready_env,'b'*32)
+    checks={c['id']:c for c in row['checks']}
+    assert row['state']=='blocked' and checks['try_index']['state']=='error'
+    previous=fact(ready_env); previous['key']['try']=1
+    monkeypatch.setattr(m,'query_requester',lambda *a: {'checks':[{'id':'requester','state':'ok','detail':'Verified'}],'facts':[previous]})
+    row=check(ready_env,'c'*32)
+    assert {c['id']:c['state'] for c in row['checks']}['try_index']=='ok'

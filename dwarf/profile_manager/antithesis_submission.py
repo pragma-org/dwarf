@@ -286,6 +286,7 @@ CHECK_LABELS = {
     'selected_wallet': ('MOOG requester (external)', 'Selected wallet', True),
     'requester': ('MOOG requester (external)', 'Requester', True),
     'duplicate': ('Duplicate request', 'No existing MOOG request for this attempt', False),
+    'try_index': ('Attempt number', 'MOOG accepts try N only after tries 1..N-1 exist', False),
 }
 
 
@@ -393,6 +394,15 @@ def _evaluate(row):
     else:
         add('duplicate', 'ok', 'No existing MOOG fact matches this exact attempt.')
     t = row['target']
+    if t['try_number'] > 1:
+        earlier = matching_facts(observed['facts'], dict(t, try_number=t['try_number'] - 1))
+        if earlier:
+            add('try_index', 'ok', 'Attempt ' + str(t['try_number'] - 1) + ' exists for this commit and directory.')
+        else:
+            add('try_index', 'error', 'MOOG expects try 1 for a commit and directory with no earlier attempt; attempt '
+                + str(t['try_number']) + ' would be rejected.')
+    else:
+        add('try_index', 'ok', 'First attempt for this commit and directory.')
     row['command'] = moog.build_moog_create_test_command(cfg, repo=t['repository'], github_user=t['requester'],
         directory=t['directory'], commit=t['commit'], try_number=t['try_number'],
         duration_hours=request['duration_hours'], no_faults=request['faults'] == 'off')
