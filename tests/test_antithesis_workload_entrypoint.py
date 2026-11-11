@@ -464,3 +464,18 @@ def test_chain_select_differential_is_measured_only_once_the_reference_converged
     workload.finish(tmp_path / 'runs' / 'a', 'fail', status_dir=tmp_path / 's', environ=env)
     ids = [r['antithesis_assert']['id'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl') if 'antithesis_assert' in r]
     assert 'dwarf_chain_select_differential' not in ids and 'dwarf_chain_select_differential_measured' in ids
+
+
+@pytest.mark.parametrize('recorded,expected', [('1', 0), ('0', 0), ('2', 2), ('3', 3), ('4', 4)])
+def test_driver_exits_zero_when_the_scenario_ran_whatever_its_verdict(tmp_path, recorded, expected):
+    """F176: run eaec880a… failed 'Commands finish with zero exit code: singleton_driver_scenario.py'
+    111 times — the driver re-exported the local fail verdict as its exit code, bypassing the
+    measured-only SDK assertions (F174). A completed scenario (pass or fail) exits 0; error,
+    precondition and revision-mismatch codes stay non-zero."""
+    import subprocess, sys
+    driver = Path(workload.__file__).parent / 'antithesis_assets/dwarf-workload/test/v1/dwarf/singleton_driver_scenario.py'
+    status = tmp_path / 'status'; status.mkdir()
+    (status / 'exit').write_text(recorded + '\n'); (status / 'done').write_text('done\n')
+    source = driver.read_text().replace("pathlib.Path('/status')", 'pathlib.Path(%r)' % str(status))
+    script = tmp_path / 'driver.py'; script.write_text(source)
+    assert subprocess.run([sys.executable, str(script)], timeout=30).returncode == expected
