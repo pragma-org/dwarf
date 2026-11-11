@@ -1157,6 +1157,18 @@
       "group": "Antithesis runs"
     },
     {
+      "url": "runs/antithesis-mux-mixed-f191-20261111.tar.gz",
+      "size_bytes": 24482,
+      "sha256": "5fd246a7d1c1bf333129251b65574ba76cb14be9d08cd4bd9277a17a1c20685c",
+      "run_id": "external-antithesis-0d5d9d77257e0b7ac3b3bfea",
+      "implementation": "amaru",
+      "version": "10.11.20261029",
+      "format": "dwarf-antithesis-run",
+      "coverage_exception": "Antithesis run ed09ffb2 (mux-ingress mixed package rebuilt with F189/F191, faults on): 'Customer output volume' now passes (the Amaru service keeps DEBUG traces in its evidence file, off stdout); no crashes or container exits; dwarf_mux_ingress_overrun_scoped 39/48 \u2014 the sampled failure is 0.1 s after a platform kill of the Amaru target at scenario end, which the finish-time recheck (F189) could not see; F189b adds a 60 s grace poll for the next build; exported with the redacted public bundle (F190)",
+      "title": "Antithesis: mux mixed (F191)",
+      "group": "Antithesis runs"
+    },
+    {
       "url": "runs/antithesis-taps-20261022.tar.gz",
       "size_bytes": 1593136,
       "sha256": "afb3518b3bb43b95c6336766a074d40c8dff2aa840198137fca0bb7aac9115f3",
