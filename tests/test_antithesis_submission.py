@@ -185,6 +185,28 @@ def test_explicit_submission_uses_existing_transport_once_and_ledger(ready_env,m
     assert 'TOP_SECRET' not in json.dumps(row)
 
 
+OGMIOS_SPENT = ('{"error":"Error submitting transaction","details":"Transaction submission failed: A transaction was rejected '
+                'due to custom rules that prevented it from entering the mempool.","ogmiosError":{"code":3997,"data":{"error":'
+                '"All inputs are spent. Transaction has probably already been included"}}}')
+
+
+def test_a_request_transaction_rejected_by_the_chain_is_rejected_and_the_attempt_can_be_sent_again(ready_env,monkeypatch):
+    """F195. Two MOOG requests a minute apart spend the same requester UTxO; the chain refused the
+    second (chainhold, 2026-11-11) and nothing was submitted, but DWARF called it 'uncertain' and
+    kept the attempt reserved, so the same try could never be sent again."""
+    m=module();row=check(ready_env);calls=[]
+    def submit(*a,**kw):
+        calls.append(kw)
+        return m.remote.CommandResult(0, OGMIOS_SPENT if len(calls)==1 else json.dumps({'test_run_id':'f'*64}),'TOP_SECRET','')
+    monkeypatch.setattr(m.remote,'run_moog_create_test',submit)
+    rejected=wait(m.submit(row['id'])['id'])
+    assert rejected['state']=='rejected' and 'inputs' in rejected['message'] and 'TOP_SECRET' not in json.dumps(rejected)
+    again=check(ready_env,'b'*32)
+    assert again['state']=='ready', again['message']
+    sent=wait(m.submit(again['id'])['id'])
+    assert sent['state']=='submitted' and sent['test_run_id']=='f'*64 and len(calls)==2
+
+
 @pytest.mark.parametrize('pretty', [False, True])
 def test_release_wrapped_acknowledgement_is_retained_without_replay(ready_env, monkeypatch, pretty):
     m=module(); row=check(ready_env); calls=[]

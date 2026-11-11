@@ -519,6 +519,8 @@ def _retained_launch(row):
     # Include orphaned reservations, not just ledger entries: their submit
     # outcome may be unknown. Malformed retained evidence fails closed.
     for path in storage_roots().runs.glob('external-antithesis-*/external/launch.json'):
+        if (path.parent / 'rejection.json').exists():
+            continue   # F195: the request never reached MOOG; the attempt is free again
         launch = json.loads(path.read_text())
         if launch.get('transport') == 'moog' and _attempt_target(launch) == target:
             matches.append(path.parent.parent.name)
@@ -588,6 +590,43 @@ def _moog_rejections(stdout):
     return []
 
 
+def _chain_rejection(stdout):
+    """F195: MOOG's request transaction was refused by the Cardano chain before any test-run fact
+    existed (typically "All inputs are spent": a request raced the previous one for the requester
+    UTxO). Nothing was submitted; the attempt may be sent again once the earlier request is in."""
+    text = str(stdout or '')
+    if 'Error submitting transaction' not in text and 'ogmiosError' not in text:
+        return []
+    detail = re.search(r'All inputs are spent[^"\\]*', text)
+    return ['the request transaction was rejected by the chain'
+            + (' (inputs already spent: a request raced the previous one for the requester UTxO)' if detail else '')
+            + '; wait for the previous request to be included, then run readiness and submit again']
+
+
+def _claim_path(row):
+    target = dict(row['target'])
+    target['repository'] = target['repository'].lower()
+    target['requester'] = target['requester'].lower()
+    return state_directory() / 'claims' / (_fingerprint(target) + '.json')
+
+
+def _release_attempt(row, reasons):
+    """A rejected request made no MOOG attempt: free the local claim and mark the reserved run so
+    the same try can be requested again (the reservation itself is kept as evidence)."""
+    try:
+        _claim_path(row).unlink()
+    except OSError:
+        pass
+    run_id = row.get('dwarf_run_id')
+    if run_id:
+        marker = storage_roots().runs / run_id / 'external' / 'rejection.json'
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(json.dumps({'submission_id': row['id'], 'rejected_at': _now(), 'reasons': reasons}, indent=2))
+        except OSError:
+            pass
+
+
 def _acknowledged_test_id(stdout):
     """Adapt the release CLI's WithTxHash wrapper without changing Local parsing."""
     text = str(stdout or '')
@@ -635,12 +674,9 @@ def _submit(row):
     _sync_directory(state_directory().parent)
     # Attempt identity excludes duration/faults: changing those fields does not
     # make a second use of the same MOOG attempt safe. Hold a persistent marker.
-    target = dict(row['target'])
-    target['repository'] = target['repository'].lower()
-    target['requester'] = target['requester'].lower()
     claims = state_directory() / 'claims'
     claims.mkdir(exist_ok=True, mode=0o700)
-    claim = claims / (_fingerprint(target) + '.json')
+    claim = _claim_path(row)
     try:
         fd = os.open(claim, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
@@ -656,9 +692,10 @@ def _submit(row):
     row['submission_attempted'] = True
     row.update(state='submitting', message='Submission reserved. Waiting for MOOG acknowledgement; do not repeat the request.')
     build._save(_path(row['id']) / 'status.json', row)
-    if not reserved['created']:
+    if not reserved['created'] and not (storage_roots().runs / reserved['run_id'] / 'external' / 'rejection.json').exists():
         row.update(state='uncertain', message='The existing external-run ledger already reserved this launch. Refresh to recover its MOOG identity.')
         return
+    # F195: a reservation whose request the chain rejected never reached MOOG; it is reused.
     t, request = row['target'], row['request']
     result = remote.run_moog_create_test(config, config.moog, row['command'],
         repo=t['repository'], github_user=t['requester'], directory=t['directory'], commit=t['commit'],
@@ -670,10 +707,11 @@ def _submit(row):
                 {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr})
     row['transport_exit_code'] = result.returncode
     identifier = _acknowledged_test_id(result.stdout)
-    rejections = _moog_rejections(result.stdout)
+    rejections = _moog_rejections(result.stdout) or _chain_rejection(result.stdout)
     if rejections and not identifier:
         row.update(state='rejected', message='MOOG rejected the request: ' + '; '.join(rejections)
                    + '. Nothing was submitted; correct the target and run readiness again.')
+        _release_attempt(row, rejections)
         return
     if result.returncode != 0 or not re.fullmatch(r'[a-f0-9]{64}', identifier or ''):
         row.update(state='uncertain', message='MOOG did not provide an unambiguous successful acknowledgement. Refresh this request; it will not be resubmitted.')
