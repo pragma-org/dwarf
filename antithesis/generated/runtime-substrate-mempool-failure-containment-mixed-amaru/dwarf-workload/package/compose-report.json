@@ -21,7 +21,7 @@
       "impl": "amaru",
       "listen_address": "node2.example:3000",
       "role": "observer",
-      "version": "10.11.20260918"
+      "version": "10.11.20261029"
     }
   ],
   "runtime_metadata_path": "/opt/dwarf/package/runtime.json",

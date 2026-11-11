@@ -1,23 +1,6 @@
 {
-  "gaps": [
-    {
-      "code": "primitive-unsupported-on-antithesis",
-      "field": "scenario_id",
-      "kind": "implementation-gap",
-      "message": "runtime_mempool_failure_probe: Not listed in the capability matrix.",
-      "phase": "load",
-      "primitive": "runtime_mempool_failure_probe"
-    },
-    {
-      "code": "primitive-unsupported-on-antithesis",
-      "field": "scenario_id",
-      "kind": "implementation-gap",
-      "message": "mempool_failure_contained: Its evidence producer runtime_mempool_failure_probe needs docker exec inside the package; without that event the assertion can only fail.",
-      "phase": "assertions",
-      "primitive": "mempool_failure_contained"
-    }
-  ],
-  "level": "partial",
+  "gaps": [],
+  "level": "full",
   "matrix": "antithesis-capabilities-v1",
   "primitives": [
     {
@@ -33,10 +16,10 @@
       "status": "delegated"
     },
     {
-      "note": "Not listed in the capability matrix.",
+      "note": "Package-aware tx-submission probe (F53 fixed the responder bit; mempool mode measured).",
       "phase": "load",
       "primitive": "runtime_mempool_failure_probe",
-      "status": "unsupported"
+      "status": "runs"
     },
     {
       "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted node log; connection state is reported unavailable (no process access inside the package).",
@@ -51,10 +34,10 @@
       "status": "runs"
     },
     {
-      "note": "Its evidence producer runtime_mempool_failure_probe needs docker exec inside the package; without that event the assertion can only fail.",
+      "note": "Reads the mempool-failure probe result.",
       "phase": "assertions",
       "primitive": "mempool_failure_contained",
-      "status": "unsupported"
+      "status": "runs"
     },
     {
       "note": "Antithesis owns the compose lifecycle; the primitive records a delegated teardown.",

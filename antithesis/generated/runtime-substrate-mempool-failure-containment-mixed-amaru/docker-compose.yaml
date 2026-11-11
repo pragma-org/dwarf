@@ -29,10 +29,10 @@ services:
     image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
     container_name: tracer
     hostname: tracer.example
-    labels:
+    labels: &id001
       com.antithesis.exclude_from_faults: network,kill,pause,stop
     entrypoint: cardano-tracer
-    command:
+    command: &id002
     - --config
     - /tracer-config.yaml
     volumes:
@@ -70,14 +70,18 @@ services:
         condition: service_completed_successfully
       tracer:
         condition: service_started
+      measure-config-node1:
+        condition: service_completed_successfully
+      measure-tracer-node1:
+        condition: service_started
     container_name: node1
     hostname: node1.example
     volumes:
-    - node1-configs:/configs:ro
+    - measurement-config-node1:/configs:ro
     - ./topology/node1.json:/configs/configs/topology.json:ro
     - node1-state:/state
     - node1-evidence:/evidence
-    - tracer:/tracer
+    - measurement-tracer-node1:/tracer
     platform: linux/amd64
     init: true
   node2:
@@ -100,6 +104,7 @@ services:
       AMARU_RUN_EXTRA_ARGS: --listen-address 0.0.0.0:3000 --submit-api-address 0.0.0.0:3011
       AMARU_BIN: /target/amaru-launch
       AMARU_MIGRATE_CHAIN_DB: 'true'
+      AMARU_WITH_JSON_TRACES: 'true'
     restart: always
     container_name: node2
     hostname: node2.example
@@ -131,7 +136,7 @@ services:
     platform: linux/amd64
     init: true
   amaru-target-extract:
-    image: ghcr.io/pragma-org/amaru@sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60
+    image: ghcr.io/pragma-org/amaru@sha256:a5173e2049d4c16f4574cb84495da4578c606d77332105b54cd674961076648c
     user: 0:0
     entrypoint:
     - /bin/sh
@@ -174,9 +179,13 @@ services:
       com.dwarf.build-network: none
     volumes:
     - node1-state:/inputs/node1:ro
+    - node1-configs:/inputs/node1-configs:ro
+    - tracer:/inputs/tracer:ro
     - node2-evidence:/inputs/node2:ro
     - node2-state:/inputs/node2-state:ro
     - dwarf-workload-evidence:/evidence
+    - measurement-tracer-node1:/inputs/tracer-node1:ro
+    - measurement-config-node1:/inputs/config-node1:ro
     depends_on:
       node1:
         condition: service_started
@@ -184,7 +193,51 @@ services:
         condition: service_started
       configurator:
         condition: service_completed_successfully
-    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:4bbf821506dfb37be4b9636eb2800e00489a401e63da62f54d36b9e1a432c3d2
+    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:3f88ddd7ec6a2d6c9200f431ba4fff9e599b23b5d08755ae5ad620e41b7e6449
+  measure-config-node1:
+    platform: linux/amd64
+    container_name: measure-config-node1
+    hostname: measure-config-node1
+    init: true
+    entrypoint:
+    - python
+    - /opt/dwarf/prepare-cardano.py
+    volumes:
+    - node1-configs:/configs:ro
+    - measurement-config-node1:/target
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:7b953a9e2e19cb381b010697517779463d7ca5d26f15d5798736980c3b4e5400
+  measure-tracer-node1:
+    image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
+    container_name: measure-tracer-node1
+    hostname: measure-tracer-node1
+    labels: *id001
+    entrypoint: cardano-tracer
+    command: *id002
+    volumes:
+    - measurement-tracer-node1:/opt/cardano-tracer
+    - ./measurements/tracer-config.yaml:/tracer-config.yaml:ro
+    restart: always
+    platform: linux/amd64
+    init: true
+  dwarf-measurements:
+    platform: linux/amd64
+    container_name: dwarf-measurements
+    hostname: dwarf-measurements
+    init: true
+    restart: always
+    volumes:
+    - dwarf-measurement-results:/evidence
+    - node1-evidence:/inputs/node1:ro
+    - measurement-tracer-node1:/inputs/measurement-tracer-node1:ro
+    - node2-evidence:/inputs/node2:ro
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:7b953a9e2e19cb381b010697517779463d7ca5d26f15d5798736980c3b4e5400
 volumes:
   tracer: {}
   node1-configs: {}
@@ -195,3 +248,6 @@ volumes:
   node2-evidence: {}
   amaru-target-bin: {}
   dwarf-workload-evidence: {}
+  measurement-config-node1: {}
+  measurement-tracer-node1: {}
+  dwarf-measurement-results: {}

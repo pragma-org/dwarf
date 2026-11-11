@@ -14,8 +14,8 @@
     "node2": {
       "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
       "impl": "amaru",
-      "requested_version": "10.11.20260918",
-      "resolved_version": "10.11.20260918",
+      "requested_version": "10.11.20261029",
+      "resolved_version": "10.11.20261029",
       "role": "observer"
     }
   },
