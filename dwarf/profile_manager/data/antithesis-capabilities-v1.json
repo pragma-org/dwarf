@@ -317,12 +317,33 @@
     },
     "runtime_duplex_promotion_pressure": {
       "status": "runs",
-      "note": "N2N duplex pressure over the compose network; liveness by TCP connect (F175 A2). Hard limit comes only from the node config, which the workload cannot read yet (smoke 2026-11-11: hard_limit not measured)."
+      "note": "N2N duplex pressure over the compose network; the hard limit is read from the mounted node config (F183/F184).",
+      "proven_by": {
+        "scenario": "runtime-substrate-duplex-promotion-pressure-example-smoke",
+        "build": "3c09930462dcf1373c5179f2f98e901c",
+        "date": "2026-11-11",
+        "note": "package smoke: hard limit 8 from the node config, peak 7, 17 excess refused"
+      }
     },
     "duplex_promotion_slot_limit_enforced": {
       "status": "runs",
       "note": "Reads the duplex pressure result.",
-      "evidence_producer": "runtime_duplex_promotion_pressure"
+      "evidence_producer": "runtime_duplex_promotion_pressure",
+      "proven_by": {
+        "scenario": "runtime-substrate-duplex-promotion-pressure-example-smoke",
+        "build": "3c09930462dcf1373c5179f2f98e901c",
+        "date": "2026-11-11",
+        "note": "same smoke"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "completed",
+            "equals": 1
+          }
+        ]
+      }
     },
     "runtime_panic_path_probe": {
       "status": "runs",
@@ -496,17 +517,23 @@
     },
     "runtime_bootstrap_assumption_probe": {
       "status": "runs-with-note",
-      "note": "Version-downgrade probe over the compose network; the node config is not readable in the package, that part is not-observable (F175 A2)."
+      "note": "Version-downgrade probe over the compose network; genesis and unsafe-default checks read the mounted node config (F183).",
+      "proven_by": {
+        "scenario": "runtime-substrate-bootstrap-assumption-probe-example-smoke",
+        "build": "f9383cbf41744145123a75237d56c9c6",
+        "date": "2026-11-11",
+        "note": "package smoke after F183/F184/F186: genesis hash verified, no unsafe defaults, no downgrade"
+      }
     },
     "bootstrap_assumptions_safe": {
       "status": "runs",
       "note": "Reads the bootstrap-assumption result.",
       "evidence_producer": "runtime_bootstrap_assumption_probe",
       "proven_by": {
-        "scenario": "runtime-substrate-real-adapter-handshake-pressure-example-smoke",
-        "build": "20bd4867a7a046b8ef12efc6c6f40245",
+        "scenario": "runtime-substrate-bootstrap-assumption-probe-example-smoke",
+        "build": "f9383cbf41744145123a75237d56c9c6",
         "date": "2026-11-11",
-        "note": "same smoke (version_negotiation check); genesis/unsafe-defaults checks need the mounted node config (F183)"
+        "note": "same smoke: all three required checks measured and safe"
       },
       "antithesis_assertion": {
         "kind": "safety",
