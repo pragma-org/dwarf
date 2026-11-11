@@ -54,6 +54,13 @@ def _steps(scenario):
             yield name, name, ref.primitive, dict(ref.params or {})
 
 
+def patched_target_required(scenario):
+    """F197: the scenario verifies an exact target in `mode: patched` (a pinned patch set); a stock
+    package cannot satisfy it and dies in setup on the platform (run 00bc8ebb)."""
+    return any(primitive == 'runtime_verify_exact_target' and params.get('mode') == 'patched'
+               for _label, _phase, primitive, params in _steps(scenario))
+
+
 def _entry(matrix, primitive):
     return matrix['primitives'].get(primitive) or {'status': matrix['default'], 'note': 'Not listed in the capability matrix.'}
 

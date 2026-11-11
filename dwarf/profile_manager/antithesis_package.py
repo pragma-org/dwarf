@@ -17,7 +17,7 @@ from profile_manager import antithesis_harness as harness
 from profile_manager import antithesis_workload_binding as workload
 from profile_manager import antithesis_generated_rig as generated_rig
 from profile_manager import antithesis_generated_workload as generated_workload
-from profile_manager.antithesis_capabilities import classify
+from profile_manager.antithesis_capabilities import classify, patched_target_required
 from profile_manager.antithesis_version_binding import bind_native_versions
 from profile_manager.data.catalog_definitions import CatalogError, load_definition
 from profile_manager.scenario import ScenarioValidationError, scenario_from_body
@@ -220,6 +220,9 @@ def preview_package(value):
         raise PackageError(str(exc),field='topology.'+exc.field,status=exc.status) from exc
 
     classification = classify(scenario)
+    if patched_target_required(scenario) and value['versions']['build_variant'] != 'instrumented':
+        gap('patched-target-needs-instrumented-build', 'versions.build_variant',
+            'The scenario verifies an exact target in patched mode; a stock package fails that check in setup. Request the instrumented build.')
     # Devnet scenarios other than the curated recipe run DWARF's own runner inside
     # the package (generated path): their own devnet is rendered from the control
     # rig's blocks; attached layouts keep the control rig; library/single-node

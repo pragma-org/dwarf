@@ -348,7 +348,8 @@ def _evaluate(row):
         binding = receipt.get('measurement_binding',{}).get('status')
         unsupported = ((request['versions']['build_variant']=='instrumented' and not patched_applied)
                        or (binding not in {'applied','not-requested'} and requested_taps)
-                       or any(i.get('code') == 'topology-scenario-merge-not-implemented' for i in row['source_issues'])
+                       or any(i.get('code') in ('topology-scenario-merge-not-implemented', 'patched-target-needs-instrumented-build')
+                              for i in row['source_issues'])
                        or receipt.get('version_binding', {}).get('status') != 'applied'
                        or receipt.get('workload_binding', {}).get('status') != 'applied')
         if unsupported:

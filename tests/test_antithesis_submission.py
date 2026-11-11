@@ -142,7 +142,7 @@ def test_implicit_default_taps_with_a_partial_binding_do_not_block_submission(re
     assert any(c['id']=='generated_selections' and c['state']=='warn' for c in result['checks'])
 
 
-@pytest.mark.parametrize('change', ['tap','profile','patched','version','workload','topology'])
+@pytest.mark.parametrize('change', ['tap','profile','patched','version','workload','topology','patched-target'])
 def test_generated_unsupported_intent_is_blocked(ready_env,staged,monkeypatch,change):
     m=module();receipt=staged['receipt'];request=receipt['request'];request['package_source']='build'
     receipt['version_binding']={'status':'applied'};receipt['workload_binding']={'status':'applied'}
@@ -152,6 +152,7 @@ def test_generated_unsupported_intent_is_blocked(ready_env,staged,monkeypatch,ch
     if change=='version':receipt['version_binding']['status']='recorded'
     if change=='workload':receipt['workload_binding']['status']='recorded'
     if change=='topology':receipt['issues'].append({'code':'topology-scenario-merge-not-implemented'})
+    if change=='patched-target':receipt['issues'].append({'code':'patched-target-needs-instrumented-build'})   # F197
     monkeypatch.setattr(m,'read_source',lambda source:staged)
     assert check(ready_env)['state']=='blocked'
 

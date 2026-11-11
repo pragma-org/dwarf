@@ -100,6 +100,18 @@ def test_instrumentation_off_is_recorded_as_submission_intent_only():
     assert 'instrumentation' not in json.loads(generate()['files']['package-manifest.json'])['request']
 
 
+def test_a_scenario_that_verifies_a_patched_target_refuses_a_stock_package():
+    """F197. Run 00bc8ebb: client-example-txsubmission-window-amaru-portable-20260918 verifies an exact
+    target with mode 'patched' (a pinned patch set); the package was built stock, every iteration
+    died in setup with 'exact target identity mismatch', and the platform hour was spent on nothing."""
+    sid='client-example-txsubmission-window-amaru-portable-20260918'
+    stock=generate(request(scenario_id=sid))
+    codes={i['code'] for i in stock['issues']}
+    assert 'patched-target-needs-instrumented-build' in codes
+    patched=generate(request(scenario_id=sid, versions={'policy':'profile-default','versions':{},'build_variant':'instrumented','experimental_intent':False}))
+    assert 'patched-target-needs-instrumented-build' not in {i['code'] for i in patched['issues']}
+
+
 def test_changed_request_changes_package_identity_and_keeps_requested_fault_policy():
     first=generate();second=generate(request(duration_hours=9,faults='on'))
     assert first['package_digest']!=second['package_digest']
