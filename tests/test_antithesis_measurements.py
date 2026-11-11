@@ -276,6 +276,19 @@ def test_cardano_config_program_is_self_contained_and_keeps_keepalive_debug(tmp_
     # residence contract instruments Inbound.V2, so measurement configs select it.
     assert json.loads(path.read_text())["TxSubmissionLogicVersion"] == "TxSubmissionLogicV2"
     assert "CARDANO_MEASUREMENT_NODE_SETTINGS=" in program
+    # F184: the program pins the Shelley-era genesis hashes (the CF configurator deletes them) and
+    # declares AcceptedConnectionsLimit like the local devnet config, so the bootstrap and duplex
+    # probes measure the node's own config instead of a built-in default.
+    import hashlib, subprocess, sys
+    configs = tmp_path / "configs" / "configs"; configs.mkdir(parents=True)
+    (configs / "shelley-genesis.json").write_text('{"x":1}')
+    (configs / "config.json").write_text(json.dumps({"TraceOptions": {}, "ShelleyGenesisFile": "shelley-genesis.json", "ByronGenesisFile": "byron-genesis.json"}))
+    script = tmp_path / "prepare.py"
+    script.write_text(cardano_config_program({"hardLimit": 9, "softLimit": 4, "delay": 1}).replace("'/configs'", repr(str(tmp_path / "configs"))).replace("'/target", repr(str(tmp_path / "target"))[:-1]))
+    assert subprocess.run([sys.executable, str(script)], capture_output=True, text=True).returncode == 0
+    out = json.loads((tmp_path / "target" / "configs" / "config.json").read_text())
+    assert out["ShelleyGenesisHash"] == hashlib.blake2b(b'{"x":1}', digest_size=32).hexdigest()
+    assert "ByronGenesisHash" not in out and out["AcceptedConnectionsLimit"] == {"hardLimit": 9, "softLimit": 4, "delay": 1}
 
 
 # --- patched identity from operator registrations (AT-1 Task 4) ------------

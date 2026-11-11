@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parents[1]
 PYTHON='python:3.11-slim@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93'
 
 
-def _runtime_sources(files):
+def _runtime_sources(files,accepted_connections_limit=None):
     # Retain the actual unchanged Python modules, not rewritten collector logic.
     paths=[* (ROOT/'profile_manager/measurement_collectors').glob('*.py')]
     paths += [ROOT/'profile_manager'/name for name in ('__init__.py','measurement_runtime.py',
@@ -34,7 +34,7 @@ def _runtime_sources(files):
         # Keep source bytes unchanged and restore the import names in the image.
         relative=relative.replace('amaru_patched.py','amaru_instrumented.py').replace('cardano_patched.py','cardano_instrumented.py')
         files['environment/measurements/'+relative]=path.read_text()
-    files['environment/measurements/prepare-cardano.py']=cardano_config_program()
+    files['environment/measurements/prepare-cardano.py']=cardano_config_program(accepted_connections_limit)
     files['environment/measurements/Dockerfile']=(f'FROM {PYTHON}\n'
         'RUN pip install --no-cache-dir jsonschema==4.25.1\n'
         'WORKDIR /opt/dwarf\nCOPY . /opt/dwarf/\n'
@@ -44,14 +44,21 @@ def _runtime_sources(files):
         'ENTRYPOINT ["python", "-m", "scripts.antithesis_measurement_runtime"]\n')
 
 
-def cardano_config_program():
+# The local devnet config (cardano-testnet) declares these; the CF configurator leaves the node on
+# its built-in default. Declared values are what the probes measure against (F184, parity).
+CARDANO_ACCEPTED_CONNECTIONS_DEFAULT={'hardLimit':512,'softLimit':384,'delay':5}
+
+
+def cardano_config_program(accepted_connections_limit=None):
     from scripts.runtime_compose_substrate import (
         CARDANO_MEASUREMENT_NODE_SETTINGS,
         CARDANO_MEASUREMENT_TRACE_NAMESPACES,
         CARDANO_MEASUREMENT_TRACE_SEVERITIES,
         _enable_cardano_measurement_traces,
     )
-    return ('import json,shutil\nfrom pathlib import Path\n'
+    limit=dict(accepted_connections_limit or CARDANO_ACCEPTED_CONNECTIONS_DEFAULT)
+    return ('import hashlib,json,shutil\nfrom pathlib import Path\n'
+        +'ACCEPTED_CONNECTIONS_LIMIT='+repr(limit)+'\n'
         +'CARDANO_MEASUREMENT_TRACE_NAMESPACES='+repr(CARDANO_MEASUREMENT_TRACE_NAMESPACES)+'\n'
         +'CARDANO_MEASUREMENT_TRACE_SEVERITIES='+repr(CARDANO_MEASUREMENT_TRACE_SEVERITIES)+'\n'
         +'CARDANO_MEASUREMENT_NODE_SETTINGS='+repr(CARDANO_MEASUREMENT_NODE_SETTINGS)+'\n'
@@ -65,6 +72,15 @@ def cardano_config_program():
         +"        if any(name==ns or name.startswith(ns+'.') for ns in CARDANO_MEASUREMENT_TRACE_NAMESPACES):\n"
         +"            options.update(severity=CARDANO_MEASUREMENT_TRACE_SEVERITIES.get(name,'Info'),detail='DDetailed')\n"
         +"            options.pop('maxFrequency',None)\n"
+        +"    # Parity with the local devnet config (F184): the CF configurator deletes the genesis hash\n"
+        +"    # keys; cardano-node verifies blake2b-256 of the Shelley-era genesis bytes. Byron's canonical\n"
+        +"    # hash needs cardano-cli and stays unpinned here.\n"
+        +"    for era in ('Shelley','Alonzo','Conway'):\n"
+        +"        name=body.get(era+'GenesisFile')\n"
+        +"        genesis=(Path(name) if name and Path(name).is_absolute() else path.parent/str(name)) if name else None\n"
+        +"        if genesis is not None and genesis.is_file():\n"
+        +"            body[era+'GenesisHash']=hashlib.blake2b(genesis.read_bytes(),digest_size=32).hexdigest()\n"
+        +"    body.setdefault('AcceptedConnectionsLimit',ACCEPTED_CONNECTIONS_LIMIT)\n"
         +"    path.write_text(json.dumps(body,indent=2)+'\\n')\n")
 
 
@@ -237,7 +253,9 @@ def bind_measurements(files, request, scenario, versions, workload):
         if selected['id'] not in bound:
             gap(selected['id'],'This tap needs a remote hook or patch contract that is not connected; it was not marked applied.')
     if report['targets']:
-        _runtime_sources(files)
+        substrate=getattr(scenario,'substrate',None) or {}
+        limit=substrate.get('cardano_accepted_connections_limit') if isinstance(substrate,dict) else getattr(substrate,'cardano_accepted_connections_limit',None)
+        _runtime_sources(files,limit)
         files['environment/measurements/measurements.json']=json.dumps(report,sort_keys=True)
         mounts=['dwarf-measurement-results:/evidence']
         for target in report['targets']:
