@@ -279,6 +279,28 @@
     "chain_select_consistent": {
       "status": "runs",
       "note": "Compares node tips from the in-package observation (cardano-cli for cardano-node, the node log for Amaru)."
+    },
+    "shim_peer_malformed_handshake": {
+      "status": "runs",
+      "note": "Raw handshake bytes to the node over the compose network (F175 A1: node_wire_endpoint)."
+    },
+    "runtime_duplex_promotion_pressure": {
+      "status": "runs",
+      "note": "N2N duplex pressure over the compose network; liveness by TCP connect (F175 A2)."
+    },
+    "duplex_promotion_slot_limit_enforced": {
+      "status": "runs",
+      "note": "Reads the duplex pressure result.",
+      "evidence_producer": "runtime_duplex_promotion_pressure"
+    },
+    "runtime_panic_path_probe": {
+      "status": "runs",
+      "note": "Wire probe over the compose network; node_stayed_up by TCP connect (F175 A2)."
+    },
+    "panic_path_contained": {
+      "status": "runs",
+      "note": "Reads the panic-path probe result.",
+      "evidence_producer": "runtime_panic_path_probe"
     }
   },
   "evidence_producer": "Optional per assertion: the probe primitive that writes the proof this assertion reads. When that producer is skipped in a scenario (unsupported or delegated-fault), the assertion is classified unsupported with a gap naming the producer instead of failing for a proof the package can never write."
