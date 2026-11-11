@@ -156,7 +156,8 @@ services:
         condition: service_completed_successfully
         required: true
     command:
-    - 'exec > >(tee -a /evidence/amaru.log) 2>&1
+    - 'exec > >(tee -a /evidence/amaru.log | sed -u ''/"level":"DEBUG"/d;/"level":"TRACE"/d'')
+      2>&1
 
       exec amaru-relay-bootstrap
 
@@ -209,10 +210,17 @@ services:
       com.dwarf.build-network: none
     volumes:
     - relay1-state:/inputs/relay1:ro
+    - relay1-configs:/inputs/relay1-configs:ro
+    - tracer:/inputs/tracer:ro
     - relay2-state:/inputs/relay2:ro
+    - relay2-configs:/inputs/relay2-configs:ro
     - amaru-consumer-evidence:/inputs/amaru-consumer:ro
     - amaru-consumer-state:/inputs/amaru-consumer-state:ro
     - dwarf-workload-evidence:/evidence
+    - measurement-tracer-relay1:/inputs/tracer-relay1:ro
+    - measurement-config-relay1:/inputs/config-relay1:ro
+    - measurement-tracer-relay2:/inputs/tracer-relay2:ro
+    - measurement-config-relay2:/inputs/config-relay2:ro
     depends_on:
       relay1:
         condition: service_started
@@ -222,7 +230,7 @@ services:
         condition: service_started
       configurator:
         condition: service_completed_successfully
-    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:e2e8ca69076c73a342c26fdd47a5f1860143f44d4d9ee3d632383c26a3174b2d
+    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:73c0610c2ba4be61496e111c5c71290b02840e634b516930618c6176cdd56d97
   measure-config-relay1:
     platform: linux/amd64
     container_name: measure-config-relay1
@@ -239,7 +247,7 @@ services:
         condition: service_completed_successfully
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0500800787d619ab3ad1dad6dbb3e7cfbefa30f9ecc02511aee9cbbf155b456c
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0f0e45cf0fe602a311208e76101af2390030f834ef9dcea3e904caf03bc783ec
   measure-tracer-relay1:
     image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
     container_name: measure-tracer-relay1
@@ -269,7 +277,7 @@ services:
         condition: service_completed_successfully
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0500800787d619ab3ad1dad6dbb3e7cfbefa30f9ecc02511aee9cbbf155b456c
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0f0e45cf0fe602a311208e76101af2390030f834ef9dcea3e904caf03bc783ec
   measure-tracer-relay2:
     image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
     container_name: measure-tracer-relay2
@@ -298,7 +306,7 @@ services:
     - amaru-consumer-evidence:/inputs/amaru-consumer:ro
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0500800787d619ab3ad1dad6dbb3e7cfbefa30f9ecc02511aee9cbbf155b456c
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0f0e45cf0fe602a311208e76101af2390030f834ef9dcea3e904caf03bc783ec
 volumes:
   tracer: {}
   relay1-configs: {}
