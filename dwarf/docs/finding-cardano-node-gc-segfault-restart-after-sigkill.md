@@ -12,8 +12,14 @@ one identical stack. Local reproduction outside Antithesis is proposed, not yet 
 > kill moment. Treat this note as a platform-interaction report until a real instrumentation-off run is in.
 > Run `a5fcb78d…` was meant to be that run but went out **instrumented** (a driver bug dropped the
 > flag; the platform parameters show `custom.instrumented: true`); it crashed too, so the count is
-> now 4 of 4 instrumented runs. The instrumentation-off run is resubmitted. Do not report it
-> upstream to cardano-node on this evidence.
+> now 4 of 4 instrumented runs. A second attempt (`a9d9d6cc…`) went to MOOG with
+> `--no-instrumentation` (confirmed in the control-shim log) and the platform **still** reports
+> `custom.instrumented: true`: MOOG's flag only declares that the project ships no instrumented
+> binaries; it is not a switch for the platform's preload. The preload therefore cannot be removed
+> through this path. The next separating experiment is a run whose node containers are excluded
+> from the injector's **kill** fault (pause/stop/network faults stay on): no crash there would put
+> the trigger on the injector's SIGKILL moment. Do not report it upstream to cardano-node on this
+> evidence.
 
 ## Summary
 
@@ -87,8 +93,8 @@ same package, never crashed in any run.
 
 - Whether the node recovers on the next restart. The platform's exported logs for the crash moment
   end at the crash.
-- Whether the crash needs the platform's instrumentation preload. A run with instrumentation off
-  (`--no-instrumentation` in the DWARF submission) would answer this.
+- Whether the crash needs the platform's instrumentation preload. MOOG's `--no-instrumentation`
+  does not remove it (see the status note); only the platform operator can run without it.
 - The root cause. Candidates, in order: a native dependency or `unsafe` FFI path exercised only
   during recovery of an unclean ChainDB (ImmutableDB or VolatileDB validation), or a GHC 9.6.7
   runtime bug on this path.
@@ -144,7 +150,8 @@ injector. The next step is the instrumentation-off platform run (DWARF request f
    off-platform, then report with the two cores, the binary digest and this stack, referencing
    ouroboros-consensus #1885. If it does not, report it to Antithesis as a preload/GHC-runtime
    interaction instead.
-2. Run the same package once with the platform's instrumentation off, to separate the node from
-   the preload.
+2. ~~Run with instrumentation off~~ — not reachable through MOOG. Instead: one run with the node
+   containers excluded from the kill fault, and a request to the platform operator for a run
+   without the preload.
 3. ~~Build and run the local kill-and-restart scenario~~ — done, no crash; repeat it several times
    (different kill moments) before calling the local path clean.
