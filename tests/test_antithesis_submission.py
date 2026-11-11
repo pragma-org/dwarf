@@ -706,7 +706,7 @@ def test_real_generated_preparation_reaches_readiness_with_the_capability_row(re
     from test_antithesis_amaru_binding import selection
     from test_antithesis_package import request
     m=module()
-    prepared=m.prep.prepare_package(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru',versions=selection('mixed')),{})
+    prepared=m.prep.prepare_package(request(scenario_id='runtime-substrate-txsubmission-unexpected-body-mixed-amaru',versions=selection('mixed')),{})   # still partial
     env=dict(ready_env);env['source']={'kind':'preparation','id':prepared['receipt']['id']}
     row=check(env);checks={c['id']:c for c in row['checks']}
     assert checks['scenario_capabilities']['state']=='warn'

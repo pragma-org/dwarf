@@ -444,7 +444,7 @@ def test_prepared_receipt_carries_the_capability_classification(catalog, tmp_pat
     from profile_manager.antithesis_preparation import prepare_package, read_preparation
     from test_antithesis_amaru_binding import selection
     from test_antithesis_package import request
-    prepared = prepare_package(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru', versions=selection('mixed')), {}, state_dir=tmp_path / 'state')
+    prepared = prepare_package(request(scenario_id='runtime-substrate-txsubmission-unexpected-body-mixed-amaru', versions=selection('mixed')), {}, state_dir=tmp_path / 'state')   # still partial: unproven + unsupported steps
     capabilities = prepared['receipt']['capabilities']
     assert capabilities['level'] == 'partial' and capabilities['gaps']
     assert read_preparation(prepared['receipt']['id'], state_dir=tmp_path / 'state')['receipt']['capabilities'] == capabilities
