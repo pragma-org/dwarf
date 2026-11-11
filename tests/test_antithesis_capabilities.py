@@ -277,3 +277,20 @@ def test_shell_load_that_controls_host_node_sessions_is_refused(identifier):
     gap = [g for g in result['gaps'] if g['primitive'] == 'load_shell_command']
     assert gap and gap[0]['code'] == 'primitive-unsupported-on-antithesis'
     assert 'runtime_profile_recovery_check.py' in gap[0]['message']
+
+
+def test_every_proven_assertion_declares_its_antithesis_semantics():
+    """F174: a proven assertion must say whether it is liveness (Sometimes) or safety (Always
+    when measured), else it falls back to an unconditional Always that faults turn red."""
+    matrix = load_matrix()
+    names = {ref.primitive for path in SCENARIOS.glob('*.yaml')
+             for ref in (catalog(path.stem).assertions if path.read_bytes().lstrip()[:1] == b'{' else [])}
+    checked = 0
+    for name, row in matrix['primitives'].items():
+        if row.get('proven_by') and name in names:
+            checked += 1
+            semantics = row.get('antithesis_assertion') or {}
+            assert semantics.get('kind') in ('liveness', 'safety'), name
+            if semantics['kind'] == 'safety':
+                assert semantics.get('measured_when'), name
+    assert checked >= 4

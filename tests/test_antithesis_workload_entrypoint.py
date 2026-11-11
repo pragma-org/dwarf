@@ -67,7 +67,8 @@ def test_finish_emits_outcomes_and_status(tmp_path):
     code = workload.finish(run_dir, 'fail', status_dir=tmp_path / 'status', environ=env)
     assert code == 1
     rows = {r['antithesis_assert']['id']: r['antithesis_assert'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl')}
-    assert rows['dwarf_all_nodes_responsive']['assert_type'] == 'always' and rows['dwarf_all_nodes_responsive']['condition'] is True
+    # Liveness under faults is a Sometimes (F174); the rest of the rows keep their Always.
+    assert rows['dwarf_all_nodes_responsive']['assert_type'] == 'sometimes' and rows['dwarf_all_nodes_responsive']['condition'] is True
     assert rows['dwarf_mempool_failure_contained']['condition'] is False
     assert len(rows['dwarf_mempool_failure_contained']['details']['evaluated_value']) == 512
     assert rows['dwarf_skipped_unknown_primitive_x']['assert_type'] == 'reachability'
@@ -413,3 +414,53 @@ def test_cli_holds_the_container_after_the_workload(monkeypatch):
     monkeypatch.setattr(workload, 'main', lambda argv, environ=None: 3)
     monkeypatch.setattr(workload, 'hold', lambda code, environ=None, sleep=None: ('held', code))
     assert cli.main(['antithesis', 'workload']) == ('held', 3)
+
+
+
+def _semantics_bundle(run_dir, rows):
+    run_dir.mkdir(parents=True)
+    (run_dir / 'assertions.json').write_text(json.dumps(rows))
+    (run_dir / 'manifest.json').write_text(json.dumps({'exit_status': 'fail', 'run_id': run_dir.name}))
+
+
+def _window(observed, *, result):
+    return {'primitive': 'txsubmission_window_enforced', 'params': {}, 'result': result,
+            'evaluated_value': {'completed': 1, 'txsubmission_messages_observed': observed,
+                                'min_txsubmission_messages_observed': 3, 'overflow_rejected': result == 'pass'}}
+
+
+def test_safety_assertion_is_always_only_when_measured(tmp_path):
+    """F174 (user decision 2026-11-11: measured-only Always). Run dc774cde… reported
+    'Missed Always: dwarf_txsubmission_window_enforced' for probes that saw 0 messages under
+    network faults: unmeasured, not a violation."""
+    env = {'ANTITHESIS_OUTPUT_DIR': str(tmp_path / 'out')}
+    _semantics_bundle(tmp_path / 'runs' / 'a', [_window(0, result='fail')])
+    workload.finish(tmp_path / 'runs' / 'a', 'fail', status_dir=tmp_path / 's1', environ=env)
+    _semantics_bundle(tmp_path / 'runs' / 'b', [_window(3, result='fail')])
+    workload.finish(tmp_path / 'runs' / 'b', 'fail', status_dir=tmp_path / 's2', environ=env)
+    events = [r['antithesis_assert'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl') if 'antithesis_assert' in r]
+    always = [e for e in events if e['id'] == 'dwarf_txsubmission_window_enforced']
+    measured = [e for e in events if e['id'] == 'dwarf_txsubmission_window_enforced_measured']
+    assert [(e['assert_type'], e['condition']) for e in always] == [('always', False)]   # only run b
+    assert [(e['assert_type'], e['condition']) for e in measured] == [('sometimes', False), ('sometimes', True)]
+
+
+def test_liveness_assertions_are_sometimes(tmp_path):
+    env = {'ANTITHESIS_OUTPUT_DIR': str(tmp_path / 'out')}
+    _semantics_bundle(tmp_path / 'runs' / 'a', [
+        {'primitive': 'all_nodes_responsive', 'params': {}, 'result': 'fail',
+         'evaluated_value': {'completed': 1, 'node_count': 2, 'responsive_node_count': 1}}])
+    workload.finish(tmp_path / 'runs' / 'a', 'fail', status_dir=tmp_path / 's', environ=env)
+    events = [r['antithesis_assert'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl') if 'antithesis_assert' in r]
+    row = [e for e in events if e['id'] == 'dwarf_all_nodes_responsive']
+    assert [(e['assert_type'], e['condition']) for e in row] == [('sometimes', False)]
+
+
+def test_chain_select_differential_is_measured_only_once_the_reference_converged(tmp_path):
+    env = {'ANTITHESIS_OUTPUT_DIR': str(tmp_path / 'out')}
+    _semantics_bundle(tmp_path / 'runs' / 'a', [
+        {'primitive': 'chain_select_differential', 'params': {}, 'result': 'fail',
+         'evaluated_value': {'completed': 1, 'agree': False, 'reference_converged': False}}])
+    workload.finish(tmp_path / 'runs' / 'a', 'fail', status_dir=tmp_path / 's', environ=env)
+    ids = [r['antithesis_assert']['id'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl') if 'antithesis_assert' in r]
+    assert 'dwarf_chain_select_differential' not in ids and 'dwarf_chain_select_differential_measured' in ids

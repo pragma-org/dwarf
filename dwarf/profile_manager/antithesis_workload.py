@@ -196,6 +196,35 @@ def _last_phase_error(run_dir):
     return found
 
 
+def _assertion_semantics(primitive):
+    """How a DWARF assertion maps onto Antithesis assertions (F174, measured-only Always)."""
+    try:
+        from profile_manager.antithesis_capabilities import load_matrix
+        return (load_matrix()['primitives'].get(primitive) or {}).get('antithesis_assertion') or {}
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def _measured(value, rules):
+    """True when every rule holds on the assertion's evaluated value: the check saw real evidence."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return False
+    if not isinstance(value, dict):
+        return False
+    for rule in rules:
+        got = value.get(rule.get('field'))
+        if 'equals' in rule and got != rule['equals']:
+            return False
+        if 'gte_field' in rule:
+            floor = value.get(rule['gte_field'])
+            if not isinstance(got, (int, float)) or not isinstance(floor, (int, float)) or got < floor:
+                return False
+    return True
+
+
 def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, error=None):
     """Turn the bundle's assertions into SDK events and release the driver."""
     environ = os.environ if environ is None else environ
@@ -217,8 +246,18 @@ def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, err
             sdk.emit_assert('reachability', property_id(primitive, 'dwarf_skipped_'), True,
                             details={'policy': row.get('note')}, environ=environ)
             continue
-        sdk.emit_assert('always', property_id(primitive), result == 'pass',
-                        details={'result': result, 'evaluated_value': _clip(row.get('evaluated_value'))}, environ=environ)
+        details_row = {'result': result, 'evaluated_value': _clip(row.get('evaluated_value'))}
+        semantics = _assertion_semantics(primitive)
+        if semantics.get('kind') == 'liveness':
+            # Under platform faults a liveness check holds only some of the time (F174).
+            sdk.emit_assert('sometimes', property_id(primitive), result == 'pass', details=details_row, environ=environ)
+            continue
+        if semantics.get('kind') == 'safety':
+            measured = _measured(row.get('evaluated_value'), semantics.get('measured_when') or [])
+            sdk.emit_assert('sometimes', property_id(primitive) + '_measured', measured, details=details_row, environ=environ)
+            if not measured:
+                continue
+        sdk.emit_assert('always', property_id(primitive), result == 'pass', details=details_row, environ=environ)
     details = {'exit_status': exit_status}
     if error:
         details['error'] = str(error)[:_VALUE_LIMIT]

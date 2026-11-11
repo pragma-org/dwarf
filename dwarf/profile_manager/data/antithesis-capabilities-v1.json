@@ -17,6 +17,9 @@
         "build": "31cccac82edce9eeb4263e6274913fb9",
         "date": "2026-11-11",
         "note": "cardano-only package smoke: window 3, 4 txids offered, overflow rejected; 2/2 nodes responsive"
+      },
+      "antithesis_assertion": {
+        "kind": "liveness"
       }
     },
     "peer_connectivity_observed": {
@@ -35,6 +38,9 @@
         "build": "b14cfaa5daad40cbc1bc5d352944af48",
         "date": "2026-11-11",
         "note": "cardano-only package smoke: stressor shell loads ran, 2/2 nodes started clean and responsive"
+      },
+      "antithesis_assertion": {
+        "kind": "liveness"
       }
     },
     "load_events_are_ok": {
@@ -240,6 +246,15 @@
         "build": "31cccac82edce9eeb4263e6274913fb9",
         "date": "2026-11-11",
         "note": "cardano-only package smoke: window 3, 4 txids offered, overflow rejected; 2/2 nodes responsive"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "txsubmission_messages_observed",
+            "gte_field": "min_txsubmission_messages_observed"
+          }
+        ]
       }
     },
     "chain_select_differential": {
@@ -250,6 +265,15 @@
         "build": "45412967322b9ed7f55ea5fa19b821a1",
         "date": "2026-11-11",
         "note": "mixed Amaru 20261029 + cardano-node 10.7.1 package smoke: tips hash-identical, reference converged"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "reference_converged",
+            "equals": true
+          }
+        ]
       }
     },
     "chain_select_consistent": {
