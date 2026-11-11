@@ -1133,6 +1133,30 @@
       "group": "Antithesis runs"
     },
     {
+      "url": "runs/antithesis-mux-mixed-20261111.tar.gz",
+      "size_bytes": 25560,
+      "sha256": "48e84154fa4ea617998a519fe144afde15f9b8c5053876ba74f6ae2fa266fa33",
+      "run_id": "external-antithesis-ee6486471d263611830ef291",
+      "implementation": "amaru",
+      "version": "10.11.20261029",
+      "format": "dwarf-antithesis-run",
+      "coverage_exception": "Antithesis run 5801a383 (generated mixed package: Amaru 10.11.20261029 target + cardano-node 10.7.1, default taps, faults on): dwarf_mux_ingress_overrun_scoped measured 50 times, 48 pass; the 2 failures (vtime ~696) fall inside a platform pause of the Amaru target (692-706 s), so the probe saw no bearer at all and reported every sub-check false - a probe-under-fault artifact (generator item F189), not a node fault; 'Customer output volume' failed (log volume); host run-directory path redacted from inputs/run-service-plan.json",
+      "title": "Antithesis: mux-ingress mixed",
+      "group": "Antithesis runs"
+    },
+    {
+      "url": "runs/antithesis-mempool-mixed-20261111.tar.gz",
+      "size_bytes": 24651,
+      "sha256": "a1827bb9fe35cc320f74ce10c53448e8ba32304f203f2bfa2d75f9bd99d50b3e",
+      "run_id": "external-antithesis-d5b71841cdb278e4bdcf0dab",
+      "implementation": "amaru",
+      "version": "10.11.20261029",
+      "format": "dwarf-antithesis-run",
+      "coverage_exception": "Antithesis run addb72c1 (generated mixed package: Amaru 10.11.20261029 + cardano-node 10.7.1 producer, default taps, faults on): all 5 DWARF properties pass; the platform property 'No unexpected container exits' failed once - the Amaru node exited 1 at vtime 847 with 'BlockValidationError: rewards summary not ready' (lifecycle.consensus_died) at the epoch 3->4 transition after the injector had killed the cardano-node producer four times: the known Amaru dormant-epoch crash class, reproduced by the platform; 'Customer output volume' failed (log volume); host run-directory path redacted from inputs/run-service-plan.json",
+      "title": "Antithesis: mempool mixed",
+      "group": "Antithesis runs"
+    },
+    {
       "url": "runs/antithesis-taps-20261022.tar.gz",
       "size_bytes": 1593136,
       "sha256": "afb3518b3bb43b95c6336766a074d40c8dff2aa840198137fca0bb7aac9115f3",
