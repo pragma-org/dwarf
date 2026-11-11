@@ -35,8 +35,8 @@ def test_substrate_observation_scenario_is_partial_with_delegated_lifecycle():
     assert statuses['runtime_teardown_substrate'] == 'delegated'
     assert statuses['runtime_multi_node_observation'] == 'runs-with-note'
     assert statuses['all_nodes_responsive'] == 'runs'
-    assert statuses['runtime_mempool_failure_probe'] == 'unsupported'
-    assert {gap['code'] for gap in result['gaps']} == {'primitive-unsupported-on-antithesis'}
+    assert statuses['runtime_mempool_failure_probe'] == 'runs'   # package-aware since F53; unproven until a package smoke
+    assert {gap['code'] for gap in result['gaps']} <= {'primitive-unsupported-on-antithesis', 'unproven-in-package', 'observation-unavailable-in-package'}
     assert all(gap['kind'] == 'implementation-gap' and gap['primitive'] for gap in result['gaps'])
     assert [row['phase'] for row in result['primitives']][:2] == ['setup', 'setup']
 
@@ -103,11 +103,11 @@ def test_phases_are_flattened_in_order(monkeypatch):
 
 def test_assertions_whose_evidence_producer_is_unsupported_are_unsupported_too():
     matrix = load_matrix()['primitives']
-    assert matrix['mempool_failure_contained']['status'] == 'unsupported'
-    assert matrix['peer_connectivity_observed']['status'] == 'unsupported'
-    result = classify(catalog('runtime-substrate-mempool-failure-containment-mixed-amaru'))
+    assert matrix['unrelated_peer_session_usable']['status'] == 'runs'
+    assert matrix['runtime_peer_session_health']['status'] == 'unsupported'
+    result = classify(catalog('client-example-invalid-mini-protocol-amaru-20260918'))
     statuses = {row['primitive']: row['status'] for row in result['primitives']}
-    assert statuses['mempool_failure_contained'] == 'unsupported'
+    assert statuses['unrelated_peer_session_usable'] == 'unsupported'
 
 
 def test_public_network_devnet_is_none_before_the_primitive_walk():
@@ -125,14 +125,14 @@ def test_public_network_devnet_is_none_before_the_primitive_walk():
     assert result['runnable_load'] is True
 
 
-def test_exact_target_verification_is_unsupported_until_the_package_identity_route_exists():
-    """F46: runtime_verify_exact_target reads the frozen local launch identity
-    (resolved-plan fields + measurement context) that the package does not carry;
-    inside the package it raised and turned a healthy run into 'error'."""
+def test_exact_target_verification_runs_in_the_package_with_its_limitation_named():
+    """F46 → F182: runtime_verify_exact_target used to read the frozen local launch identity the
+    package does not carry; it now compares the scenario target with the package pin and names
+    the running-image limitation."""
     result = classify(catalog('client-example-txsubmission-window-amaru-portable-20260918'))
     rows = {r['primitive']: r['status'] for r in result['primitives']}
-    assert rows['runtime_verify_exact_target'] == 'unsupported'
-    assert 'package' in load_matrix()['primitives']['runtime_verify_exact_target']['note']
+    assert rows['runtime_verify_exact_target'] == 'runs-with-note'
+    assert 'not inspected' in load_matrix()['primitives']['runtime_verify_exact_target']['note']
 
 
 def test_client_proof_assertions_follow_their_evidence_producer():
@@ -145,13 +145,13 @@ def test_client_proof_assertions_follow_their_evidence_producer():
     assert producers['no_target_fatal_signal'] == 'runtime_target_health_and_progress'
     assert producers['unrelated_peer_session_usable'] == 'runtime_peer_session_health'
     assert all(producer in matrix for producer in producers.values())
-    result = classify(catalog('client-example-txsubmission-window-amaru-portable-20260918'))
+    result = classify(catalog('client-example-invalid-mini-protocol-amaru-20260918'))
     rows = {row['primitive']: row for row in result['primitives']}
-    for name in ('target_progress_continues', 'no_target_fatal_signal'):
-        assert rows[name]['status'] == 'unsupported'
-        assert 'runtime_target_health_and_progress' in rows[name]['note']
-        assert skip_policy(result)[name] == 'unsupported'
-    assert any(gap['primitive'] == 'target_progress_continues' and gap['code'] == 'assertion-evidence-unsupported' for gap in result['gaps'])
+    name = 'unrelated_peer_session_usable'
+    assert rows[name]['status'] == 'unsupported'
+    assert 'runtime_peer_session_health' in rows[name]['note']
+    assert skip_policy(result)[name] == 'unsupported'
+    assert any(gap['primitive'] == name and gap['code'] == 'assertion-evidence-unsupported' for gap in result['gaps'])
 
 
 def test_assertion_with_a_running_producer_keeps_its_own_status():
@@ -182,8 +182,8 @@ def test_window_assertion_runs_and_follows_its_probe():
 def test_scenario_whose_assertions_are_all_skipped_is_refused_as_unverifiable():
     body = json.loads(FREEZE_YAML)
     body['faults'] = []
-    body['probes'] = [{'primitive': 'runtime_target_health_and_progress'}]
-    body['assertions'] = [{'primitive': 'target_progress_continues'}, {'primitive': 'no_target_fatal_signal'}]
+    body['probes'] = [{'primitive': 'runtime_peer_session_health'}]
+    body['assertions'] = [{'primitive': 'unrelated_peer_session_usable'}, {'primitive': 'unknown_primitive_x'}]
     result = classify(scenario_from_body(json.dumps(body).encode()))
     assert result['level'] == 'none' and result['reason'] == 'no-evaluable-assertion'
     assert all(row['status'] == 'unsupported' for row in result['primitives'] if row['phase'] == 'assertions')

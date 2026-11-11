@@ -358,7 +358,7 @@ def test_devnet_scenario_previews_through_the_generated_workload(monkeypatch):
     manifest = json.loads(result['files']['package-manifest.json'])
     assert manifest['capabilities'] == result['capabilities']
     codes = {issue['code'] for issue in result['issues']}
-    assert 'primitive-unsupported-on-antithesis' in codes
+    assert 'unproven-in-package' in codes
     assert 'scenario-harness-workload-not-implemented' not in codes
     assert any(image['service'] == 'dwarf-workload' for image in result['images'])
     assert 'environment/testnet.yaml' in result['files'] and 'environment/topology/node1.json' in result['files']

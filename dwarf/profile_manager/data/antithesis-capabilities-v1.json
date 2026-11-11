@@ -62,12 +62,12 @@
     },
     "target_progress_continues": {
       "status": "runs",
-      "note": "",
+      "note": "Reads the target-health proof.",
       "evidence_producer": "runtime_target_health_and_progress"
     },
     "no_target_fatal_signal": {
-      "status": "runs",
-      "note": "",
+      "status": "runs-with-note",
+      "note": "Reads the target-health proof; unmeasured log signals never pass (F181 A4).",
       "evidence_producer": "runtime_target_health_and_progress"
     },
     "invalid_protocol_cases_contained": {
@@ -79,8 +79,9 @@
       "note": ""
     },
     "mempool_failure_contained": {
-      "status": "unsupported",
-      "note": "Its evidence producer runtime_mempool_failure_probe needs docker exec inside the package; without that event the assertion can only fail."
+      "status": "runs",
+      "note": "Reads the mempool-failure probe result.",
+      "evidence_producer": "runtime_mempool_failure_probe"
     },
     "runtime_multi_node_observation": {
       "status": "runs-with-note",
@@ -103,8 +104,8 @@
       "note": "Tips are read over the mounted node socket or the mounted node log, not docker exec."
     },
     "runtime_verify_exact_target": {
-      "status": "unsupported",
-      "note": "Reads the frozen local launch identity (resolved-plan fields and the measurement context) that the package does not carry; the package records the bound release in its version binding instead. AT-2b adds the package identity route."
+      "status": "runs-with-note",
+      "note": "Package mode compares the scenario target with the package pin; the running image is not inspected (F182)."
     },
     "runtime_tx_submit_differential": {
       "status": "runs-with-note",
@@ -170,12 +171,12 @@
       "note": "Needs docker network disconnect; platform network faults stand in."
     },
     "runtime_target_health_and_progress": {
-      "status": "unsupported",
-      "note": "Reads docker inspect/logs and docker exec cardano-cli."
+      "status": "runs-with-note",
+      "note": "Re-observes the target by TCP, mounted socket and mounted log; OOM and restart count are unmeasured (None) in the package (F181 A4)."
     },
     "runtime_wait_for_chain_progress": {
-      "status": "unsupported",
-      "note": "Reads tips through docker exec or docker logs."
+      "status": "runs",
+      "note": "Target tip via the workload cardano-cli on the mounted socket or the mounted Amaru log (F181 A4)."
     },
     "runtime_peer_session_health": {
       "status": "unsupported",
@@ -206,8 +207,8 @@
       "note": "Runs docker restart."
     },
     "runtime_controlled_chain_progress_window": {
-      "status": "unsupported",
-      "note": "Uses docker inspect and host log paths."
+      "status": "runs-with-note",
+      "note": "Window over the mounted log and socket; needs the measurement runtime (taps on by default) (F181/F182)."
     },
     "runtime_controlled_sync_range": {
       "status": "unsupported",
@@ -337,6 +338,84 @@
           }
         ]
       }
+    },
+    "shim_peer_raw_bytes": {
+      "status": "runs",
+      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+    },
+    "shim_peer_invalid_cbor": {
+      "status": "runs",
+      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+    },
+    "shim_peer_malformed_txsubmission": {
+      "status": "runs",
+      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+    },
+    "shim_peer_malformed_blockfetch": {
+      "status": "runs",
+      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+    },
+    "runtime_mux_ingress_overrun": {
+      "status": "runs",
+      "note": "N2N mux flood over the compose network; liveness by TCP connect (F175 A2)."
+    },
+    "mux_ingress_overrun_scoped": {
+      "status": "runs",
+      "note": "Reads the mux-overrun result.",
+      "evidence_producer": "runtime_mux_ingress_overrun"
+    },
+    "runtime_parser_bounds_probe": {
+      "status": "runs",
+      "note": "Wire probe over the compose network; node_stayed_up by TCP connect (F175 A2)."
+    },
+    "parser_bounds_enforced": {
+      "status": "runs",
+      "note": "Reads the parser-bounds result.",
+      "evidence_producer": "runtime_parser_bounds_probe"
+    },
+    "runtime_local_submit_stress": {
+      "status": "runs-with-note",
+      "note": "N2N submit stress over the compose network; the node pid is not sampled (F175 A2)."
+    },
+    "local_submit_availability_preserved": {
+      "status": "runs",
+      "note": "Reads the submit-stress result.",
+      "evidence_producer": "runtime_local_submit_stress"
+    },
+    "runtime_handshake_version_negotiation_pressure": {
+      "status": "runs",
+      "note": "Handshake pressure over the compose network; liveness by TCP connect (F175 A2)."
+    },
+    "runtime_bootstrap_assumption_probe": {
+      "status": "runs-with-note",
+      "note": "Version-downgrade probe over the compose network; the node config is not readable in the package, that part is not-observable (F175 A2)."
+    },
+    "bootstrap_assumptions_safe": {
+      "status": "runs",
+      "note": "Reads the bootstrap-assumption result.",
+      "evidence_producer": "runtime_bootstrap_assumption_probe"
+    },
+    "runtime_txsubmission_batch_pressure": {
+      "status": "runs",
+      "note": "Package-aware tx-submission probe (compose hostname, no docker inspect)."
+    },
+    "runtime_txsubmission_unexpected_body": {
+      "status": "runs",
+      "note": "Package-aware tx-submission probe."
+    },
+    "runtime_mempool_failure_probe": {
+      "status": "runs",
+      "note": "Package-aware tx-submission probe (F53 fixed the responder bit; mempool mode measured)."
+    },
+    "minimum_adopted_block_range_observed": {
+      "status": "runs",
+      "note": "Reads the controlled-window proof.",
+      "evidence_producer": "runtime_controlled_chain_progress_window"
+    },
+    "canonical_chain_progress_complete": {
+      "status": "runs",
+      "note": "Reads the controlled-window proof.",
+      "evidence_producer": "runtime_controlled_chain_progress_window"
     }
   },
   "evidence_producer": "Optional per assertion: the probe primitive that writes the proof this assertion reads. When that producer is skipped in a scenario (unsupported or delegated-fault), the assertion is classified unsupported with a gap naming the producer instead of failing for a proof the package can never write."
