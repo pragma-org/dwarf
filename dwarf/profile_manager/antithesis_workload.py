@@ -240,8 +240,23 @@ def _n2n_keepalive_answers(host, port):
         sock.close()
 
 
+def _target_answers_within(host, port, *, seconds=60.0, interval=3.0, sleep=None):
+    """F189b: a target under a platform kill comes back ~20 s later; one keepalive at finish time
+    (run ed09ffb2: killed at vtime 689.1, finish at 689.2) sees nothing. Poll for a grace period."""
+    import time as _time
+    sleep = sleep or _time.sleep
+    waited = 0.0
+    while True:
+        if _n2n_keepalive_answers(host, port):
+            return True
+        if waited >= seconds:
+            return False
+        sleep(interval)
+        waited += interval
+
+
 # F189: how a failed safety assertion re-asks its target at finish time (matrix `recheck`).
-RECHECKS = {'n2n-keepalive': _n2n_keepalive_answers}
+RECHECKS = {'n2n-keepalive': _target_answers_within}
 
 
 def _recheck_target(row, semantics):

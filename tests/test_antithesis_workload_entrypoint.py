@@ -509,3 +509,18 @@ def test_safety_failure_against_a_target_that_answers_again_is_unmeasured(tmp_pa
     assert [(e['assert_type'], e['condition']) for e in always] == [('always', False)]            # only run b
     assert [(e['assert_type'], e['condition']) for e in measured] == [('sometimes', False), ('sometimes', True)]
     assert measured[0]['details']['recheck'] == 'target-answers-now'
+
+
+def test_recheck_waits_for_a_restarting_target_within_the_grace_period(monkeypatch):
+    """F189b. Run ed09ffb2: node1 was SIGKILLed at vtime 689.1 and the scenario finished at 689.2;
+    a single keepalive at finish found nothing and the violation stood although the platform
+    restarts the container ~20 s later. The recheck polls for a grace period before deciding."""
+    answers = iter([False, False, True])
+    slept = []
+    monkeypatch.setattr(workload, '_n2n_keepalive_answers', lambda host, port: next(answers))
+    assert workload._target_answers_within('n1.example', 3000, seconds=60, interval=5, sleep=slept.append) is True
+    assert slept == [5, 5]
+    never = []
+    monkeypatch.setattr(workload, '_n2n_keepalive_answers', lambda host, port: False)
+    assert workload._target_answers_within('n1.example', 3000, seconds=12, interval=5, sleep=never.append) is False
+    assert never == [5, 5, 5]
