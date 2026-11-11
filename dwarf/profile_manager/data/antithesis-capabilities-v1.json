@@ -81,7 +81,22 @@
     "mempool_failure_contained": {
       "status": "runs",
       "note": "Reads the mempool-failure probe result.",
-      "evidence_producer": "runtime_mempool_failure_probe"
+      "evidence_producer": "runtime_mempool_failure_probe",
+      "proven_by": {
+        "scenario": "runtime-substrate-mempool-failure-containment-mixed-amaru",
+        "build": "cf8e64484ec9bd9e7e701d963f6b3e73",
+        "date": "2026-11-11",
+        "note": "same smoke"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "node_stayed_up",
+            "equals": true
+          }
+        ]
+      }
     },
     "runtime_multi_node_observation": {
       "status": "runs-with-note",
@@ -341,50 +356,143 @@
     },
     "shim_peer_raw_bytes": {
       "status": "runs",
-      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+      "note": "Raw wire bytes to the node over the compose network (F175 A1).",
+      "proven_by": {
+        "scenario": "phase3-runtime-generated-haskell3-node2-null-bytes",
+        "build": "aece862c6154ccf9f30054fd3a3e43a4",
+        "date": "2026-11-11",
+        "note": "package smoke: raw bytes reached node2 by service name; load events ok"
+      }
     },
     "shim_peer_invalid_cbor": {
       "status": "runs",
-      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+      "note": "Raw wire bytes to the node over the compose network (F175 A1).",
+      "proven_by": {
+        "scenario": "phase3-runtime-generated-haskell3-node1-invalid-cbor",
+        "build": "d4f6ac95bf150775192d859228953bcb",
+        "date": "2026-11-11",
+        "note": "package smoke: load events ok"
+      }
     },
     "shim_peer_malformed_txsubmission": {
       "status": "runs",
-      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+      "note": "Raw wire bytes to the node over the compose network (F175 A1).",
+      "proven_by": {
+        "scenario": "phase3-runtime-generated-haskell3-node1-malformed-txsubmission",
+        "build": "ad0191e58a45050036f06053af7e4ac6",
+        "date": "2026-11-11",
+        "note": "package smoke: load events ok"
+      }
     },
     "shim_peer_malformed_blockfetch": {
       "status": "runs",
-      "note": "Raw wire bytes to the node over the compose network (F175 A1)."
+      "note": "Raw wire bytes to the node over the compose network (F175 A1).",
+      "proven_by": {
+        "scenario": "phase3-runtime-generated-haskell3-node1-malformed-blockfetch",
+        "build": "60a0fca9c6ec6acc8b5ba89700d9aede",
+        "date": "2026-11-11",
+        "note": "package smoke: load events ok"
+      }
     },
     "runtime_mux_ingress_overrun": {
       "status": "runs",
-      "note": "N2N mux flood over the compose network; liveness by TCP connect (F175 A2)."
+      "note": "N2N mux flood over the compose network; liveness by TCP connect (F175 A2).",
+      "proven_by": {
+        "scenario": "runtime-substrate-mux-ingress-overrun-example-smoke",
+        "build": "1a458577d6b251d37ed8ebe979bbd433",
+        "date": "2026-11-11",
+        "note": "package smoke: offending bearer disconnected, others preserved, queue budget respected"
+      }
     },
     "mux_ingress_overrun_scoped": {
       "status": "runs",
       "note": "Reads the mux-overrun result.",
-      "evidence_producer": "runtime_mux_ingress_overrun"
+      "evidence_producer": "runtime_mux_ingress_overrun",
+      "proven_by": {
+        "scenario": "runtime-substrate-mux-ingress-overrun-example-smoke",
+        "build": "1a458577d6b251d37ed8ebe979bbd433",
+        "date": "2026-11-11",
+        "note": "same smoke"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "completed",
+            "equals": 1
+          }
+        ]
+      }
     },
     "runtime_parser_bounds_probe": {
       "status": "runs",
-      "note": "Wire probe over the compose network; node_stayed_up by TCP connect (F175 A2)."
+      "note": "Wire probe over the compose network; node_stayed_up by TCP connect (F175 A2).",
+      "proven_by": {
+        "scenario": "runtime-substrate-parser-bounds-example-smoke",
+        "build": "1a943c7c337a084be17aada0fc30ba5b",
+        "date": "2026-11-11",
+        "note": "package smoke: bounds_enforced true, no unbounded work"
+      }
     },
     "parser_bounds_enforced": {
       "status": "runs",
       "note": "Reads the parser-bounds result.",
-      "evidence_producer": "runtime_parser_bounds_probe"
+      "evidence_producer": "runtime_parser_bounds_probe",
+      "proven_by": {
+        "scenario": "runtime-substrate-parser-bounds-example-smoke",
+        "build": "1a943c7c337a084be17aada0fc30ba5b",
+        "date": "2026-11-11",
+        "note": "same smoke"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "completed",
+            "equals": 1
+          }
+        ]
+      }
     },
     "runtime_local_submit_stress": {
       "status": "runs-with-note",
-      "note": "N2N submit stress over the compose network; the node pid is not sampled (F175 A2)."
+      "note": "N2N submit stress over the compose network; the node pid is not sampled (F175 A2).",
+      "proven_by": {
+        "scenario": "runtime-substrate-local-submit-stress-example-smoke",
+        "build": "4d0e3c9b85f7e837cc9082e4c015a957",
+        "date": "2026-11-11",
+        "note": "package smoke: limits enforced (peak 4 of 32), node stayed up"
+      }
     },
     "local_submit_availability_preserved": {
       "status": "runs",
       "note": "Reads the submit-stress result.",
-      "evidence_producer": "runtime_local_submit_stress"
+      "evidence_producer": "runtime_local_submit_stress",
+      "proven_by": {
+        "scenario": "runtime-substrate-local-submit-stress-example-smoke",
+        "build": "4d0e3c9b85f7e837cc9082e4c015a957",
+        "date": "2026-11-11",
+        "note": "same smoke"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "node_stayed_up",
+            "equals": true
+          }
+        ]
+      }
     },
     "runtime_handshake_version_negotiation_pressure": {
       "status": "runs",
-      "note": "Handshake pressure over the compose network; liveness by TCP connect (F175 A2)."
+      "note": "Handshake pressure over the compose network; liveness by TCP connect (F175 A2).",
+      "proven_by": {
+        "scenario": "runtime-substrate-real-adapter-handshake-pressure-example-smoke",
+        "build": "20bd4867a7a046b8ef12efc6c6f40245",
+        "date": "2026-11-11",
+        "note": "package smoke: no downgrade seen"
+      }
     },
     "runtime_bootstrap_assumption_probe": {
       "status": "runs-with-note",
@@ -393,7 +501,22 @@
     "bootstrap_assumptions_safe": {
       "status": "runs",
       "note": "Reads the bootstrap-assumption result.",
-      "evidence_producer": "runtime_bootstrap_assumption_probe"
+      "evidence_producer": "runtime_bootstrap_assumption_probe",
+      "proven_by": {
+        "scenario": "runtime-substrate-real-adapter-handshake-pressure-example-smoke",
+        "build": "20bd4867a7a046b8ef12efc6c6f40245",
+        "date": "2026-11-11",
+        "note": "same smoke (version_negotiation check); genesis/unsafe-defaults checks need the mounted node config (F183)"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "completed",
+            "equals": 1
+          }
+        ]
+      }
     },
     "runtime_txsubmission_batch_pressure": {
       "status": "runs",
@@ -405,7 +528,13 @@
     },
     "runtime_mempool_failure_probe": {
       "status": "runs",
-      "note": "Package-aware tx-submission probe (F53 fixed the responder bit; mempool mode measured)."
+      "note": "Package-aware tx-submission probe (F53 fixed the responder bit; mempool mode measured).",
+      "proven_by": {
+        "scenario": "runtime-substrate-mempool-failure-containment-mixed-amaru",
+        "build": "cf8e64484ec9bd9e7e701d963f6b3e73",
+        "date": "2026-11-11",
+        "note": "mixed Amaru 20261029 + cardano 10.7.1 package smoke: fatal error contained, session survived"
+      }
     },
     "minimum_adopted_block_range_observed": {
       "status": "runs",
