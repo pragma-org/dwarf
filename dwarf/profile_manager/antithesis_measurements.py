@@ -213,12 +213,15 @@ def bind_measurements(files, request, scenario, versions, workload):
             workload_service=compose['services'].get('dwarf-workload')
             if workload_service is not None:
                 workload_service.setdefault('volumes',[]).append(tracer_volume+':/inputs/tracer-'+service+':ro')
+                # The node runs the measurement copy of its config: the probes read that one (F183).
+                workload_service['volumes'].append(config_volume+':/inputs/config-'+service+':ro')
                 runtime_file='environment/dwarf-workload/package/runtime.json'
                 if runtime_file in files:
                     runtime_body=json.loads(files[runtime_file])
                     for node in [*runtime_body.get('nodes',[]),*runtime_body.get('haskell_nodes',[])]:
                         if node.get('name')==service or node.get('id')==service:
                             node['log_path']='/inputs/tracer-'+service+'/logs'
+                            node['config_path']='/inputs/config-'+service+'/configs/config.json'
                     files[runtime_file]=json.dumps(runtime_body,sort_keys=True)
             target.setdefault('depends_on',{})[tracer_name]={'condition':'service_started'}
             files['environment/measurements/tracer-config.yaml']=files['environment/tracer-config.yaml']

@@ -82,3 +82,15 @@ def test_in_package_cardano_node_waits_within_the_step_budget(monkeypatch):
     node = {"impl": "cardano-node", "log_path": None, "observation_transport": "antithesis-package"}
     assert probe._first_request_timeout_seconds(node, 2.0) == probe.PACKAGE_FIRST_REQUEST_BUDGET_SECONDS
     assert probe.PACKAGE_FIRST_REQUEST_BUDGET_SECONDS < 240
+
+
+def test_in_package_cardano_node_reads_its_logged_delay_from_the_mounted_output(tmp_path, monkeypatch):
+    """F183: with a mounted log (A4 gives package nodes a log_path) the probe took the docker
+    propagation-gate path and raised; it now scans the mounted output for ncTxSubmissionInitDelay
+    and falls back to the step budget when the line is not there."""
+    logs = tmp_path / "logs"; (logs / "node1.example_3001").mkdir(parents=True)
+    node = {"impl": "cardano-node", "observation_transport": "antithesis-package", "log_path": str(logs)}
+    assert probe._first_request_timeout_seconds(node, 2.0) == probe.PACKAGE_FIRST_REQUEST_BUDGET_SECONDS
+    (logs / "node1.example_3001" / "node-0.json").write_text(
+        '{"at":"2026-11-11T00:00:00Z","data":"ncTxSubmissionInitDelay = TxSubmissionInitDelay 60s"}\n')
+    assert probe._first_request_timeout_seconds(node, 2.0) == 60.0 + probe.FIRST_REQUEST_MARGIN_SECONDS

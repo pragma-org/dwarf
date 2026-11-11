@@ -338,6 +338,27 @@ FIRST_REQUEST_MARGIN_SECONDS = 15.0
 PACKAGE_FIRST_REQUEST_BUDGET_SECONDS = 180.0
 
 
+def _package_logged_init_delay(log_path, pattern) -> float | None:
+    """ncTxSubmissionInitDelay from node output mounted into the package, or None when not logged."""
+    from pathlib import Path as _Path
+
+    if not log_path:
+        return None
+    root = _Path(str(log_path))
+    files = [root] if root.is_file() else sorted(f for f in root.rglob("*") if f.is_file()) if root.is_dir() else []
+    for item in files:
+        try:
+            with item.open(encoding="utf-8", errors="replace") as stream:
+                for line in stream:
+                    match = pattern.search(line)
+                    if match is not None:
+                        value = float(match.group("seconds"))
+                        return value if value > 0 else None
+        except OSError:
+            continue
+    return None
+
+
 def _first_request_timeout_seconds(node: dict, default: float) -> float:
     """How long to wait for the node's first MsgRequestTxIds after MsgInit (F124).
 
@@ -347,12 +368,17 @@ def _first_request_timeout_seconds(node: dict, default: float) -> float:
     """
     if str(node.get("impl") or node.get("implementation") or "") != "cardano-node":
         return default
-    if node.get("observation_transport") == "antithesis-package" and not node.get("log_path"):
-        return max(default, PACKAGE_FIRST_REQUEST_BUDGET_SECONDS)
     try:
         from scripts import runtime_redeemer_container_live_controls as live
     except ImportError:  # pragma: no cover - helper subprocess path
         import runtime_redeemer_container_live_controls as live
+    if node.get("observation_transport") == "antithesis-package":
+        # No docker inspect in the package (F183): the mounted node output is scanned for the logged
+        # delay (a file, or the tracer directory); without it the step budget stands.
+        delay = _package_logged_init_delay(node.get("log_path"), live._TX_SUBMISSION_INIT_DELAY_RE)
+        if delay is not None:
+            return max(default, delay + FIRST_REQUEST_MARGIN_SECONDS)
+        return max(default, PACKAGE_FIRST_REQUEST_BUDGET_SECONDS)
     gate = live._reference_tx_submission_propagation_gate(node, inspect_container=live._inspect_container)
     delay = (gate or {}).get("tx_submission_init_delay_seconds")
     if not isinstance(delay, (int, float)) or isinstance(delay, bool) or delay < 0:

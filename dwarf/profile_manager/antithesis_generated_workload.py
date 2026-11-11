@@ -76,7 +76,7 @@ def _record(node, service, row, compose, *, scenario, routes):
             'image_digest': _image_digest(compose['services'].get(service, {}).get('image')),
             'source_revision': row.get('source_revision'),
             'listen_address': host + ':' + str(port), 'port': port, 'container_listen_address': host + ':' + str(port),
-            'socket_path': routes.get('socket_path'), 'log_path': routes.get('log_path'),
+            'socket_path': routes.get('socket_path'), 'log_path': routes.get('log_path'), 'config_path': routes.get('config_path'),
             'submit_api_url': routes.get('submit_api_url'), 'bootstrap_sentinel': routes.get('bootstrap_sentinel'),
             'observation_transport': 'antithesis-package'}
 
@@ -95,7 +95,8 @@ def _rig_routes(node, compose):
                 'submit_api_url': 'http://' + node['id'] + '.example:' + str(AMARU_SUBMIT_PORT) + '/api/submit/tx' if modern else None,
                 'bootstrap_sentinel': '/inputs/' + node['id'] + '-state/.bootstrap-complete'}
     # cardano-node writes through the shared tracer; its per-forwarder directory is <host>_<port> (A4).
-    return {'socket_path': '/inputs/' + node['id'] + '/node.socket', 'log_path': '/inputs/tracer/logs'}
+    return {'socket_path': '/inputs/' + node['id'] + '/node.socket', 'log_path': '/inputs/tracer/logs',
+            'config_path': '/inputs/' + node['id'] + '-configs/configs/config.json'}
 
 
 def runtime_metadata(scenario, devnet, services, version_binding, compose, *, attached):
@@ -172,6 +173,8 @@ def _rig_mounts(runtime):
     for record in runtime['nodes']:
         if record['impl'] == 'cardano-node':
             mounts.append(record['id'] + '-state:/inputs/' + record['id'] + ':ro')
+            # The node's own config (genesis hashes, flags, AcceptedConnectionsLimit) for the probes (F183).
+            mounts.append(record['id'] + '-configs:/inputs/' + record['id'] + '-configs:ro')
             if 'tracer:/inputs/tracer:ro' not in mounts:
                 mounts.append('tracer:/inputs/tracer:ro')
         else:

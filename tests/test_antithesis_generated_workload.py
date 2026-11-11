@@ -55,8 +55,9 @@ def test_cardano_rig_workload_mounts_every_producer_socket(catalog):
     assert workload['build'] == {'context': './dwarf-workload'} and workload['user'] == '0:0'
     assert workload['labels'] == {'com.antithesis.exclude_from_faults': 'network,kill,pause,stop', 'com.dwarf.build-network': 'none'}
     # A4: the shared tracer is mounted once so the workload can read every cardano node's output.
-    assert workload['volumes'] == ['node1-state:/inputs/node1:ro', 'tracer:/inputs/tracer:ro', 'node2-state:/inputs/node2:ro',
-                                   'node3-state:/inputs/node3:ro', 'dwarf-workload-evidence:/evidence']
+    assert workload['volumes'] == ['node1-state:/inputs/node1:ro', 'node1-configs:/inputs/node1-configs:ro', 'tracer:/inputs/tracer:ro',
+                                   'node2-state:/inputs/node2:ro', 'node2-configs:/inputs/node2-configs:ro',
+                                   'node3-state:/inputs/node3:ro', 'node3-configs:/inputs/node3-configs:ro', 'dwarf-workload-evidence:/evidence']
     assert workload['depends_on'] == {'node1': {'condition': 'service_started'}, 'node2': {'condition': 'service_started'},
                                       'node3': {'condition': 'service_started'}, 'configurator': {'condition': 'service_completed_successfully'}}
     assert workload['environment'] == {'DWARF_ANTITHESIS_PACKAGE_DIR': '/opt/dwarf/package', 'DWARF_ANTITHESIS_READY_TIMEOUT': '900'}
@@ -77,8 +78,8 @@ def test_amaru_rig_workload_mounts_log_and_state_with_the_long_timeout(catalog):
     files, report, binding = bound_rig(scenario, chosen(versions={'amaru': '10.11.20260918'}))
     compose = yaml.safe_load(files['environment/docker-compose.yaml'])
     workload = compose['services']['dwarf-workload']
-    assert workload['volumes'] == ['bootstrap-cardano-state:/inputs/bootstrap-cardano:ro', 'tracer:/inputs/tracer:ro',
-                                   'amaru1-evidence:/inputs/amaru1:ro', 'amaru1-state:/inputs/amaru1-state:ro',
+    assert workload['volumes'] == ['bootstrap-cardano-state:/inputs/bootstrap-cardano:ro', 'bootstrap-cardano-configs:/inputs/bootstrap-cardano-configs:ro',
+                                   'tracer:/inputs/tracer:ro', 'amaru1-evidence:/inputs/amaru1:ro', 'amaru1-state:/inputs/amaru1-state:ro',
                                    'dwarf-workload-evidence:/evidence']
     assert workload['environment']['DWARF_ANTITHESIS_READY_TIMEOUT'] == '2400'
     assert set(workload['depends_on']) == {'bootstrap-cardano', 'amaru1', 'configurator'}

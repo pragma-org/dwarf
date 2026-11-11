@@ -440,3 +440,5 @@ def test_taps_are_always_on_for_every_rig_node_unless_the_scenario_says_none(mon
     assert 'measurement-tracer-relay1:/inputs/tracer-relay1:ro' in compose['services']['dwarf-workload']['volumes']
     runtime=json.loads(result['files']['environment/dwarf-workload/package/runtime.json'])
     assert {n['id']:n.get('log_path') for n in runtime['nodes']}['relay1']=='/inputs/tracer-relay1/logs'
+    assert 'measurement-config-relay1:/inputs/config-relay1:ro' in compose['services']['dwarf-workload']['volumes']
+    assert {n['id']:n.get('config_path') for n in runtime['nodes']}['relay1']=='/inputs/config-relay1/configs/config.json'
