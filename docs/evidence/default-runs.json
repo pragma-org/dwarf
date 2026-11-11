@@ -1109,6 +1109,18 @@
       "group": "Recovery, ledger and consensus"
     },
     {
+      "url": "runs/antithesis-window-taps-20261111.tar.gz",
+      "size_bytes": 22951,
+      "sha256": "59faa364b1bc8a095e30f3baece0a68a520c612c18f39b7b7305380833d8ef2c",
+      "run_id": "external-antithesis-1711ee5bc934be59eb9c036a",
+      "implementation": "cardano-node",
+      "version": "10.7.1",
+      "format": "dwarf-antithesis-run",
+      "coverage_exception": "Antithesis run 5494150c (generated package, default taps, faults on): DWARF assertions and the platform's properties are in external/result.json; tap metrics are rebuilt from the platform's exported dwarf_measurements event lines (first 50), not a full collector window; the platform property 'No unexpected crashes' failed (cardano-node 10.7.1 segfault on restart after a kill)",
+      "title": "Antithesis: TxSubmission window + taps",
+      "group": "Antithesis runs"
+    },
+    {
       "url": "runs/antithesis-taps-20261022.tar.gz",
       "size_bytes": 1593136,
       "sha256": "afb3518b3bb43b95c6336766a074d40c8dff2aa840198137fca0bb7aac9115f3",
