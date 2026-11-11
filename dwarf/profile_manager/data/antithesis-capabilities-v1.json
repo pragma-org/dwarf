@@ -45,7 +45,16 @@
     },
     "load_events_are_ok": {
       "status": "runs",
-      "note": ""
+      "note": "",
+      "proven_by": {
+        "scenario": "phase3-runtime-generated-haskell3-node1-malformed-handshake",
+        "build": "16894293ea61d013519595ca7098bcfb",
+        "date": "2026-11-11",
+        "note": "same smoke; evaluated 2 load events"
+      },
+      "antithesis_assertion": {
+        "kind": "liveness"
+      }
     },
     "parser_exit_status": {
       "status": "runs",
@@ -282,11 +291,17 @@
     },
     "shim_peer_malformed_handshake": {
       "status": "runs",
-      "note": "Raw handshake bytes to the node over the compose network (F175 A1: node_wire_endpoint)."
+      "note": "Raw handshake bytes to the node over the compose network (F175 A1: node_wire_endpoint).",
+      "proven_by": {
+        "scenario": "phase3-runtime-generated-haskell3-node1-malformed-handshake",
+        "build": "16894293ea61d013519595ca7098bcfb",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: shim reached node1 by service name (F175 A1); 2 load events ok"
+      }
     },
     "runtime_duplex_promotion_pressure": {
       "status": "runs",
-      "note": "N2N duplex pressure over the compose network; liveness by TCP connect (F175 A2)."
+      "note": "N2N duplex pressure over the compose network; liveness by TCP connect (F175 A2). Hard limit comes only from the node config, which the workload cannot read yet (smoke 2026-11-11: hard_limit not measured)."
     },
     "duplex_promotion_slot_limit_enforced": {
       "status": "runs",
@@ -295,12 +310,33 @@
     },
     "runtime_panic_path_probe": {
       "status": "runs",
-      "note": "Wire probe over the compose network; node_stayed_up by TCP connect (F175 A2)."
+      "note": "Wire probe over the compose network; node_stayed_up by TCP connect (F175 A2).",
+      "proven_by": {
+        "scenario": "runtime-substrate-panic-path-containment-example-smoke",
+        "build": "dd8ee76f3196ca3ddf952cff3e2e7a70",
+        "date": "2026-11-11",
+        "note": "cardano-only package smoke: probe ran, node_stayed_up by TCP connect (F175 A2)"
+      }
     },
     "panic_path_contained": {
       "status": "runs",
       "note": "Reads the panic-path probe result.",
-      "evidence_producer": "runtime_panic_path_probe"
+      "evidence_producer": "runtime_panic_path_probe",
+      "proven_by": {
+        "scenario": "runtime-substrate-panic-path-containment-example-smoke",
+        "build": "dd8ee76f3196ca3ddf952cff3e2e7a70",
+        "date": "2026-11-11",
+        "note": "same smoke: panic_avoided true, node stayed up"
+      },
+      "antithesis_assertion": {
+        "kind": "safety",
+        "measured_when": [
+          {
+            "field": "node_stayed_up",
+            "equals": true
+          }
+        ]
+      }
     }
   },
   "evidence_producer": "Optional per assertion: the probe primitive that writes the proof this assertion reads. When that producer is skipped in a scenario (unsupported or delegated-fault), the assertion is classified unsupported with a gap naming the producer instead of failing for a proof the package can never write."
