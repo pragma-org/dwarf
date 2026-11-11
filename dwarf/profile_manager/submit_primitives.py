@@ -323,6 +323,18 @@ def _query_utxo_by_tx_in(cli: str, socket_path: str, magic: int, tx_in: str, des
     return json.loads(destination.read_text(encoding="utf-8"))
 
 
+def _cli_tx_file(tx_path: Path, out_dir: Path) -> Path:
+    """The transaction as cardano-cli reads it: a text envelope (F171). Raw CBOR is wrapped as-is."""
+    data = Path(tx_path).read_bytes()
+    staged = out_dir / f"cli-{Path(tx_path).name}"
+    if data.lstrip()[:1] == b"{":
+        staged.write_bytes(data)
+    else:
+        staged = staged.with_suffix(staged.suffix + ".json")
+        staged.write_text(json.dumps({"type": "Tx ConwayEra", "description": "", "cborHex": data.hex()}))
+    return staged
+
+
 def _submit_via_cardano_cli(*, run_dir: Path, runtime_metadata_path: Path, node_id: str, tx_path: Path,
                             out_dir: Path) -> dict:
     """Submit to a cardano-node that has no submit-API through cardano-cli on its own socket."""
@@ -348,8 +360,7 @@ def _submit_via_cardano_cli(*, run_dir: Path, runtime_metadata_path: Path, node_
             if not cli or not socket_path:
                 return {"http": 0, "outcome": "not-measured", "via": "cardano-cli",
                         "note": "no cardano-cli or mounted node socket inside the package"}
-            staged = out_dir / f"cli-{tx_path.name}"
-            shutil.copyfile(tx_path, staged)
+            staged = _cli_tx_file(tx_path, out_dir)
             tx_id = _transaction_id(cli, staged)
             response = _submit_reference_cli(cli, staged, socket_path=socket_path, network_magic=magic)
             in_mempool = on_chain = None
@@ -365,8 +376,7 @@ def _submit_via_cardano_cli(*, run_dir: Path, runtime_metadata_path: Path, node_
             return {"http": 0, "outcome": "not-measured", "via": "cardano-cli",
                     "note": "no Docker controller to run cardano-cli beside the node"}
         socket_path = str(node.get("container_socket_path") or "")
-        staged = out_dir / f"cli-{tx_path.name}"
-        shutil.copyfile(tx_path, staged)
+        staged = _cli_tx_file(tx_path, out_dir)
         with _containerized_cardano_workload(runtime_root=Path(str(runtime["runtime_root"])), runtime=runtime,
                                              node=node, output_dir=out_dir, controller=controller) as (workload, _n):
             cli = str(workload["support_binaries"]["cardano-cli"])

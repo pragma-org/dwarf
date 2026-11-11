@@ -456,3 +456,25 @@ def test_package_cli_submission_uses_the_local_cli_and_the_mounted_socket(tmp_pa
                                         tx_path=tmp_path / "outputs/build-segments/subjects/prop3.tx", out_dir=out)
     assert seen == {"cli": "/usr/local/bin/cardano-cli", "socket": "/inputs/node2/node.socket", "magic": 42}
     assert result["outcome"] == "reject" and result["via"] == "cardano-cli"
+
+
+def test_raw_cbor_transactions_are_wrapped_in_a_text_envelope_for_the_cli(tmp_path, monkeypatch):
+    """F171: cardano-cli reads text envelopes only; a raw .cbor fixture made 'transaction txid'
+    fail and the reference outcome 'not-measured' (vkey package smoke)."""
+    runtime = _package_runtime(tmp_path)
+    raw = tmp_path / "raw.cbor"
+    raw.write_bytes(_tx("prop3.tx"))
+    from scripts import runtime_redeemer_container_live_controls as live
+    from scripts import runtime_cardano_measurement_calibration as calib
+    seen = {}
+    def txid(cli, path):
+        seen["txid"] = json.loads(Path(path).read_text())
+        return "ab" * 32
+    monkeypatch.setattr(calib, "_transaction_id", txid)
+    monkeypatch.setattr(live, "_submit_reference_cli", lambda cli, path, *, socket_path, network_magic:
+                        seen.update(submit=json.loads(Path(path).read_text())) or {"http": 202, "body": "ok", "node_response_observed": True})
+    monkeypatch.setattr(__import__("shutil"), "which", lambda name: "/usr/local/bin/" + name)
+    out = tmp_path / "out"; out.mkdir()
+    sp._submit_via_cardano_cli(run_dir=tmp_path, runtime_metadata_path=runtime, node_id="node2", tx_path=raw, out_dir=out)
+    for key in ("txid", "submit"):
+        assert seen[key]["type"] == "Tx ConwayEra" and bytes.fromhex(seen[key]["cborHex"]) == _tx("prop3.tx")
