@@ -205,7 +205,7 @@ def test_anonymous_verification_materializes_runtime_only_package(built,monkeypa
     original,_=prep._unpack(base64.b64decode(built['archive_base64']))
     assert not any(n.startswith('provenance/') for n in files)
     after=yaml.safe_load(files['docker-compose.yaml'][0]);before=yaml.safe_load(original['docker-compose.yaml'][0])
-    pushed={row['service']:row['destination'] for row in result['receipt']['images']}
+    pushed={name:row['destination'] for row in result['receipt']['images'] for name in row.get('services') or [row['service']]}
     for name,service in before['services'].items():
         # Every controller-built service (the workload and, with taps on by default, the measurement
         # services) is exported as its pushed image; public images keep their own reference.

@@ -257,7 +257,7 @@ def _push(directory,op,receipt,progress,*,secret_id,controller):
 
 def _verify_images(directory,receipt,progress):
     files=_files(directory,receipt,'source')
-    compose=yaml.safe_load(files['docker-compose.yaml'][0]);cache={};rows={r['service']:r for r in receipt['images']}
+    compose=yaml.safe_load(files['docker-compose.yaml'][0]);cache={};rows={name:r for r in receipt['images'] for name in (r.get('services') or [r['service']])}
     deadline=time.monotonic()+600
     private=[]
     for name,service in compose['services'].items():

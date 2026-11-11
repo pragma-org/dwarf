@@ -127,7 +127,25 @@ def _plan(files):
         if network not in (None, 'none'):
             raise PackageError('Unsupported build network.', status=422)
         builds.append({'service':name, 'context':context, 'dockerfile':dockerfile, 'network':network})
-    return compose, builds
+    return compose, _dedupe_builds(builds)
+
+
+def _dedupe_builds(builds):
+    """One build per (context, dockerfile, network): services that share a build share the image,
+    so the registry gets one package name for it (F179: the per-node measure-config-* helpers
+    would each have needed a public click). The canonical service is the one not named as a
+    helper; the others are its aliases."""
+    groups = {}
+    for build in builds:
+        key = (build['context'], build['dockerfile'], build['network'])
+        first = groups.get(key)
+        if first is None:
+            groups[key] = dict(build, aliases=[])
+        elif first['service'].startswith('measure-') and not build['service'].startswith('measure-'):
+            groups[key] = dict(build, aliases=[first['service'], *first['aliases']])
+        else:
+            first['aliases'].append(build['service'])
+    return list(groups.values())
 
 
 def start_build(preparation_id, *, request_id=None, controller=None):
@@ -241,16 +259,20 @@ def _worker(directory, status, source, files, compose, builds, global_lock, job_
             _save(directory/'status.json', status)
             rows = _controller_build(status, source, builds, controller, directory)
             by_service = {}
+            aliases = {build['service']: build.get('aliases', []) for build in builds}
             for row in rows:
-                status['built_images'].append(dict(row))
+                record = dict(row)
                 if 'artifact_id' not in row:
                     by_service[row['service']] = row['reference']
+                    record['services'] = [row['service'], *aliases.get(row['service'], [])]
+                status['built_images'].append(record)
             for build in builds:
                 name = build['service']
                 if name not in by_service:
                     raise BuildFailure(f'Controller did not build {name}.')
-                compose['services'][name].pop('build')
-                compose['services'][name]['image'] = by_service[name]
+                for member in (name, *build.get('aliases', [])):
+                    compose['services'][member].pop('build')
+                    compose['services'][member]['image'] = by_service[name]
             _save(directory/'status.json', status)
         if builds:
             (package/'docker-compose.yaml').write_text(yaml.safe_dump(compose, sort_keys=False))

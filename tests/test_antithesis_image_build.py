@@ -127,7 +127,7 @@ def test_generated_build_materializes_separate_package_without_changing_selectio
     original = zipfile.ZipFile(io.BytesIO(base64.b64decode(prepared['archive_base64'])))
     before = yaml.safe_load(original.read('docker-compose.yaml'))
     after = yaml.safe_load(archive.read('docker-compose.yaml'))
-    built = {row['service']: row['reference'] for row in receipt['built_images']}
+    built = {name: row['reference'] for row in receipt['built_images'] for name in row.get('services', [row['service']])}
     expected = before['services']['sm-workload'].copy(); expected.pop('build')
     expected['image'] = built['sm-workload']
     assert after['services']['sm-workload'] == expected
@@ -375,3 +375,24 @@ def test_plan_rejects_unknown_build_network():
     body={'services':{'w':{'build':{'context':'./w'},'labels':{'com.dwarf.build-network':'host'}}}}
     files={'docker-compose.yaml':(yaml.safe_dump(body).encode(),0o644),'w/Dockerfile':(b'FROM x',0o644)}
     with pytest.raises(module().PackageError,match='Unsupported build network'):module()._plan(files)
+
+
+def test_services_that_share_a_dockerfile_share_one_build_and_one_registry_name(prepared, monkeypatch):
+    """F179: with taps on by default the measurement helper services (dwarf-measurements and one
+    measure-config-<node> per cardano node) all build ./measurements/Dockerfile. One build, one
+    image, one GHCR name — not one public click per node name."""
+    build = module(); calls = []
+    identifier = build.start_build(prepared['receipt']['id'], controller=fake_controller(calls))['id']
+    assert wait(build, identifier)['state'] == 'built'
+    from profile_manager import antithesis_preparation as prep
+    files, _ = prep._unpack(base64.b64decode(prepared['archive_base64']))
+    _, plan = build._plan(files)   # the controller derives its plan from the same function
+    measurement = [b for b in plan if b['context'] == 'measurements']
+    assert len(measurement) == 1 and measurement[0]['service'] == 'dwarf-measurements'
+    assert measurement[0]['aliases'] and all(a.startswith('measure-config-') for a in measurement[0]['aliases'])
+    result = build.read_build_result(identifier)
+    row = next(r for r in result['receipt']['built_images'] if r['service'] == 'dwarf-measurements')
+    assert set(row['services']) == {'dwarf-measurements', *measurement[0]['aliases']}
+    compose = yaml.safe_load(zipfile.ZipFile(io.BytesIO(base64.b64decode(result['archive_base64']))).read('docker-compose.yaml'))
+    assert {compose['services'][n]['image'] for n in row['services']} == {row['reference']}
+    assert all('build' not in compose['services'][n] for n in row['services'])
