@@ -135,16 +135,23 @@ def _wait(predicate, *, attempts: int = 20, delay: float = 1.0) -> bool:
     return predicate()
 
 
-def _real_kill_node(node: dict) -> dict:
+_KILL_SIGNALS = ("TERM", "KILL")
+
+
+def _real_kill_node(node: dict, signal_name: str = "TERM") -> dict:
+    """Stop a node with SIGTERM (clean) or SIGKILL (unclean: the node cannot flush its ChainDB)."""
+    if signal_name not in _KILL_SIGNALS:
+        raise ValueError(f"unsupported kill signal {signal_name!r}; use one of {_KILL_SIGNALS}")
+    sig = getattr(signal, "SIG" + signal_name)
     name = _node_container(node)
     if name and _docker_available() and _container_exists(name):
         before = _container_running(name)
-        _docker("kill", "-s", "TERM", name, timeout=30)
+        _docker("kill", "-s", signal_name, name, timeout=30)
         down = _wait(lambda: not _container_running(name), attempts=20, delay=1.0)
         return {
             "mechanism": "docker",
             "handle": name,
-            "signal": "SIGTERM",
+            "signal": "SIG" + signal_name,
             "running_before": before,
             "verified_down": down,
             "stopped": bool(down),
@@ -155,11 +162,11 @@ def _real_kill_node(node: dict) -> dict:
             return {"mechanism": "process", "pid": pid, "verified_down": True, "stopped": True,
                     "note": "pid already not alive"}
         try:
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, sig)
         except OSError as exc:  # noqa: BLE001
             return {"mechanism": "process", "pid": pid, "error": f"{type(exc).__name__}: {exc}", "stopped": False}
         down = _wait(lambda: not _pid_alive(pid), attempts=20, delay=1.0)
-        return {"mechanism": "process", "pid": pid, "signal": "SIGTERM", "verified_down": down, "stopped": bool(down)}
+        return {"mechanism": "process", "pid": pid, "signal": "SIG" + signal_name, "verified_down": down, "stopped": bool(down)}
     return {
         "mechanism": "none",
         "stopped": False,
@@ -619,9 +626,9 @@ def apply_recovery_mode(*, metadata: dict, mode: str, config: dict, live: bool =
                 result = {"target_node": target_id, "stopped": False,
                           "error": f"node {target_id!r} not found in runtime metadata"}
             else:
-                result = {"target_node": target_id, **_real_kill_node(node)}
+                result = {"target_node": target_id, **_real_kill_node(node, str(config.get("signal") or "TERM").upper())}
             # record only the real observed up/down, do not fabricate tips
-            overrides.setdefault("node_lifecycle", {})[target_id] = {"action": "kill", **{k: result.get(k) for k in ("stopped", "verified_down", "mechanism")}}
+            overrides.setdefault("node_lifecycle", {})[target_id] = {"action": "kill", **{k: result.get(k) for k in ("stopped", "verified_down", "mechanism", "signal")}}
     elif mode == "restart_node":
         target_id = str(config["target_node"])
         if not live:

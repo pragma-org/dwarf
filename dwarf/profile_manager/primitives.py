@@ -5912,6 +5912,8 @@ class _RuntimeRecoveryFaultPrimitive(LoadPrimitive):
 
     def _build_config(self, output_dir: Path, state: dict) -> dict:
         config = {"target_node": str(self.params["target_node"])}
+        if "signal" in self.params:  # runtime_kill_node: TERM (default, clean) or KILL (unclean stop)
+            config["signal"] = str(self.params["signal"]).upper()
         for key in ("requested_rollback_slots", "security_parameter_k"):
             if key in self.params:
                 config[key] = int(self.params[key])

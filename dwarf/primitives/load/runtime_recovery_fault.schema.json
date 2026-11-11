@@ -6,6 +6,7 @@
   "properties": {
     "runtime_metadata_path": { "type": "string", "minLength": 1 },
     "target_node": { "type": "string", "minLength": 1 },
+    "signal": { "type": "string", "enum": ["TERM", "KILL"], "description": "runtime_kill_node only: TERM (default, clean stop) or KILL (unclean stop; the node cannot flush its ChainDB)" },
     "requested_rollback_slots": { "type": "integer", "minimum": 0 },
     "security_parameter_k": { "type": "integer", "minimum": 1 },
     "partition_max_seconds": { "type": "number", "exclusiveMinimum": 0 },
