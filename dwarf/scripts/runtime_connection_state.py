@@ -169,6 +169,18 @@ def _resolve_docker_target_process(node: dict, *, proc_root: Path) -> dict | Non
 
 def resolve_target_process(runtime_metadata_path: Path, target_node: str, *, proc_root: Path = Path("/proc")) -> dict:
     node = _load_runtime_node(runtime_metadata_path, target_node)
+    if node.get("observation_transport") == "antithesis-package":
+        # No Docker, pid or /proc of another service inside the package: the node is alive when
+        # its compose address accepts a connection (A2). Callers treat RuntimeError as "down".
+        host, _, port_text = str(node.get("listen_address") or "").rpartition(":")
+        port = int(port_text) if port_text.isdigit() else int(node.get("port") or 0)
+        for _ in range(3):
+            try:
+                with socket.create_connection((host, port), timeout=2.0):
+                    return {"pid": None, "port": port, "node": node, "liveness_basis": "tcp-connect"}
+            except OSError:
+                continue
+        raise RuntimeError(f"package node {target_node!r} did not accept a connection at {host}:{port}")
     docker_target = _resolve_docker_target_process(node, proc_root=proc_root)
     if docker_target is not None:
         return docker_target

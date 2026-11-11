@@ -56,3 +56,29 @@ def test_pid_file_resolution_accepts_amaru_process_name(tmp_path, monkeypatch):
 
     assert target["pid"] == 417
     assert target["port"] == 43231
+
+
+def test_package_node_liveness_is_a_tcp_connect_to_its_service(tmp_path, monkeypatch):
+    """A2: inside an Antithesis package there is no Docker, pid or /proc of the node. Liveness is a
+    connect to its compose address; a refused connect means down (same RuntimeError as before)."""
+    import pytest
+    node = {"id": "node1", "port": 3001, "listen_address": "node1.example:3001",
+            "observation_transport": "antithesis-package"}
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps({"nodes": [node]}))
+    monkeypatch.setattr(api.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no docker/ps in a package")))
+    seen = []
+
+    class _Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+
+    monkeypatch.setattr(api.socket, "create_connection", lambda addr, timeout=None: seen.append(addr) or _Conn())
+    target = api.resolve_target_process(path, "node1")
+    assert target["pid"] is None and target["port"] == 3001 and seen[0] == ("node1.example", 3001)
+
+    def refused(addr, timeout=None):
+        raise ConnectionRefusedError()
+    monkeypatch.setattr(api.socket, "create_connection", refused)
+    with pytest.raises(RuntimeError):
+        api.resolve_target_process(path, "node1")

@@ -7240,11 +7240,9 @@ def _runtime_node_endpoint(node: dict[str, Any], params: dict[str, Any]) -> tupl
     explicit_host = str(params.get("target_host") or "").strip()
     if explicit_host and explicit_host not in {"127.0.0.1", "localhost"}:
         return explicit_host, int(params.get("target_port") or node["port"])
-    container_ip = str(node.get("container_ip") or "").strip()
-    listen = str(node.get("container_listen_address") or "")
-    if container_ip and ":" in listen:
-        return container_ip, int(listen.rsplit(":", 1)[1])
-    return (explicit_host or "127.0.0.1"), int(node["port"])
+    # One rule for every wire primitive (container, package, host-era): runtime_common.
+    from scripts.runtime_common import node_wire_endpoint
+    return node_wire_endpoint(node, explicit_host)
 
 
 class ShimPeerRawBytes(LoadPrimitive):

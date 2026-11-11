@@ -139,6 +139,9 @@ def test_endpoint_prefers_the_container_address_over_the_host_loopback_port():
     assert primitives._runtime_node_endpoint(node, {"target_host": "127.0.0.1"}) == ("10.192.8.2", 3001)
     assert primitives._runtime_node_endpoint(node, {"target_host": "192.0.2.16"}) == ("192.0.2.16", 1)
     assert primitives._runtime_node_endpoint({"port": 34301}, {}) == ("127.0.0.1", 34301)
+    # Inside an Antithesis package (no container_ip) the shim peers reach the compose hostname.
+    package = {"port": 3001, "container_listen_address": "node1.example:3001", "observation_transport": "antithesis-package"}
+    assert primitives._runtime_node_endpoint(package, {"target_host": "127.0.0.1"}) == ("node1.example", 3001)
 
 
 def test_shim_peer_connects_to_the_container_endpoint_of_the_prepared_runtime(tmp_path):
