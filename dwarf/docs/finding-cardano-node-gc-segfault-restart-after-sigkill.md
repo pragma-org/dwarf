@@ -5,6 +5,13 @@
 (`testnet_42`) on the Antithesis platform. No exploit. A crash on restart, with two core dumps and
 one identical stack. Local reproduction outside Antithesis is proposed, not yet done.
 
+> **Status note (2026-11-11, after the local run):** the evidence so far **points to a platform
+> (Antithesis) effect, not a cardano-node bug.** The crash appears only on the platform; the same
+> image, same configuration and the same SIGKILL-and-restart on a plain Docker host do not crash.
+> The two platform-only differences are the `libvoidstar` preload and the injector's choice of the
+> kill moment. Treat this note as a platform-interaction report until the instrumentation-off run
+> (test run `a5fcb78d…`) is in. Do not report it upstream to cardano-node on this evidence.
+
 ## Summary
 
 In three one-hour Antithesis runs of the same package, every run had the same event:
@@ -128,8 +135,11 @@ injector. The next step is the instrumentation-off platform run (DWARF request f
 
 ## Recommendations
 
-1. Report to `IntersectMBO/cardano-node` with the two cores, the binary digest and this stack;
-   reference ouroboros-consensus #1885.
+1. ~~Report to `IntersectMBO/cardano-node`~~ — not on this evidence. First separate the node from
+   the platform (items 2 and 3). If the crash survives an instrumentation-off run **and** reproduces
+   off-platform, then report with the two cores, the binary digest and this stack, referencing
+   ouroboros-consensus #1885. If it does not, report it to Antithesis as a preload/GHC-runtime
+   interaction instead.
 2. Run the same package once with the platform's instrumentation off, to separate the node from
    the preload.
 3. ~~Build and run the local kill-and-restart scenario~~ — done, no crash; repeat it several times
