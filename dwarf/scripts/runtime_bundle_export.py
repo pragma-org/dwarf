@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import io
 import json
 import os
 import shutil
@@ -52,13 +53,37 @@ def _relative_artifact_path(artifact_path: Path) -> str:
     return str(artifact_path)
 
 
-def _build_readme(target_run_id: str) -> str:
+REDACTED_NAMESPACE = "<operator-namespace>"
+
+
+def _operator_namespace_prefixes(run_dir: Path) -> list[str]:
+    """The host paths the retained run plan declares (F190): its `storage` block names the
+    operator's runs and state directories by contract, which a public export must not carry."""
+    try:
+        plan = json.loads((run_dir / "inputs" / "run-service-plan.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    storage = plan.get("storage") if isinstance(plan, dict) else None
+    values = [str(v).rstrip("/") for v in (storage or {}).values()] if isinstance(storage, dict) else []
+    return sorted({v for v in values if v.startswith("/") and len(v) > 1}, key=len, reverse=True)
+
+
+def _redact_json_text(text: str, prefixes: list[str]) -> str:
+    for prefix in prefixes:
+        text = text.replace(prefix, REDACTED_NAMESPACE)
+    return text
+
+
+def _build_readme(target_run_id: str, *, host_paths_redacted: bool = False) -> str:
     return "\n".join(
         [
             "Dwarf Bundle Export",
             "",
             f"This archive contains the run bundle directory '{target_run_id}/'.",
             "",
+            *(["Public export: operator namespace paths were redacted from the JSON artifacts",
+               f"(replaced by {REDACTED_NAMESPACE}); the retained run-plan stamp does not verify on this copy.", ""]
+              if host_paths_redacted else []),
             "What is included:",
             "- The exported run bundle directory with its existing artifacts",
             "- The in-bundle promotion, dedupe, and signature records when present",
@@ -83,14 +108,22 @@ def _signature_filename() -> str:
     return "signature.json"
 
 
-def _add_run_bundle_to_tar(handle: tarfile.TarFile, *, run_dir: Path, bundle_root_name: str):
+def _add_run_bundle_to_tar(handle: tarfile.TarFile, *, run_dir: Path, bundle_root_name: str,
+                           redact_prefixes: list[str] | None = None):
     for path in sorted(run_dir.rglob("*")):
         if not path.is_file():
             continue
         relpath = path.relative_to(run_dir)
         if str(relpath).startswith("outputs/export/"):
             continue
-        handle.add(path, arcname=str(Path(bundle_root_name) / relpath), recursive=False)
+        arcname = str(Path(bundle_root_name) / relpath)
+        if redact_prefixes and path.suffix == ".json":
+            body = _redact_json_text(path.read_text(encoding="utf-8", errors="replace"), redact_prefixes).encode("utf-8")
+            info = handle.gettarinfo(path, arcname=arcname)
+            info.size = len(body)
+            handle.addfile(info, io.BytesIO(body))
+            continue
+        handle.add(path, arcname=arcname, recursive=False)
 
 
 def verify_export_signature(export_dir: Path) -> dict:
@@ -114,19 +147,22 @@ def run_export(
     target_run_id: str,
     signing_actor: str,
     key_path: Path | None,
+    redact_host_paths: bool = False,
 ) -> dict:
     bundle_root_name = target_run_id
     tarball_name = _tarball_filename(target_run_id)
+    redact_prefixes = _operator_namespace_prefixes(run_dir) if redact_host_paths else []
 
     with tempfile.TemporaryDirectory() as tmp:
         temp_root = Path(tmp)
         tarball_path = temp_root / tarball_name
         readme_path = temp_root / "README-export.txt"
-        readme_path.write_text(_build_readme(target_run_id), encoding="utf-8")
+        readme_path.write_text(_build_readme(target_run_id, host_paths_redacted=redact_host_paths), encoding="utf-8")
 
         with tarfile.open(tarball_path, "w:gz") as handle:
             handle.add(readme_path, arcname="README-export.txt", recursive=False)
-            _add_run_bundle_to_tar(handle, run_dir=run_dir, bundle_root_name=bundle_root_name)
+            _add_run_bundle_to_tar(handle, run_dir=run_dir, bundle_root_name=bundle_root_name,
+                                   redact_prefixes=redact_prefixes)
 
         tarball_sha256 = runtime_bundle_sign._sha256_file(tarball_path)
         tarball_size_bytes = tarball_path.stat().st_size
@@ -166,6 +202,7 @@ def run_export(
             "key_source": signature.get("key_source"),
             "operator_warning": signature.get("operator_warning"),
             "signing_unavailable": signature.get("signing_unavailable"),
+            "host_paths_redacted": bool(redact_host_paths),
         }
         artifact_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         payload["result_relpath"] = _relative_artifact_path(artifact_path)

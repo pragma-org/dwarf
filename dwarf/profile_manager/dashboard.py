@@ -4253,10 +4253,13 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
         run_dir = runs_dir / run_id
         if not run_dir.is_dir():
             return (404, "text/plain; charset=utf-8", b"not found\n")
+        # F190: ?public=1 exports a copy with the operator namespace paths redacted
+        # (for publication); it is cached and preserved separately from the private export.
+        public = (parse_qs(parsed.query).get("public") or ["0"])[0] in ("1", "true", "yes")
         try:
             from scripts import runtime_bundle_export
 
-            export_dir = run_dir / "outputs" / "export"
+            export_dir = run_dir / "outputs" / ("export-public" if public else "export")
             export_dir.mkdir(parents=True, exist_ok=True)
             lock_path = export_dir / ".dashboard-export.lock"
             with lock_path.open("a+b") as lock_stream:
@@ -4281,6 +4284,7 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
                         target_run_id=run_id,
                         signing_actor=os.environ.get("USER", "dwarf"),
                         key_path=key_path,
+                        redact_host_paths=public,
                     )
                     if (
                         runtime_bundle_export.verify_export_signature(export_dir).get("verdict")
@@ -4289,7 +4293,7 @@ def dispatch_api_request(path, *, runs_dir=None, bundles_dir=None):
                         raise RuntimeError("generated bundle export signature did not verify")
                 fcntl.flock(lock_stream.fileno(), fcntl.LOCK_UN)
             bundles_dir.mkdir(parents=True, exist_ok=True)
-            preserved_path = bundles_dir / f"{run_id}.tar.gz"
+            preserved_path = bundles_dir / (f"{run_id}-public.tar.gz" if public else f"{run_id}.tar.gz")
             if not preserved_path.exists():
                 shutil.copy2(tarball_path, preserved_path)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
