@@ -9,8 +9,11 @@ one identical stack. Local reproduction outside Antithesis is proposed, not yet 
 > (Antithesis) effect, not a cardano-node bug.** The crash appears only on the platform; the same
 > image, same configuration and the same SIGKILL-and-restart on a plain Docker host do not crash.
 > The two platform-only differences are the `libvoidstar` preload and the injector's choice of the
-> kill moment. Treat this note as a platform-interaction report until the instrumentation-off run
-> (test run `a5fcb78d…`) is in. Do not report it upstream to cardano-node on this evidence.
+> kill moment. Treat this note as a platform-interaction report until a real instrumentation-off run is in.
+> Run `a5fcb78d…` was meant to be that run but went out **instrumented** (a driver bug dropped the
+> flag; the platform parameters show `custom.instrumented: true`); it crashed too, so the count is
+> now 4 of 4 instrumented runs. The instrumentation-off run is resubmitted. Do not report it
+> upstream to cardano-node on this evidence.
 
 ## Summary
 
@@ -52,6 +55,7 @@ same package, never crashed in any run.
 | dc774cde43e2…-64-11 | 89e67d3e | node2 | kill ≈5076.9 → start 5084.82 → SIGSEGV 5084.83 | 259439 | — (not downloaded) |
 | eaec880ac0cf…-64-11 | 1b956fcc | node1 | start 5119.23 → SIGSEGV 5119.27 | 268121 | `7aa85de58fbf19b4` |
 | 5494150c6e67…-64-11 | 94a2d5dc | node2 | kill 4230.7 (exit 137) → start 4238.69 → SIGSEGV 4238.70 | 107346 | `5e289f9e7c7668b6` |
+| a5fcb78d773f…-64-11 | 67347004 | node1 | exit 139 (instrumented after all: the submission driver dropped the flag) | — | — (not downloaded) |
 
 - Package: `antithesis/generated/runtime-substrate-txsubmission-window-pressure-example-smoke`
   in `pragma-org/dwarf` (two cardano-node 10.7.1 producers, CF configurator rig, tracer).
