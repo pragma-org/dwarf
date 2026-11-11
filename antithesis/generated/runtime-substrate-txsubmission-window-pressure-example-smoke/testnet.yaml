@@ -30,8 +30,8 @@ protocolParams:
 ---
 
 ---
-ExperimentalHardForksEnabled: true
-ExperimentalProtocolsEnabled: true
+ExperimentalHardForksEnabled: false
+ExperimentalProtocolsEnabled: false
 LastKnownBlockVersion-Alt: 0
 LastKnownBlockVersion-Major: 6
 LastKnownBlockVersion-Minor: 0

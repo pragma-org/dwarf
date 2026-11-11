@@ -128,8 +128,15 @@ services:
       com.dwarf.build-network: none
     volumes:
     - node1-state:/inputs/node1:ro
+    - node1-configs:/inputs/node1-configs:ro
+    - tracer:/inputs/tracer:ro
     - node2-state:/inputs/node2:ro
+    - node2-configs:/inputs/node2-configs:ro
     - dwarf-workload-evidence:/evidence
+    - measurement-tracer-node1:/inputs/tracer-node1:ro
+    - measurement-config-node1:/inputs/config-node1:ro
+    - measurement-tracer-node2:/inputs/tracer-node2:ro
+    - measurement-config-node2:/inputs/config-node2:ro
     depends_on:
       node1:
         condition: service_started
@@ -137,7 +144,7 @@ services:
         condition: service_started
       configurator:
         condition: service_completed_successfully
-    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:fa94ef7666e58c73335624e212217219e171857ac92d7f5f1c0f2c162e9eb296
+    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:eae1d0c651400b1ca1973d682c895e729d6f8a144b1ea681fe697e2af2c415c8
   measure-config-node1:
     platform: linux/amd64
     container_name: measure-config-node1
@@ -154,7 +161,7 @@ services:
         condition: service_completed_successfully
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:c02e33d3b7f3340465cf74883a06eb4454db21f0651b00583a041de4a026b006
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:07c1591a35d6a8e5bd1f156b717efb480b78e12b805fe29ade45febfae28939d
   measure-tracer-node1:
     image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
     container_name: measure-tracer-node1
@@ -184,7 +191,7 @@ services:
         condition: service_completed_successfully
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:c02e33d3b7f3340465cf74883a06eb4454db21f0651b00583a041de4a026b006
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:07c1591a35d6a8e5bd1f156b717efb480b78e12b805fe29ade45febfae28939d
   measure-tracer-node2:
     image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
     container_name: measure-tracer-node2
@@ -212,7 +219,7 @@ services:
     - measurement-tracer-node2:/inputs/measurement-tracer-node2:ro
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:c02e33d3b7f3340465cf74883a06eb4454db21f0651b00583a041de4a026b006
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:07c1591a35d6a8e5bd1f156b717efb480b78e12b805fe29ade45febfae28939d
 volumes:
   tracer: {}
   node1-configs: {}

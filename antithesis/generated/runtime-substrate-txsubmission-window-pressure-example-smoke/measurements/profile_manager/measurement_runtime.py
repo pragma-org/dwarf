@@ -813,3 +813,50 @@ class MeasurementRuntime:
         ).security_verdict
         assert verdict is not None
         return verdict
+
+
+class PackagePhaseMarkers:
+    """F185: the measurement runtime's phase markers, for a run inside an Antithesis package.
+
+    The package has no collectors in the workload (the dwarf-measurements service collects on its own
+    clock), so this proxy only does what the window primitives need: ``mark_phase`` writes the same
+    ``measurements/windows.ndjson`` record the local runtime writes, announces it as an SDK event
+    (``dwarf_measurement_window``) so the platform export carries the windows, and ``elapsed_seconds``
+    keeps the run-relative clock. The measurements import joins the windows with the service's
+    timestamped results.
+    """
+
+    def __init__(self, *, run_dir, environ=None, wall_clock=time.time, monotonic_clock=time.monotonic) -> None:
+        self.run_dir = Path(run_dir)
+        self.measurements_dir = self.run_dir / "measurements"
+        self._environ = environ
+        self._wall_clock = wall_clock
+        self._monotonic_clock = monotonic_clock
+        self._run_started_mono: float | None = None
+
+    def elapsed_seconds(self) -> float:
+        now_mono = float(self._monotonic_clock())
+        if self._run_started_mono is None:
+            self._run_started_mono = now_mono
+        return round(now_mono - self._run_started_mono, 9)
+
+    def mark_phase(self, phase_id: str, state: str, *, phase_index: int | None = None) -> dict[str, Any]:
+        if state not in {"start", "end"}:
+            raise ValueError("measurement phase marker state must be start or end")
+        marker: dict[str, Any] = {
+            "phase_id": phase_id,
+            "state": state,
+            "epoch_seconds": float(self._wall_clock()),
+            "elapsed_seconds": self.elapsed_seconds(),
+            "source": "antithesis-package-proxy",
+        }
+        if phase_index is not None:
+            marker["phase_index"] = phase_index
+        self.measurements_dir.mkdir(parents=True, exist_ok=True)
+        with (self.measurements_dir / "windows.ndjson").open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(marker, sort_keys=True) + "\n")
+        from profile_manager import antithesis_sdk as sdk  # noqa: PLC0415
+
+        sdk.emit_assert("reachability", "dwarf_measurement_window", True, details={"marker": marker}, environ=self._environ)
+        return marker
+
