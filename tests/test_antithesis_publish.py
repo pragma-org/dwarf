@@ -17,6 +17,11 @@ PUBLISH_ID = 'antithesis-publish-' + 'e' * 32
 PAT = 'ghp_' + 'S3cret' * 6
 
 
+
+def _is_build(argv):
+    argv = tuple(argv)
+    return argv[:1] == ('build',) or argv[:2] == ('buildx', 'build')
+
 def _inspect_json(image_id=IMAGE_ID):
     return json.dumps([{'Id': image_id, 'Os': 'linux', 'Architecture': 'amd64'}])
 
@@ -33,7 +38,7 @@ def runtime(tmp_path):
             if runtime.missing_image and runtime.missing_image in arguments:
                 return DockerResult(1, '[]', 'Error: No such image: ' + runtime.missing_image)
             return DockerResult(0, _inspect_json(), '')
-        if arguments[0] == 'build':
+        if _is_build(arguments):
             return DockerResult(runtime.build_rc, 'Successfully built', '' if runtime.build_rc == 0 else 'ERROR: failed to solve')
         if 'login' in arguments:
             return DockerResult(runtime.login_rc, 'Login Succeeded' if runtime.login_rc == 0 else '',
@@ -71,7 +76,7 @@ def test_build_unpacks_the_preparation_and_builds_each_build_service(runtime, pr
     assert built and built[0]['service'] == 'sm-workload'
     assert built[0]['reference'] == 'dwarf-antithesis-' + 'f' * 32 + '-0:prepared'
     assert built[0]['image_id'] == IMAGE_ID and built[0]['publication'] == 'local-only'
-    build_call = next(c for c in runtime.calls if c['argv'][0] == 'build')
+    build_call = next(c for c in runtime.calls if _is_build(c['argv']))
     argv = build_call['argv']
     assert argv[argv.index('--platform') + 1] == 'linux/amd64'
     context = Path(argv[-1])
@@ -90,7 +95,7 @@ def test_build_refuses_a_preparation_whose_inventory_changed(runtime, prepared, 
     with pytest.raises(DockerRuntimeError) as info:
         publish.build_images(runtime, _build_params(preparation_id), BUILD_ID, 1800, threading.Event())
     assert info.value.failure_code == 'build-source-invalid' and info.value.failure_stage == 'image-build'
-    assert not any(c['argv'][0] == 'build' for c in runtime.calls)
+    assert not any(_is_build(c['argv']) for c in runtime.calls)
 
 
 def test_build_reports_a_failed_docker_build(runtime, prepared, monkeypatch):
@@ -247,12 +252,19 @@ def test_build_rewrites_copy_chmod_when_the_cli_has_no_buildkit(runtime, prepare
     runtime._run = _run
     result = publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
     assert result['status'] == 'built'
-    build_call = next(c for c in runtime.calls if c['argv'][0] == 'build')
+    build_call = next(c for c in runtime.calls if _is_build(c['argv']))
     dockerfile = Path(build_call['argv'][build_call['argv'].index('--file') + 1]).read_text()
     original_text = (Path(__file__).resolve().parents[1] / 'antithesis/cardano_amaru_miniprotocol_security/workload/Dockerfile').read_text()
     assert 'COPY --chmod=0755' in original_text
     if has_buildx:
         assert dockerfile == original_text
+        argv = build_call['argv']
+        output = argv[argv.index('--output') + 1]
+        # Every layer is re-written as OCI gzip, so the pushed manifest never mixes Docker-typed base
+        # layers into an OCI manifest (Antithesis' buildah import refuses that).
+        for part in ('type=image', 'oci-mediatypes=true', 'compression=gzip', 'force-compression=true', 'push=false'):
+            assert part in output.split(',')
+        assert 'name=' + build_call['argv'][argv.index('--output') + 1].split('name=')[1].split(',')[0] in output
     else:
         assert '--chmod' not in dockerfile
         assert 'COPY workload/test/v1/mixed-miniprotocol-security/ /opt/antithesis/test/v1/mixed-miniprotocol-security/\nRUN chmod -R 0755 /opt/antithesis/test/v1/mixed-miniprotocol-security/' in dockerfile
@@ -267,7 +279,7 @@ def test_runtime_failure_without_a_code_records_failed_progress(runtime, prepare
     _preparations_dir(monkeypatch)
     original = runtime._run
     def _run(arguments, timeout=30, execution_id=None, **kwargs):
-        if tuple(arguments)[:1] == ('build',):
+        if _is_build(tuple(arguments)):
             raise DockerRuntimeError(message)
         return original(arguments, timeout, execution_id, **kwargs)
     runtime._run = _run
@@ -287,7 +299,7 @@ def test_build_passes_network_none_only_for_labelled_services(runtime, monkeypat
     prepared = prepare_package(request(scenario_id='runtime-substrate-mempool-failure-containment-mixed-amaru', versions=selection('mixed')), {})
     result = publish.build_images(runtime, _build_params(prepared['receipt']['id']), BUILD_ID, 1800, threading.Event())
     assert result['status'] == 'built'
-    builds = [c['argv'] for c in runtime.calls if c['argv'][0] == 'build']
+    builds = [c['argv'] for c in runtime.calls if _is_build(c['argv'])]
     workload = [argv for argv in builds if argv[-1].endswith('/dwarf-workload')]
     assert len(workload) == 1 and workload[0][workload[0].index('--network') + 1] == 'none'
     assert all('--network' not in argv for argv in builds if not argv[-1].endswith('/dwarf-workload'))

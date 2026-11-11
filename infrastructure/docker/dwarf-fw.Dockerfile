@@ -14,6 +14,7 @@ ARG CA_CERTIFICATES_VERSION=20250419
 # The container never runs an engine; it talks to the host daemon's socket.
 ARG DOCKER_CLI_VERSION=5:29.9.2-1~debian.13~trixie
 ARG DOCKER_COMPOSE_VERSION=5.6.1-1~debian.13~trixie
+ARG DOCKER_BUILDX_VERSION=0.38.1-1~debian.13~trixie
 ARG JQ_VERSION=1.7.1-6+deb13u1
 ARG LIBSODIUM_VERSION=1.0.18-1+deb13u1
 ARG LIBSECP256K1_VERSION=0.5.0-2+b1
@@ -84,6 +85,7 @@ RUN for attempt in 1 2 3 4 5; do \
                 ca-certificates=${CA_CERTIFICATES_VERSION} \
                 docker-ce-cli=${DOCKER_CLI_VERSION} \
                 docker-compose-plugin=${DOCKER_COMPOSE_VERSION} \
+                docker-buildx-plugin=${DOCKER_BUILDX_VERSION} \
                 jq=${JQ_VERSION} \
                 libsodium23=${LIBSODIUM_VERSION} \
                 libsecp256k1-2=${LIBSECP256K1_VERSION} \

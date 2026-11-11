@@ -13,9 +13,9 @@ def encode(value):return json.dumps(value).encode()
 def digest(data):return 'sha256:'+hashlib.sha256(data).hexdigest()
 
 
-def fixture(monkeypatch,arch='amd64'):
+def fixture(monkeypatch,arch='amd64',layers=(),manifest_type='application/vnd.oci.image.manifest.v1+json'):
     config=encode({'architecture':arch,'os':'linux'})
-    child=encode({'schemaVersion':2,'mediaType':'application/vnd.oci.image.manifest.v1+json','config':{'digest':digest(config)},'layers':[]})
+    child=encode({'schemaVersion':2,'mediaType':manifest_type,'config':{'digest':digest(config)},'layers':[{'mediaType':t,'digest':'sha256:'+str(i)*64} for i,t in enumerate(layers)]})
     index=encode({'schemaVersion':2,'mediaType':'application/vnd.oci.image.index.v1+json','manifests':[{'digest':digest(child),'platform':{'os':'linux','architecture':'amd64'}}]})
     seen=[]
     def get(url,headers=None):
@@ -154,3 +154,24 @@ def test_package_settings_urls():
     assert visibility_required(PackageError('Anonymous public read returned HTTP 403. x', status=422))
     assert not visibility_required(PackageError('Anonymous public read returned HTTP 500. x', status=422))
     assert not visibility_required(PackageError('Public image identity differs from the saved build.', status=422))
+
+
+OCI_LAYER='application/vnd.oci.image.layer.v1.tar+gzip'
+DOCKER_LAYER='application/vnd.docker.image.rootfs.diff.tar.gzip'
+
+
+def test_mixed_layer_media_types_are_refused(monkeypatch):
+    """Antithesis' image import (buildah) rejects an OCI manifest that carries Docker-typed layers:
+    'unsupported MIME type for compression: application/vnd.docker.image.rootfs.diff.tar.gzip'
+    (run d93c9e2d…, 2026-11-11). The containerd image store + legacy builder produced exactly that."""
+    fixture(monkeypatch,layers=(OCI_LAYER,DOCKER_LAYER,OCI_LAYER))
+    with pytest.raises(PackageError,match='media type'):module().verify_image('ghcr.io/example/test:test')
+
+
+@pytest.mark.parametrize('manifest_type,layer',[
+    ('application/vnd.oci.image.manifest.v1+json',OCI_LAYER),
+    ('application/vnd.docker.distribution.manifest.v2+json',DOCKER_LAYER),
+])
+def test_uniform_layer_media_types_pass(monkeypatch,manifest_type,layer):
+    fixture(monkeypatch,layers=(layer,layer),manifest_type=manifest_type)
+    assert module().verify_image('ghcr.io/example/test:test')['platform']=='linux/amd64'

@@ -194,6 +194,9 @@ def test_runtime_image_takes_the_docker_cli_from_dockers_pinned_repository():
     assert "ARG DOCKER_COMPOSE_VERSION=5.6.1-1~debian.13~trixie" in dockerfile
     assert "docker-ce-cli=${DOCKER_CLI_VERSION}" in dockerfile
     assert "docker-compose-plugin=${DOCKER_COMPOSE_VERSION}" in dockerfile
+    # buildx builds Antithesis workload images with uniform OCI layer media types (F167).
+    assert "ARG DOCKER_BUILDX_VERSION=0.38.1-1~debian.13~trixie" in dockerfile
+    assert "docker-buildx-plugin=${DOCKER_BUILDX_VERSION}" in dockerfile
     # The Debian-packaged engine, CLI and compose wrapper are gone: the container
     # only talks to the host's daemon.
     assert "docker.io=" not in dockerfile

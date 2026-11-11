@@ -191,7 +191,13 @@ def build_images(runtime, parameters, execution_id, timeout, cancel_event):
             dockerfile = context / item['dockerfile']
             if legacy_builder:
                 dockerfile.write_text(_legacy_builder_dockerfile(dockerfile.read_text()))
-            argv = ['build', '--platform', 'linux/amd64']
+            if legacy_builder:
+                argv = ['build', '--platform', 'linux/amd64']
+            else:
+                # Re-write every layer as OCI gzip: with the containerd image store a plain build keeps the base
+                # image's Docker-typed layers inside an OCI manifest, which Antithesis' importer refuses (F167).
+                argv = ['buildx', 'build', '--platform', 'linux/amd64', '--output',
+                        'type=image,name=' + reference + ',oci-mediatypes=true,compression=gzip,force-compression=true,push=false']
             if item.get('network') == 'none':
                 argv += ['--network', 'none']
             argv += ['--tag', reference, '--file', str(dockerfile), str(context)]

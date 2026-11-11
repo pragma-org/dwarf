@@ -147,6 +147,13 @@ def verify_image(reference, expected_id=None):
         if len(matches)!=1 or not DIGEST.fullmatch(matches[0].get('digest','')):
             raise PackageError('Public image must identify exactly one linux/amd64 variant.',status=422)
         selected,selected_digest=manifest(matches[0]['digest'])
+    layer_types={str(row.get('mediaType','')) for row in selected.get('layers') or []}
+    families={'oci' if t.startswith('application/vnd.oci.image.layer.') else 'docker' if t.startswith('application/vnd.docker.image.rootfs.') else t for t in layer_types}
+    manifest_family='docker' if selected.get('mediaType')=='application/vnd.docker.distribution.manifest.v2+json' else 'oci'
+    if families-{manifest_family}:
+        # Antithesis imports images with buildah, which refuses an OCI manifest carrying Docker-typed layers (F167).
+        raise PackageError('Public image mixes layer media types ('+', '.join(sorted(layer_types))+') in a '+manifest_family.upper()
+                           +' manifest; Antithesis cannot import it. Rebuild the image with uniform OCI layers.',status=422)
     config_digest=selected.get('config',{}).get('digest','')
     if not DIGEST.fullmatch(config_digest):raise PackageError('Public image config digest is missing.',status=422)
     data=_get(f'https://ghcr.io/v2/{repository}/blobs/{config_digest}',headers)
