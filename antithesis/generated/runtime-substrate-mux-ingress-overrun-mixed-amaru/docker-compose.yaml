@@ -128,7 +128,8 @@ services:
         condition: service_completed_successfully
         required: true
     command:
-    - 'exec > >(tee -a /evidence/amaru.log) 2>&1
+    - 'exec > >(tee -a /evidence/amaru.log | sed -u ''/"level":"DEBUG"/d;/"level":"TRACE"/d'')
+      2>&1
 
       exec amaru-relay-bootstrap
 
@@ -193,7 +194,7 @@ services:
         condition: service_started
       configurator:
         condition: service_completed_successfully
-    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:54af5516ccc552114096707728c404647a20e9c2a5949473a526feff5b78b64c
+    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:3222585bf7a8727819bf5406681a6c51c44de676652c1aa325896aad028cf80b
   measure-config-node2:
     platform: linux/amd64
     container_name: measure-config-node2
@@ -210,7 +211,7 @@ services:
         condition: service_completed_successfully
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:f66a1c3c8a96da3b1a797c17f1dd4cad32632eb32c184bc6f642d1cd46bfb7f2
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:648e370f4be62c506ecbe779e091eb57ffe18f0ff41fe0b1ff2bbefe2b0460b7
   measure-tracer-node2:
     image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
     container_name: measure-tracer-node2
@@ -237,7 +238,7 @@ services:
     - measurement-tracer-node2:/inputs/measurement-tracer-node2:ro
     labels:
       com.antithesis.exclude_from_faults: network,kill,pause,stop
-    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:f66a1c3c8a96da3b1a797c17f1dd4cad32632eb32c184bc6f642d1cd46bfb7f2
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:648e370f4be62c506ecbe779e091eb57ffe18f0ff41fe0b1ff2bbefe2b0460b7
 volumes:
   tracer: {}
   node2-configs: {}
