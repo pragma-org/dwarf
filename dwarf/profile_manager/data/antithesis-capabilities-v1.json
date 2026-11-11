@@ -574,6 +574,18 @@
       "status": "runs",
       "note": "Reads the controlled-window proof.",
       "evidence_producer": "runtime_controlled_chain_progress_window"
+    },
+    "runtime_mark_baseline_window": {
+      "status": "runs-with-note",
+      "note": "Phase marks through the package phase-marker proxy (F185): windows.ndjson in the run dir plus a dwarf_measurement_window event per mark; the measurements service does not scope its records to the window yet."
+    },
+    "runtime_mark_hostile_window": {
+      "status": "runs-with-note",
+      "note": "Phase marks through the package phase-marker proxy (F185): windows.ndjson in the run dir plus a dwarf_measurement_window event per mark; the measurements service does not scope its records to the window yet."
+    },
+    "runtime_mark_recovery_window": {
+      "status": "runs-with-note",
+      "note": "Phase marks through the package phase-marker proxy (F185): windows.ndjson in the run dir plus a dwarf_measurement_window event per mark; the measurements service does not scope its records to the window yet."
     }
   },
   "evidence_producer": "Optional per assertion: the probe primitive that writes the proof this assertion reads. When that producer is skipped in a scenario (unsupported or delegated-fault), the assertion is classified unsupported with a gap naming the producer instead of failing for a proof the package can never write."

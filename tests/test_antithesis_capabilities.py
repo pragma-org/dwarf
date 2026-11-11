@@ -295,3 +295,12 @@ def test_every_proven_assertion_declares_its_antithesis_semantics():
             if semantics['kind'] == 'safety':
                 assert semantics.get('measured_when'), name
     assert checked >= 4
+
+
+def test_measurement_window_marks_run_in_the_package_through_the_phase_marker_proxy():
+    """F185: the window marks were unlisted (so unsupported and skipped) because the package has
+    no measurement runtime; the phase-marker proxy gives them one."""
+    rows = {row['primitive']: row for row in classify(catalog('client-example-txsubmission-window-amaru-portable-20260918'))['primitives']}
+    for name in ('runtime_mark_hostile_window', 'runtime_mark_recovery_window'):
+        assert rows[name]['status'] == 'runs-with-note', name
+    assert load_matrix()['primitives']['runtime_mark_baseline_window']['status'] == 'runs-with-note'
