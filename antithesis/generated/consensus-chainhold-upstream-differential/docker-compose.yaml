@@ -30,10 +30,10 @@ services:
     image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
     container_name: tracer
     hostname: tracer.example
-    labels:
+    labels: &id001
       com.antithesis.exclude_from_faults: network,kill,pause,stop
     entrypoint: cardano-tracer
-    command:
+    command: &id002
     - --config
     - /tracer-config.yaml
     volumes:
@@ -71,14 +71,18 @@ services:
         condition: service_completed_successfully
       tracer:
         condition: service_started
+      measure-config-relay1:
+        condition: service_completed_successfully
+      measure-tracer-relay1:
+        condition: service_started
     container_name: relay1
     hostname: relay1.example
     volumes:
-    - relay1-configs:/configs:ro
+    - measurement-config-relay1:/configs:ro
     - ./topology/relay1.json:/configs/configs/topology.json:ro
     - relay1-state:/state
     - relay1-evidence:/evidence
-    - tracer:/tracer
+    - measurement-tracer-relay1:/tracer
     platform: linux/amd64
     init: true
   relay2:
@@ -96,14 +100,18 @@ services:
         condition: service_completed_successfully
       tracer:
         condition: service_started
+      measure-config-relay2:
+        condition: service_completed_successfully
+      measure-tracer-relay2:
+        condition: service_started
     container_name: relay2
     hostname: relay2.example
     volumes:
-    - relay2-configs:/configs:ro
+    - measurement-config-relay2:/configs:ro
     - ./topology/relay2.json:/configs/configs/topology.json:ro
     - relay2-state:/state
     - relay2-evidence:/evidence
-    - tracer:/tracer
+    - measurement-tracer-relay2:/tracer
     platform: linux/amd64
     init: true
   amaru-consumer:
@@ -126,6 +134,7 @@ services:
       AMARU_RUN_EXTRA_ARGS: --listen-address 0.0.0.0:3000 --submit-api-address 0.0.0.0:3011
       AMARU_BIN: /target/amaru-launch
       AMARU_MIGRATE_CHAIN_DB: 'true'
+      AMARU_WITH_JSON_TRACES: 'true'
     restart: always
     container_name: amaru-consumer
     hostname: amaru-consumer.example
@@ -213,7 +222,83 @@ services:
         condition: service_started
       configurator:
         condition: service_completed_successfully
-    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:22924c81571121822b54eae39682298fd848b04976c1cc701317ed3cf230f778
+    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:e2e8ca69076c73a342c26fdd47a5f1860143f44d4d9ee3d632383c26a3174b2d
+  measure-config-relay1:
+    platform: linux/amd64
+    container_name: measure-config-relay1
+    hostname: measure-config-relay1
+    init: true
+    entrypoint:
+    - python
+    - /opt/dwarf/prepare-cardano.py
+    volumes:
+    - relay1-configs:/configs:ro
+    - measurement-config-relay1:/target
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0500800787d619ab3ad1dad6dbb3e7cfbefa30f9ecc02511aee9cbbf155b456c
+  measure-tracer-relay1:
+    image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
+    container_name: measure-tracer-relay1
+    hostname: measure-tracer-relay1
+    labels: *id001
+    entrypoint: cardano-tracer
+    command: *id002
+    volumes:
+    - measurement-tracer-relay1:/opt/cardano-tracer
+    - ./measurements/tracer-config.yaml:/tracer-config.yaml:ro
+    restart: always
+    platform: linux/amd64
+    init: true
+  measure-config-relay2:
+    platform: linux/amd64
+    container_name: measure-config-relay2
+    hostname: measure-config-relay2
+    init: true
+    entrypoint:
+    - python
+    - /opt/dwarf/prepare-cardano.py
+    volumes:
+    - relay2-configs:/configs:ro
+    - measurement-config-relay2:/target
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0500800787d619ab3ad1dad6dbb3e7cfbefa30f9ecc02511aee9cbbf155b456c
+  measure-tracer-relay2:
+    image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
+    container_name: measure-tracer-relay2
+    hostname: measure-tracer-relay2
+    labels: *id001
+    entrypoint: cardano-tracer
+    command: *id002
+    volumes:
+    - measurement-tracer-relay2:/opt/cardano-tracer
+    - ./measurements/tracer-config.yaml:/tracer-config.yaml:ro
+    restart: always
+    platform: linux/amd64
+    init: true
+  dwarf-measurements:
+    platform: linux/amd64
+    container_name: dwarf-measurements
+    hostname: dwarf-measurements
+    init: true
+    restart: always
+    volumes:
+    - dwarf-measurement-results:/evidence
+    - relay1-evidence:/inputs/relay1:ro
+    - measurement-tracer-relay1:/inputs/measurement-tracer-relay1:ro
+    - relay2-evidence:/inputs/relay2:ro
+    - measurement-tracer-relay2:/inputs/measurement-tracer-relay2:ro
+    - amaru-consumer-evidence:/inputs/amaru-consumer:ro
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:0500800787d619ab3ad1dad6dbb3e7cfbefa30f9ecc02511aee9cbbf155b456c
 volumes:
   tracer: {}
   relay1-configs: {}
@@ -227,3 +312,8 @@ volumes:
   amaru-consumer-evidence: {}
   amaru-target-bin: {}
   dwarf-workload-evidence: {}
+  measurement-config-relay1: {}
+  measurement-tracer-relay1: {}
+  measurement-config-relay2: {}
+  measurement-tracer-relay2: {}
+  dwarf-measurement-results: {}
