@@ -14387,14 +14387,20 @@ def _package_target_identity(package_dir: Path) -> dict[str, Any] | None:
                  if item.get("implementation") == implementation and not item.get("supporting")), None)
     if not implementation or node is None:
         return None
-    return {
+    image = str(node.get("image") or "")
+    identity = {
         "implementation": implementation,
         "version": node.get("version"),
         "mode": "stock",
-        "image_reference": node.get("image"),
+        "image_reference": image or None,
+        "image_digest": node.get("image_digest") or (image.split("@", 1)[1] if "@sha256:" in image else None),
+        "platform": "linux/amd64",
         "identity_kind": "antithesis-package",
         "node_id": node.get("id"),
     }
+    if node.get("source_revision"):
+        identity["source_revision"] = node["source_revision"]
+    return identity
 
 
 def _measurement_target_identity(handle) -> dict[str, Any]:
@@ -14873,7 +14879,42 @@ class RuntimeVerifyExactTarget(LoadPrimitive):
         "experimental_instrumentation",
     )
 
+    _PACKAGE_LIMITATION = ("the running image is not inspected inside an Antithesis package; the package pins "
+                           "image digests and the platform's image property attests them")
+
+    def _run_in_package(self, handle, package_dir: Path) -> None:
+        """F182: no launch plan materialises the target inside a package. The expectation is the
+        scenario's own target (implementation, and version when it names one); the observation is
+        the package's pinned node record. A package built for another version fails here."""
+        observed = _package_target_identity(package_dir)
+        if observed is None:
+            raise RuntimeError("package target identity is unavailable")
+        try:
+            target = json.loads((package_dir / "scenario.yaml").read_text(encoding="utf-8")).get("target") or {}
+        except (OSError, ValueError):
+            target = {}
+        expected = {field: self.params[field] for field in self._FIELDS if self.params.get(field) not in (None, "")}
+        expected.setdefault("implementation", target.get("implementation"))
+        version = str(target.get("version") or "")
+        if version and version not in {"any", "latest", "resolved-plan"}:
+            expected.setdefault("version", version)
+        expected = {k: v for k, v in expected.items() if v not in (None, "")}
+        missing = [field for field in expected if observed.get(field) in (None, "")]
+        mismatches = {field: {"expected": value, "observed": observed.get(field)}
+                      for field, value in expected.items() if observed.get(field) != value}
+        proof = {"schema_version": "v1", "matched": not missing and not mismatches, "expected": expected,
+                 "observed": observed, "missing_fields": missing, "mismatches": mismatches,
+                 "identity_kind": "antithesis-package", "limitations": [self._PACKAGE_LIMITATION]}
+        _write_client_example_proof(handle, "exact-target.json", proof)
+        handle.log(phase="setup", primitive="runtime_verify_exact_target", level="info" if proof["matched"] else "error",
+                   event="completed", payload={"outcome": "ok" if proof["matched"] else "mismatch", **proof})
+        if not proof["matched"]:
+            raise RuntimeError("exact target identity mismatch: " + ", ".join(sorted(set(missing).union(mismatches))))
+
     def run(self, handle, rng):
+        package_dir = antithesis_package_mode()
+        if package_dir is not None:
+            return self._run_in_package(handle, package_dir)
         if self.params.get("identity_binding") == "resolved-plan":
             local_config = self.params.get("identity_kind") == "operator-local-config"
             if local_config:
@@ -16641,6 +16682,9 @@ def _observe_client_window_health(
         "network_magic": target.get("network_magic", 42),
         "peer_id": target.get("id"),
         "started_at": started_at,
+        "observation_transport": target.get("observation_transport"),
+        "listen_address": str(target.get("listen_host") or "") + ":" + str(target.get("listen_port") or 0),
+        "log_path": target.get("log_path"),
     }
     observed = _observe_protocol_target(observer)
     after = observed.get("state")
@@ -16675,7 +16719,10 @@ class RuntimeControlledChainProgressWindow(LoadPrimitive):
         if warm_up:
             time.sleep(warm_up)
         start_tip = _observe_client_target_tip(target)
-        before_state = _protocol_container_state(str(target.get("container") or ""))
+        if target.get("observation_transport") == "antithesis-package":
+            before_state = _package_node_state({"listen_address": str(target.get("listen_host") or "") + ":" + str(target.get("listen_port") or 0)})
+        else:
+            before_state = _protocol_container_state(str(target.get("container") or ""))
         window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         log_path = Path(str(target.get("log_path") or ""))
         measurement_path = Path(str(target.get("measurement_log_path") or ""))

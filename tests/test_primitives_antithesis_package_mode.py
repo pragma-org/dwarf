@@ -243,3 +243,20 @@ def test_probe_evidence_is_observed_without_docker_and_unmeasured_checks_are_non
     assert checks['target_running_before'] is True and checks['target_progressed'] is True
     assert checks['no_fatal_signals'] is None and checks['target_not_oom_killed'] is None
     assert checks['target_restart_count_unchanged'] is None
+
+
+def test_verify_exact_target_checks_the_scenario_target_against_the_package_pin(package, tmp_path):
+    """F182: no launch plan runs inside a package, so the expectation is the scenario's own target
+    and the observation is the package's pinned node; the running image is a declared limitation."""
+    runtime = dict(RUNTIME, target_implementation='amaru')
+    runtime['nodes'][1]['image'] = 'ghcr.io/pragma-org/amaru@sha256:' + 'd' * 64
+    (package / 'runtime.json').write_text(json.dumps(runtime))
+    (package / 'scenario.yaml').write_text(json.dumps({'id': 'x', 'target': {'implementation': 'amaru', 'version': '10.11.20261022'}}))
+    handle = _Handle(tmp_path / 'run')
+    primitives.RuntimeVerifyExactTarget(params={'identity_binding': 'resolved-plan'}).run(handle, None)
+    done = _events(handle, 'runtime_verify_exact_target', 'completed')[0]['payload']
+    assert done['outcome'] == 'ok' and done['observed']['image_digest'] == 'sha256:' + 'd' * 64
+    assert done['identity_kind'] == 'antithesis-package' and done['limitations']
+    (package / 'scenario.yaml').write_text(json.dumps({'id': 'x', 'target': {'implementation': 'amaru', 'version': '10.11.20260918'}}))
+    with pytest.raises(RuntimeError, match='version'):
+        primitives.RuntimeVerifyExactTarget(params={'identity_binding': 'resolved-plan'}).run(_Handle(tmp_path / 'run2'), None)

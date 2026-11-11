@@ -59,6 +59,12 @@ def _service_rows(version_binding):
     return {row['service']: row for row in version_binding.get('services', [])}
 
 
+def _image_digest(reference):
+    """The pinned digest of a compose image reference (repo@sha256:…), else None."""
+    text = str(reference or '')
+    return text.split('@', 1)[1] if '@sha256:' in text else None
+
+
 def _record(node, service, row, compose, *, scenario, routes):
     amaru = node['impl'] == 'amaru'
     port = AMARU_PORT if amaru else CARDANO_PORT
@@ -67,6 +73,8 @@ def _record(node, service, row, compose, *, scenario, routes):
             'role': node['role'], 'supporting': bool(node.get('supporting')),
             'version': row.get('requested_version') or scenario.target.get('version') or 'unknown',
             'image': compose['services'].get(service, {}).get('image'),
+            'image_digest': _image_digest(compose['services'].get(service, {}).get('image')),
+            'source_revision': row.get('source_revision'),
             'listen_address': host + ':' + str(port), 'port': port, 'container_listen_address': host + ':' + str(port),
             'socket_path': routes.get('socket_path'), 'log_path': routes.get('log_path'),
             'submit_api_url': routes.get('submit_api_url'), 'bootstrap_sentinel': routes.get('bootstrap_sentinel'),
