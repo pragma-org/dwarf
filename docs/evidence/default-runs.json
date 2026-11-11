@@ -1121,6 +1121,18 @@
       "group": "Antithesis runs"
     },
     {
+      "url": "runs/antithesis-chainhold-taps-20261111.tar.gz",
+      "size_bytes": 24559,
+      "sha256": "bca7eb20838e7abc9546d68e5fdebb0100b8e67ef832ea4b9ed2d54b02ccb602",
+      "run_id": "external-antithesis-10b158d45a58712c2f0eccc0",
+      "implementation": "amaru",
+      "version": "10.11.20261029",
+      "format": "dwarf-antithesis-run",
+      "coverage_exception": "Antithesis run 435d5b17 (generated package: Amaru 10.11.20261029 consumer + cardano-node 10.7.1 relays, default taps, faults on): chain-select agreed 35/36 measured; the one miss is a tip a few slots behind the converged reference under injected delay (lag, not a fork; the equality check has no lag tolerance yet); tap metrics rebuilt from the platform's exported dwarf_measurements event lines (first 50), not a full collector window",
+      "title": "Antithesis: chainhold + taps",
+      "group": "Antithesis runs"
+    },
+    {
       "url": "runs/antithesis-taps-20261022.tar.gz",
       "size_bytes": 1593136,
       "sha256": "afb3518b3bb43b95c6336766a074d40c8dff2aa840198137fca0bb7aac9115f3",
