@@ -127,6 +127,21 @@ def test_query_requester_never_exposes_provider_errors(ready_env,monkeypatch):
     assert any(c['state']=='error' for c in result['checks'])
     assert 'TOP_SECRET' not in json.dumps(result)
 
+def test_implicit_default_taps_with_a_partial_binding_do_not_block_submission(ready_env,staged,monkeypatch):
+    """F194. Taps are attached by the resolver's default profile even when the request asks for none
+    (F178); when one of those default collectors is not implemented for the pinned release the binding
+    is 'partial'. That is a warning on taps nobody asked for, not a reason to refuse the submission —
+    it blocked the Amaru 20260918 txsubmission-window package with no tap requested."""
+    m=module();receipt=staged['receipt'];request=receipt['request'];request['package_source']='build'
+    request['measurements']={'profile_id':None,'tap_ids':[]}
+    receipt['version_binding']={'status':'applied'};receipt['workload_binding']={'status':'applied'}
+    receipt['measurement_binding']={'status':'partial'}
+    monkeypatch.setattr(m,'read_source',lambda source:staged)
+    result=check(ready_env)
+    assert result['state']!='blocked'
+    assert any(c['id']=='generated_selections' and c['state']=='warn' for c in result['checks'])
+
+
 @pytest.mark.parametrize('change', ['tap','profile','patched','version','workload','topology'])
 def test_generated_unsupported_intent_is_blocked(ready_env,staged,monkeypatch,change):
     m=module();receipt=staged['receipt'];request=receipt['request'];request['package_source']='build'

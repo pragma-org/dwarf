@@ -341,16 +341,21 @@ def _evaluate(row):
                 add('scenario_capabilities','warn',f"Partial: {counts['delegated']} lifecycle steps delegated to the package, {counts['delegated-fault']} faults delegated to the platform, {counts['unsupported']} unsupported primitives skipped as declared gaps.")
             else:
                 add('scenario_capabilities','ok',f"Full: every primitive runs inside the package ({counts['delegated']} lifecycle steps delegated, {counts['delegated-fault']} faults delegated to the platform).")
+        # F194: taps come from the resolver's default profile even when none were requested
+        # (F178); a partial binding of those defaults is a warning, not a refusal. A binding
+        # short of what was explicitly requested still blocks.
+        requested_taps = bool(request['measurements']['profile_id'] or request['measurements']['tap_ids'])
+        binding = receipt.get('measurement_binding',{}).get('status')
         unsupported = ((request['versions']['build_variant']=='instrumented' and not patched_applied)
-                       or receipt.get('measurement_binding',{}).get('status')=='partial'
-                       or receipt.get('measurement_binding',{}).get('status') not in {'applied','not-requested'}
-                       and bool(request['measurements']['profile_id'] or request['measurements']['tap_ids'])
+                       or (binding not in {'applied','not-requested'} and requested_taps)
                        or any(i.get('code') == 'topology-scenario-merge-not-implemented' for i in row['source_issues'])
                        or receipt.get('version_binding', {}).get('status') != 'applied'
                        or receipt.get('workload_binding', {}).get('status') != 'applied')
         if unsupported:
             add('generated_selections', 'error', 'A requested generated topology, version, workload or measurement transformation is not applied. Review the package limitations.')
             return config, checks, []
+        if binding == 'partial':
+            add('generated_selections', 'warn', 'Default taps bound only in part (a default collector is not implemented for this release); no tap was requested, so the package runs with the taps that bound.')
     if report['state'] == 'blocked':
         return config, checks, []
     try:
