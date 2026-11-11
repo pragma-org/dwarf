@@ -20842,6 +20842,7 @@ class ChainSelectDifferential(AssertionPrimitive):
         agree = False
         agreement_kind = "none"
         slot_gap = None
+        ancestry_summary = None
         if ref_tip and tgt_tip:
             if ref_tip.get("hash") == tgt_tip.get("hash") and int(ref_tip.get("slot", -1)) == int(
                 tgt_tip.get("slot", -2)
@@ -20858,6 +20859,8 @@ class ChainSelectDifferential(AssertionPrimitive):
                 on_reference = [(ancestry.get(tgt_owner) or {}).get(n) for n in reference_ids]
                 on_target = [(ancestry.get(ref_owner) or {}).get(n) for n in target_ids]
                 tgt_behind = int(tgt_tip.get("slot", 0) or 0) <= int(ref_tip.get("slot", 0) or 0)
+                ancestry_summary = {"target_tip_on_reference": on_reference, "reference_tip_on_target": on_target,
+                                    "target_behind": tgt_behind} if ancestry else None
                 if on_reference and all(a is True for a in on_reference) and tgt_behind:
                     agree, agreement_kind = True, "lagging_ancestor"
                 elif on_target and all(a is True for a in on_target) and not tgt_behind:
@@ -20895,14 +20898,16 @@ class ChainSelectDifferential(AssertionPrimitive):
         return {
             "primitive": "chain_select_differential",
             "params": dict(self.params),
+            # Decision fields first: the platform clips details, and the node-tip maps are long.
             "evaluated_value": {
                 "completed": 1 if latest is not None else 0,
-                "reference_tip": ref_tip,
-                "target_tip": tgt_tip,
                 "agree": agree,
                 "agreement_kind": agreement_kind,
                 "slot_gap": slot_gap,
                 "tolerance_slots": tolerance_slots,
+                "ancestry": ancestry_summary,
+                "reference_tip": ref_tip,
+                "target_tip": tgt_tip,
                 "reference_converged": ref_converged,
                 "target_converged": tgt_converged,
                 "reference_node_tips": ref_nodes,

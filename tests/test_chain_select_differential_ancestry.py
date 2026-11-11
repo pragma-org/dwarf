@@ -34,6 +34,9 @@ def test_a_lagging_target_whose_tip_is_on_every_reference_chain_agrees():
                     {"amaru-consumer": {"relay1": True, "relay2": True}})
     assert out["result"] == "pass"
     assert out["evaluated_value"]["agreement_kind"] == "lagging_ancestor" and out["evaluated_value"]["slot_gap"] == 37
+    assert out["evaluated_value"]["ancestry"] == {"target_tip_on_reference": [True, True], "reference_tip_on_target": [None, None][:1] * 0 + [None],
+                                                  "target_behind": True}
+    assert list(out["evaluated_value"])[:6] == ["completed", "agree", "agreement_kind", "slot_gap", "tolerance_slots", "ancestry"]
 
 
 def test_a_target_on_a_different_branch_is_still_a_divergence():
