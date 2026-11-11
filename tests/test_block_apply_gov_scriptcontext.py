@@ -406,3 +406,53 @@ def test_gov_anchor_is_served_over_http_and_cleaned_up(tmp_path, monkeypatch):
         assert not any(c[:3] == ["docker", "rm", "-f"] for c in calls)
     assert any(c[:3] == ["docker", "rm", "-f"] for c in calls)
     assert (tmp_path / "gov-anchor.json").read_bytes() == bridge.GOV_ANCHOR_DOCUMENT
+
+
+def _package_runtime(tmp_path):
+    path = tmp_path / "outputs/substrate-compose/runtime.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "network_magic": 42,
+        "amaru_nodes": [{"id": "node1", "impl": "amaru", "submit_api_url": "http://node1.example:3011/api/submit/tx",
+                         "observation_transport": "antithesis-package"}],
+        "haskell_nodes": [{"id": "node2", "impl": "cardano-node", "socket_path": "/inputs/node2/node.socket",
+                           "observation_transport": "antithesis-package"}],
+    }))
+    tx = tmp_path / "outputs/build-segments/subjects/prop3.tx"
+    tx.parent.mkdir(parents=True, exist_ok=True)
+    tx.write_text(json.dumps({"type": "Tx ConwayEra", "cborHex": _tx("prop3.tx").hex()}))
+    return path
+
+
+def test_a_package_cardano_reference_is_routed_to_its_mounted_socket(tmp_path, monkeypatch):
+    """F169: inside an Antithesis package the cardano-node reference has socket_path (mounted
+    volume), not container_socket_path; before, the reference outcome was 'unknown'."""
+    _package_runtime(tmp_path)
+    monkeypatch.setattr(sp, "_submit", lambda url, payload, timeout=25: {"http": 202, "outcome": "accept", "body": "ok"})
+    calls = []
+    monkeypatch.setattr(sp, "_submit_via_cardano_cli", lambda **kw: calls.append(kw["node_id"]) or
+                        {"http": 400, "outcome": "reject", "body": "x", "via": "cardano-cli"})
+    result = sp.RuntimeTxSubmitDifferential(params={
+        "tx_file": "outputs/build-segments/subjects/prop3.tx", "output_dir": "outputs/obs",
+        "runtime_metadata_path": "outputs/substrate-compose/runtime.json", "target_node": "node1",
+        "reference_node": "node2"}).run(SimpleNamespace(run_dir=tmp_path), None)
+    assert calls == ["node2"] and result["reference"]["outcome"] == "reject"
+
+
+def test_package_cli_submission_uses_the_local_cli_and_the_mounted_socket(tmp_path, monkeypatch):
+    runtime = _package_runtime(tmp_path)
+    from scripts import runtime_redeemer_container_live_controls as live
+    from scripts import runtime_cardano_measurement_calibration as calib
+    seen = {}
+    monkeypatch.setattr(calib, "_controller_container", lambda: (_ for _ in ()).throw(AssertionError("no docker in a package")))
+    monkeypatch.setattr(calib, "_transaction_id", lambda cli, path: "ab" * 32)
+    def submit(cli, path, *, socket_path, network_magic):
+        seen.update(cli=cli, socket=socket_path, magic=network_magic)
+        return {"http": 400, "body": "ShelleyTxValidationError", "node_response_observed": True}
+    monkeypatch.setattr(live, "_submit_reference_cli", submit)
+    monkeypatch.setattr(sp.shutil if hasattr(sp, "shutil") else __import__("shutil"), "which", lambda name: "/usr/local/bin/" + name)
+    out = tmp_path / "out"; out.mkdir()
+    result = sp._submit_via_cardano_cli(run_dir=tmp_path, runtime_metadata_path=runtime, node_id="node2",
+                                        tx_path=tmp_path / "outputs/build-segments/subjects/prop3.tx", out_dir=out)
+    assert seen == {"cli": "/usr/local/bin/cardano-cli", "socket": "/inputs/node2/node.socket", "magic": 42}
+    assert result["outcome"] == "reject" and result["via"] == "cardano-cli"

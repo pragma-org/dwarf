@@ -339,11 +339,32 @@ def _submit_via_cardano_cli(*, run_dir: Path, runtime_metadata_path: Path, node_
 
         runtime = json.loads(Path(runtime_metadata_path).read_text(encoding="utf-8"))
         node = find_node(runtime, node_id)
+        magic = int(runtime["network_magic"])
+        if node.get("observation_transport") == "antithesis-package":
+            # Inside an Antithesis package (F169): no Docker; the workload image ships cardano-cli and
+            # the node's socket is mounted from its state volume.
+            cli = shutil.which("cardano-cli")
+            socket_path = str(node.get("socket_path") or "")
+            if not cli or not socket_path:
+                return {"http": 0, "outcome": "not-measured", "via": "cardano-cli",
+                        "note": "no cardano-cli or mounted node socket inside the package"}
+            staged = out_dir / f"cli-{tx_path.name}"
+            shutil.copyfile(tx_path, staged)
+            tx_id = _transaction_id(cli, staged)
+            response = _submit_reference_cli(cli, staged, socket_path=socket_path, network_magic=magic)
+            in_mempool = on_chain = None
+            if any(m in str(response.get("body") or "").lower() for m in _CLI_ALREADY_SPENT_MARKERS):
+                in_mempool = _query_reference_mempool(cli=cli, socket_path=socket_path, network_magic=magic,
+                                                      transaction_id=tx_id)
+            resolved = resolve_cli_submission(response, tx_in_mempool=in_mempool, tx_on_chain=on_chain)
+            resolved.update({"via": "cardano-cli", "transaction_id": tx_id, "tx_in_mempool": in_mempool,
+                             "tx_on_chain": on_chain, "scope": "antithesis-package"})
+            return resolved
         controller = _controller_container()
         if controller is None:
             return {"http": 0, "outcome": "not-measured", "via": "cardano-cli",
                     "note": "no Docker controller to run cardano-cli beside the node"}
-        socket_path, magic = str(node.get("container_socket_path") or ""), int(runtime["network_magic"])
+        socket_path = str(node.get("container_socket_path") or "")
         staged = out_dir / f"cli-{tx_path.name}"
         shutil.copyfile(tx_path, staged)
         with _containerized_cardano_workload(runtime_root=Path(str(runtime["runtime_root"])), runtime=runtime,
@@ -430,7 +451,8 @@ class RuntimeTxSubmitDifferential(LoadPrimitive):
                 return {"url": url, **_submit(url, payload)}
             node_id = str(self.params.get(f"{role}_node") or "")
             node = nodes.get(node_id) or {}
-            if rmp and node.get("impl") == "cardano-node" and node.get("container_socket_path"):
+            package_socket = node.get("observation_transport") == "antithesis-package" and node.get("socket_path")
+            if rmp and node.get("impl") == "cardano-node" and (node.get("container_socket_path") or package_socket):
                 return {"url": None, **_submit_via_cardano_cli(run_dir=rd, runtime_metadata_path=rmp, node_id=node_id,
                                                                tx_path=tx_path, out_dir=out)}
             return {"url": None, "outcome": "unknown", "note": f"no {role} submit-api or cardano-cli socket resolved"}
