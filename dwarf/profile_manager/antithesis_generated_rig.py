@@ -32,6 +32,7 @@ AMARU_COMMAND = 'exec > >(tee -a /evidence/amaru.log) 2>&1\nexec amaru-relay-boo
 _POOL_COUNT = re.compile(r'^poolCount: 3$', re.MULTILINE)
 _PEER_SHARING = re.compile(r'^PeerSharing: true$', re.MULTILINE)
 _EXPERIMENTAL = re.compile(r'^ExperimentalProtocolsEnabled: (true|false)$', re.MULTILINE)
+_EXPERIMENTAL_HARD_FORKS = re.compile(r'^ExperimentalHardForksEnabled: (true|false)$', re.MULTILINE)
 _CONFIG_GLOB = '/configs/[123]'
 ATTACH_CARDANO = ['p1', 'p2', 'p3', 'relay1', 'relay2', 'amaru-consumer']
 ATTACH_AMARU = ['amaru-relay-1', 'amaru-relay-2']
@@ -382,7 +383,7 @@ def bind_rig_versions(files, intent, devnet, rendered, *, scenario_default=None)
         report['status'] = ('applied' if (targets | supporting) <= applied and not (set(intent['versions']) - targets - supporting)
                             else 'partial')
         files[COMPOSE] = yaml.safe_dump(compose, sort_keys=False)
-    if 'cardano-node' in applied and any(n['impl'] == 'amaru' for n in nodes):
+    if 'cardano-node' in applied:
         _pin_experimental_protocols(files, devnet, selected['cardano-node']['version'], assembly)
     return report
 
@@ -393,9 +394,16 @@ def _pin_experimental_protocols(files, devnet, cardano_version, assembly):
     (NodeToNodeV_16 breaks Amaru's handshake)."""
     pinned = (devnet.get('profile_options') or {}).get('cardano_experimental_protocols')
     enabled = pinned if pinned is not None else assembly.cardano_experimental_protocols_policy(devnet['shape'], cardano_version)
-    if enabled is None:
-        return
+    if enabled is None and devnet['shape'] == 'cardano-only':
+        # Parity with the local devnet (runtime_compose_substrate, 2026-11-09): cardano-only pins the
+        # public-network default (false); a profile pin restores the template's true (F186).
+        enabled = False
     testnet = files.get('environment/testnet.yaml') or ''
-    if len(_EXPERIMENTAL.findall(testnet)) != 1:
-        raise topology.TopologyError('The rig testnet input changed (ExperimentalProtocolsEnabled); review the rig renderer.', status=503)
-    files['environment/testnet.yaml'] = _EXPERIMENTAL.sub('ExperimentalProtocolsEnabled: ' + ('true' if enabled else 'false'), testnet)
+    if len(_EXPERIMENTAL.findall(testnet)) != 1 or len(_EXPERIMENTAL_HARD_FORKS.findall(testnet)) != 1:
+        raise topology.TopologyError('The rig testnet input changed (Experimental* flags); review the rig renderer.', status=503)
+    # The CF template enables experimental hard forks; the local devnet does not, and the bootstrap
+    # probe counts the flag as an unsafe default. Conway needs no experimental era gate (F186).
+    testnet = _EXPERIMENTAL_HARD_FORKS.sub('ExperimentalHardForksEnabled: false', testnet)
+    if enabled is not None:
+        testnet = _EXPERIMENTAL.sub('ExperimentalProtocolsEnabled: ' + ('true' if enabled else 'false'), testnet)
+    files['environment/testnet.yaml'] = testnet

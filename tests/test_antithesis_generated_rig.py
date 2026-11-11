@@ -358,9 +358,13 @@ def test_amaru_rigs_pin_experimental_protocols_off_for_cardano_11_1(catalog):
     assert files['environment/testnet.yaml'].count('ExperimentalProtocolsEnabled: false') == 1
     files, out, report = _bound_rig(mixed, chosen(versions={'amaru': '10.11.20260918', 'cardano-node': '10.7.1'}))
     assert 'ExperimentalProtocolsEnabled: true' in files['environment/testnet.yaml']
+    # F186: cardano-only pins the public-network default like the local devnet (2026-11-09 decision),
+    # and no rig keeps the template's experimental hard forks (the bootstrap probe flags both).
     cardano_only = body(profile='profile-a-haskell-peersharing-disabled')
     files, out, report = _bound_rig(cardano_only, chosen('11.1.2'))
-    assert 'ExperimentalProtocolsEnabled: true' in files['environment/testnet.yaml']
+    assert files['environment/testnet.yaml'].count('ExperimentalProtocolsEnabled: false') == 1
+    assert files['environment/testnet.yaml'].count('ExperimentalHardForksEnabled: false') == 1
+    assert 'ExperimentalHardForksEnabled: true' not in files['environment/testnet.yaml']
 
 
 def test_profile_pinned_experimental_protocols_win(catalog):
