@@ -62,6 +62,7 @@ same package, never crashed in any run.
 | eaec880ac0cf…-64-11 | 1b956fcc | node1 | start 5119.23 → SIGSEGV 5119.27 | 268121 | `7aa85de58fbf19b4` |
 | 5494150c6e67…-64-11 | 94a2d5dc | node2 | kill 4230.7 (exit 137) → start 4238.69 → SIGSEGV 4238.70 | 107346 | `5e289f9e7c7668b6` |
 | a5fcb78d773f…-64-11 | 67347004 | node1 | exit 139 (instrumented after all: the submission driver dropped the flag) | — | — (not downloaded) |
+| a9d9d6cc58d9…-64-11 | d8b9c714 | — | **no segfault** in 1 h (one node1 exit 1 at vtime 513.8: `Generic parse exception: ExitSuccess`, a SIGTERM during startup — the class of cardano-node PR #6620) | — | — |
 
 - Package: `antithesis/generated/runtime-substrate-txsubmission-window-pressure-example-smoke`
   in `pragma-org/dwarf` (two cardano-node 10.7.1 producers, CF configurator rig, tracer).
@@ -78,6 +79,18 @@ same package, never crashed in any run.
 - The chainhold package, which runs the same cardano-node image as relays next to an Amaru
   consumer, had no crash in two one-hour runs. Its relays were not killed by the fault injector
   in those runs.
+
+## Candidate trigger (2026-11-11, late): experimental flags
+
+The four crashing runs used packages whose node configuration had `ExperimentalProtocolsEnabled:
+true` and `ExperimentalHardForksEnabled: true` (the configurator's defaults at the time). The one
+run without a crash (`a9d9d6cc`) is the first package built with both flags **false** (F186) —
+the only node-configuration difference between the builds; everything else in the diff is mounts
+for the measurement taps. 4 of 4 with the flags on, 0 of 1 with them off is a strong hint, not a
+proof: the next experiment is the same scenario with the override
+`substrate.cardano_experimental_protocols: true`, which should bring the crash back if the flags
+are the trigger. The crash would then be: cardano-node 10.7.1 with experimental protocols enabled
+segfaults in the GC when restarted after SIGKILL under the platform.
 
 ## What is established
 
