@@ -36,6 +36,8 @@ def property_kind(name: Any) -> str:
 # (`mixed_sm_workload_command_invoked`, see antithesis_conventions.py); the
 # platform's own SDK-prefixed properties use prose ("Always: Peak memory usage").
 _DWARF_MESSAGE = re.compile(r"^[a-z][a-z0-9_]*$")
+_DISPLAY_PREFIXES = ("Missed Always: ", "Missed Sometimes: ", "Always: ", "Sometimes: ", "Reachable: ",
+                     "Unreachable: ", "AlwaysOrUnreachable: ")
 
 
 def property_source(name: Any) -> str:
@@ -43,6 +45,11 @@ def property_source(name: Any) -> str:
     if property_kind(name) == "platform":
         return "antithesis"
     message = name.split(": ", 1)[1] if isinstance(name, str) and ": " in name else ""
+    # The report repeats the display type, sometimes as "Missed Always" (F173: run dc774cde…).
+    for prefix in _DISPLAY_PREFIXES:
+        if message.startswith(prefix):
+            message = message[len(prefix):]
+            break
     return "dwarf" if _DWARF_MESSAGE.match(message) else "antithesis"
 
 

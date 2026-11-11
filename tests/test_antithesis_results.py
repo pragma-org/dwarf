@@ -151,6 +151,12 @@ def test_property_kind_prefixes(name, kind):
     ('Reachable: mixed_sm_workload_command_invoked', 'dwarf'), ('Always: a', 'dwarf'),
     ('Always: Peak memory usage', 'antithesis'), ('Always: 9starts_with_digit', 'antithesis'), ('Always: Mixed_Case', 'antithesis'),
     ('No Antithesis errors', 'antithesis'), ('container: amaru-relay-1, exit code: 1', 'antithesis'),
+    # F173: real names from run dc774cde… carry the display type a second time.
+    ('Always: Missed Always: dwarf_all_nodes_responsive', 'dwarf'),
+    ('Always: Missed Always: dwarf_txsubmission_window_enforced', 'dwarf'),
+    ('Sometimes: Sometimes: dwarf_nodes_reachable', 'dwarf'), ('Sometimes: Sometimes: dwarf_scenario_completed', 'dwarf'),
+    ('Always: Commands finish with zero exit code: dwarf/anytime_health.py', 'antithesis'),
+    ('Always: Missed Always: Peak memory usage', 'antithesis'),
 ])
 def test_property_source_requires_the_sdk_prefix_and_a_snake_case_dwarf_message(name, source):
     assert results_module().property_source(name) == source
