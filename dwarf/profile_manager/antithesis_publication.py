@@ -318,7 +318,8 @@ def _verify_git(directory,receipt,target,progress):
     plan=build_moog_create_test_plan(settings,repo=target['repository'],github_user=target['requester'],
         directory=target['directory'],commit=target['commit'],try_number=target['try_number'],
         duration_hours=receipt['request']['duration_hours'],asset_dir=str(directory/'package'),
-        no_faults=receipt['request']['faults']=='off')
+        no_faults=receipt['request']['faults']=='off',
+        no_instrumentation=receipt['request'].get('instrumentation','on')=='off')
     if not settings.get('enabled', True) or not settings.get('token_id') or str(settings['token_id']).startswith('REPLACE_'):
         plan['checks'].append({'id':'configured_moog','state':'error','detail':'Enable MOOG and save a real token ID in Dwarf settings.'})
         plan['state']='blocked'

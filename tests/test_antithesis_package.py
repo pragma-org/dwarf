@@ -91,6 +91,15 @@ def test_topology_override_is_kept_separate_and_stale_digest_is_rejected():
         generate(request(topology={**selected,'name':'edited'},topology_digest=resolved['topology_digest']))
 
 
+def test_instrumentation_off_is_recorded_as_submission_intent_only():
+    result=generate(request(instrumentation='off'))
+    manifest=json.loads(result['files']['package-manifest.json'])
+    assert manifest['request']['instrumentation']=='off'
+    fields={row['field']:row for row in manifest['engine_handoff']['inputs']}
+    assert fields['instrumentation']['status']=='recorded'
+    assert 'instrumentation' not in json.loads(generate()['files']['package-manifest.json'])['request']
+
+
 def test_changed_request_changes_package_identity_and_keeps_requested_fault_policy():
     first=generate();second=generate(request(duration_hours=9,faults='on'))
     assert first['package_digest']!=second['package_digest']
@@ -101,7 +110,7 @@ def test_changed_request_changes_package_identity_and_keeps_requested_fault_poli
 
 @pytest.mark.parametrize('change',[
     {'package_source':'url'}, {'duration_hours':True}, {'duration_hours':0}, {'duration_hours':1.5},
-    {'scenario_id':'../../etc/passwd'}, {'faults':[]}, {'extra':'ignored'},
+    {'scenario_id':'../../etc/passwd'}, {'faults':[]}, {'extra':'ignored'}, {'instrumentation':'maybe'},
     {'measurements':{'profile_id':None,'tap_ids':['x','x']}}, {'topology':{'source':'local-profile','profile_id':[]}},
     {'versions':{'policy':'exact','versions':{},'build_variant':'stock','experimental_intent':'yes'}},
 ])

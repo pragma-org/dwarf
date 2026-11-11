@@ -133,6 +133,7 @@ def run_moog_create_test(
     try_number,
     duration_hours,
     no_faults,
+    no_instrumentation=False,
 ):
     """Run a prebuilt `moog requester create-test` command on the remote host,
     injecting the wallet passphrase + GitHub PAT from their on-host files at
@@ -151,7 +152,7 @@ def run_moog_create_test(
             str(try_number),
             str(duration_hours),
             "no-faults" if no_faults else "faults",
-        )
+        ) + (("no-instrumentation",) if no_instrumentation else ())
         return ssh_command(config, command, timeout=timeout, verb=verb)
 
     secrets_root = cfg["secrets_root"]

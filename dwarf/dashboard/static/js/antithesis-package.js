@@ -16,7 +16,8 @@
       scenario_id:value('scenario')||null,
       measurements:{profile_id:value('measurement-profile')||null,
         tap_ids:[...root.querySelectorAll('[name="antithesis-tap"]:checked')].map(t=>t.value)},
-      duration_hours:value('duration')===''?null:Number(value('duration')),faults:value('faults')};
+      duration_hours:value('duration')===''?null:Number(value('duration')),faults:value('faults'),
+      instrumentation:value('instrumentation')};
   }
   root.antithesisPackageRequest=request;
   function status(state,message){
@@ -41,7 +42,7 @@
   function showHandoff(handoff){
     const labels={package_source:'Package source',scenario_id:'Scenario',topology:'Topology',
       versions:'Node versions',build_variant:'Stock / instrumented',experimental_intent:'Experimental intent',
-      measurements:'Measurement taps',duration_hours:'Duration',faults:'Fault policy'};
+      measurements:'Measurement taps',duration_hours:'Duration',faults:'Fault policy',instrumentation:'Instrumentation'};
     const statuses={applied:'Applied to preview',partial:'Partly applied',recorded:'Recorded only'};
     get('engine-summary').textContent=handoff.workload_binding?.source==='dwarf-workload'&&handoff.workload_binding?.status==='applied'
       ? (handoff.renderer==='scenario-rig'

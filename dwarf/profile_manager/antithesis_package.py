@@ -56,7 +56,8 @@ def _identifier(value, field, *, optional=False):
 
 def _validate(value, *, preparation=False):
     _shape(value, {'package_source','topology','topology_digest','versions','scenario_id',
-                   'measurements','duration_hours','faults'}, 'request')
+                   'measurements','duration_hours','faults'}
+           | ({'instrumentation'} if isinstance(value, dict) and 'instrumentation' in value else set()), 'request')
     if value['package_source'] not in (('build','url','existing') if preparation else ('build',)):
         raise PackageError('Unsupported package source.' if preparation else
                            'Use Prepare package for package URL or existing-asset import.', field='package_source', status=422)
@@ -65,6 +66,8 @@ def _validate(value, *, preparation=False):
         raise PackageError('Requested duration must be a positive whole number of hours.', field='duration_hours')
     if value['faults'] not in ('on','off'):
         raise PackageError('Choose on or off for faults.', field='faults')
+    if value.get('instrumentation', 'on') not in ('on','off'):
+        raise PackageError('Choose on or off for instrumentation.', field='instrumentation')
     v = value['versions']
     _shape(v, {'policy','versions','build_variant','experimental_intent'} | ({'artifacts'} if isinstance(v,dict) and 'artifacts' in v else set()), 'versions')
     if 'artifacts' in v:
@@ -98,7 +101,7 @@ def _validate(value, *, preparation=False):
         raise PackageError('Invalid topology digest.', field='topology_digest')
 
 
-def _engine_handoff(files, *, renderer_invoked, version_binding, workload_binding=None):
+def _engine_handoff(files, *, renderer_invoked, version_binding, workload_binding=None, request=None):
     """Describe this preview's output, without resolving or executing more work."""
     compose_path = 'environment/docker-compose.yaml'
     environment_emitted = compose_path in files
@@ -152,6 +155,10 @@ def _engine_handoff(files, *, renderer_invoked, version_binding, workload_bindin
     row('faults', 'recorded',
         'Fault on/off is submission intent only; existing service fault-exclusion labels are unchanged.',
         ['package-manifest.json'])
+    if 'instrumentation' in (request or {}):
+        row('instrumentation', 'recorded',
+            'Instrumentation on/off is submission intent only (off asks the platform to run without its coverage preload); the package is unchanged.',
+            ['package-manifest.json'])
     if control:
         rows = {r['field']:r for r in inputs}
         rows['scenario_id'].update(status='recorded', detail='The control harness is prepared; the selected scenario workload and observing assertions are not connected.')
@@ -343,7 +350,7 @@ def preview_package(value):
 
 
     gap('image-build-publication-deferred','package_source','Images have not been built or published. The public GitHub publication trigger and submission will be connected later.')
-    handoff = _engine_handoff(files, renderer_invoked=renderer_invoked, version_binding=version_binding, workload_binding=workload_binding)
+    handoff = _engine_handoff(files, renderer_invoked=renderer_invoked, version_binding=version_binding, workload_binding=workload_binding, request=value)
     if workload_binding.get('source') == 'dwarf-workload' and workload_binding['status'] == 'applied':
         counts = {status: sum(1 for row in classification['primitives'] if row['status'] == status)
                   for status in ('delegated', 'delegated-fault', 'unsupported')}

@@ -191,9 +191,10 @@ def main() -> int:
     elif verb == "moog-create-test":
         dry_run = tokens[-1] == "--dry-run"
         core = tokens[:-1] if dry_run else tokens
-        if len(core) != 8:
+        if len(core) not in (8, 9):
             return _reject(conf, original, "bad-token-count")
-        _, repo, github_user, directory, commit, try_number, duration_hours, fault_mode = core
+        _, repo, github_user, directory, commit, try_number, duration_hours, fault_mode = core[:8]
+        instrumentation_mode = core[8] if len(core) == 9 else "instrumentation"
         if not _REPO_RE.fullmatch(repo):
             return _reject(conf, original, "bad-repo")
         if not _GITHUB_USER_RE.fullmatch(github_user):
@@ -208,6 +209,8 @@ def main() -> int:
             return _reject(conf, original, "bad-duration")
         if fault_mode not in {"faults", "no-faults"}:
             return _reject(conf, original, "bad-fault-mode")
+        if instrumentation_mode not in {"instrumentation", "no-instrumentation"}:
+            return _reject(conf, original, "bad-instrumentation-mode")
         launch = {
             "repo": repo,
             "github_user": github_user,
@@ -216,6 +219,7 @@ def main() -> int:
             "try_number": int(try_number),
             "duration_hours": int(duration_hours),
             "no_faults": fault_mode == "no-faults",
+            "no_instrumentation": instrumentation_mode == "no-instrumentation",
         }
         rest = []
         arg = None

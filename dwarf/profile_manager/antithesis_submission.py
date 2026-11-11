@@ -405,7 +405,8 @@ def _evaluate(row):
         add('try_index', 'ok', 'First attempt for this commit and directory.')
     row['command'] = moog.build_moog_create_test_command(cfg, repo=t['repository'], github_user=t['requester'],
         directory=t['directory'], commit=t['commit'], try_number=t['try_number'],
-        duration_hours=request['duration_hours'], no_faults=request['faults'] == 'off')
+        duration_hours=request['duration_hours'], no_faults=request['faults'] == 'off',
+        no_instrumentation=request.get('instrumentation', 'on') == 'off')
     return config, checks, matches
 
 
@@ -431,7 +432,8 @@ def _launch(row):
     # fields that could bypass the shared external-run reservation.
     return dict(transport='moog', repository=t['repository'], github_user=t['requester'],
                 directory=t['directory'], commit=t['commit'],
-                duration_hours=request['duration_hours'], faults=request['faults'] == 'on', **{'try': t['try_number']})
+                duration_hours=request['duration_hours'], faults=request['faults'] == 'on',
+                instrumentation=request.get('instrumentation', 'on') == 'on', **{'try': t['try_number']})
 
 
 def _scenario_record(row):
@@ -655,7 +657,8 @@ def _submit(row):
     t, request = row['target'], row['request']
     result = remote.run_moog_create_test(config, config.moog, row['command'],
         repo=t['repository'], github_user=t['requester'], directory=t['directory'], commit=t['commit'],
-        try_number=t['try_number'], duration_hours=request['duration_hours'], no_faults=request['faults'] == 'off')
+        try_number=t['try_number'], duration_hours=request['duration_hours'], no_faults=request['faults'] == 'off',
+        no_instrumentation=request.get('instrumentation', 'on') == 'off')
     # Keep provider diagnostics in the private state directory, never in the
     # API row, package archive or command field (which can contain secrets).
     build._save(_path(row['id']) / 'transport.json',

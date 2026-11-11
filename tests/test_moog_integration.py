@@ -297,6 +297,27 @@ def test_live_moog_create_test_uses_fixed_control_shim_verb(monkeypatch):
     )
 
 
+def test_live_moog_create_test_sends_no_instrumentation_as_a_ninth_token(monkeypatch):
+    """Instrumentation off (a platform run without libvoidstar) travels as an explicit extra token;
+    the default keeps the eight-token verb so an older shim still accepts it."""
+    captured = {}
+
+    def fake_ssh(config, remote_command, timeout=None, dry_run=False, verb=None):
+        captured.update(verb=verb)
+        return CommandResult(0, "submitted\n", "", "ssh cardano-box moog-create-test ...")
+
+    monkeypatch.setenv("ADA2_DWARF_CONTROL_SHIM", "1")
+    monkeypatch.setattr(remote, "ssh_command", fake_ssh)
+    common = dict(repo="pragma-org/dwarf", github_user="J-GainSec", directory="antithesis/generated/x",
+                  commit="63a62fadfaacddb7b1f586bafa62ae74af47cddc", try_number=1, duration_hours=1, no_faults=False)
+    remote.run_moog_create_test(DeploymentConfig.from_dict({}), {"secrets_root": "/srv/dwarf/moog-secrets"},
+                                "unused", no_instrumentation=True, **common)
+    assert captured["verb"][-2:] == ("faults", "no-instrumentation")
+    remote.run_moog_create_test(DeploymentConfig.from_dict({}), {"secrets_root": "/srv/dwarf/moog-secrets"},
+                                "unused", **common)
+    assert len(captured["verb"]) == 8
+
+
 def test_deployment_config_round_trips_moog_block():
     value = {
         "enabled": True,
