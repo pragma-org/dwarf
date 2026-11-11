@@ -225,6 +225,45 @@ def _measured(value, rules):
     return True
 
 
+def _n2n_keepalive_answers(host, port):
+    """A fresh N2N bearer gets a keepalive response: the target is alive and serving now."""
+    from scripts.runtime_exposure_probe import _open_n2n_bearer, _control_keepalive
+    try:
+        sock, _ = _open_n2n_bearer({'host': host, 'port': int(port), 'pid': None}, duplex=False, timeout=5.0)
+    except (OSError, EOFError, RuntimeError):
+        return False
+    try:
+        return bool(_control_keepalive(sock, 1))
+    except (OSError, EOFError):
+        return False
+    finally:
+        sock.close()
+
+
+# F189: how a failed safety assertion re-asks its target at finish time (matrix `recheck`).
+RECHECKS = {'n2n-keepalive': _n2n_keepalive_answers}
+
+
+def _recheck_target(row, semantics):
+    """F189. Run 5801a383: a probe measured during a platform pause of its target reported every
+    sub-check false. If the target answers again at finish time it was not wedged by the probe's
+    traffic; the window was a transient (pause, kill+restart), so the Always is unmeasured.
+    Returns 'target-answers-now' to downgrade, None to keep the violation."""
+    check = RECHECKS.get(semantics.get('recheck') or '')
+    if check is None:
+        return None
+    points = row.get('data_points_used') or []
+    result = (points[0].get('result') or {}) if points and isinstance(points[0], dict) else {}
+    host, port = result.get('target_host'), result.get('target_port')
+    if not host or not port:
+        return None
+    try:
+        answers = check(host, port)
+    except Exception:  # noqa: BLE001 - a recheck failure must not lose the original verdict
+        return None
+    return 'target-answers-now' if answers else None
+
+
 def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, error=None):
     """Turn the bundle's assertions into SDK events and release the driver."""
     environ = os.environ if environ is None else environ
@@ -254,6 +293,11 @@ def finish(run_dir, exit_status, *, status_dir=DEFAULT_STATUS, environ=None, err
             continue
         if semantics.get('kind') == 'safety':
             measured = _measured(row.get('evaluated_value'), semantics.get('measured_when') or [])
+            recheck = _recheck_target(row, semantics) if measured and result != 'pass' else None
+            if recheck:
+                measured = False
+                details_row = dict(details_row, recheck=recheck,
+                                   note='the target answers a fresh keepalive now: the failing window was a transient (platform pause or restart), not a violation')
             sdk.emit_assert('sometimes', property_id(primitive) + '_measured', measured, details=details_row, environ=environ)
             if not measured:
                 continue

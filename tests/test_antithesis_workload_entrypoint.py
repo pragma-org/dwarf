@@ -480,3 +480,32 @@ def test_driver_exits_zero_when_the_scenario_ran_whatever_its_verdict(tmp_path, 
     source = driver.read_text().replace("pathlib.Path('/status')", 'pathlib.Path(%r)' % str(status))
     script = tmp_path / 'driver.py'; script.write_text(source)
     assert subprocess.run([sys.executable, str(script)], timeout=30).returncode == expected
+
+
+def _mux(result, *, host='node1.example', port=3000):
+    return {'primitive': 'mux_ingress_overrun_scoped', 'params': {}, 'result': result,
+            'evaluated_value': {'completed': 1, 'offending_bearer_disconnected': result == 'pass',
+                                'non_offending_bearers_preserved': result == 'pass', 'queue_budget_respected': result == 'pass'},
+            'data_points_used': [{'outcome': 'ok', 'result': {'measured': True, 'target_host': host, 'target_port': port}}]}
+
+
+def test_safety_failure_against_a_target_that_answers_again_is_unmeasured(tmp_path, monkeypatch):
+    """F189. Run 5801a383: the platform paused the Amaru target for 14 s; the mux probe inside that
+    pause reported every sub-check false and the Always failed. A target that answers a fresh N2N
+    keepalive at finish time was not wedged by the overrun: the window was a transient, not a
+    violation. A target that still does not answer keeps the violation."""
+    env = {'ANTITHESIS_OUTPUT_DIR': str(tmp_path / 'out')}
+    seen = []
+    monkeypatch.setitem(workload.RECHECKS, 'n2n-keepalive', lambda host, port: seen.append((host, port)) or True)
+    _semantics_bundle(tmp_path / 'runs' / 'a', [_mux('fail')])
+    workload.finish(tmp_path / 'runs' / 'a', 'fail', status_dir=tmp_path / 's1', environ=env)
+    monkeypatch.setitem(workload.RECHECKS, 'n2n-keepalive', lambda host, port: False)
+    _semantics_bundle(tmp_path / 'runs' / 'b', [_mux('fail')])
+    workload.finish(tmp_path / 'runs' / 'b', 'fail', status_dir=tmp_path / 's2', environ=env)
+    events = [r['antithesis_assert'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl') if 'antithesis_assert' in r]
+    always = [e for e in events if e['id'] == 'dwarf_mux_ingress_overrun_scoped']
+    measured = [e for e in events if e['id'] == 'dwarf_mux_ingress_overrun_scoped_measured']
+    assert seen == [('node1.example', 3000)]
+    assert [(e['assert_type'], e['condition']) for e in always] == [('always', False)]            # only run b
+    assert [(e['assert_type'], e['condition']) for e in measured] == [('sometimes', False), ('sometimes', True)]
+    assert measured[0]['details']['recheck'] == 'target-answers-now'

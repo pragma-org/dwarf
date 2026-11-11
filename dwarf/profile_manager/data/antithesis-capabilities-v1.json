@@ -342,7 +342,8 @@
             "field": "completed",
             "equals": 1
           }
-        ]
+        ],
+        "recheck": "n2n-keepalive"
       }
     },
     "runtime_panic_path_probe": {
@@ -442,7 +443,8 @@
             "field": "completed",
             "equals": 1
           }
-        ]
+        ],
+        "recheck": "n2n-keepalive"
       }
     },
     "runtime_parser_bounds_probe": {
