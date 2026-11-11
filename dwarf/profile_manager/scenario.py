@@ -1284,6 +1284,16 @@ def _resolve_framework_commit(explicit):
     )
 
 
+def _package_phase_markers(*, backend, measurement_context, run_dir):
+    """F185: inside an Antithesis package (no local measurement context) the window primitives get
+    a phase-marker proxy instead of "active measurement runtime is unavailable"."""
+    if backend != "antithesis" or measurement_context is not None:
+        return None
+    from profile_manager.measurement_runtime import PackagePhaseMarkers
+
+    return PackagePhaseMarkers(run_dir=run_dir)
+
+
 def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
                  framework_version="0.1.0", framework_commit=None, actor="shared:dwarf",
                  topology_preflight=None, topology_redeploy=None,
@@ -1602,6 +1612,9 @@ def run_scenario(path, *, runs_dir, state_dir, registry_path=None,
             return handle
     measurement_runtime = None
     measurement_window_started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    package_markers = _package_phase_markers(backend=backend, measurement_context=measurement_context, run_dir=handle.run_dir)
+    if package_markers is not None:
+        handle._measurement_runtime = package_markers
     if measurement_context is not None:
         from profile_manager.measurement_runtime import MeasurementRuntime
 
