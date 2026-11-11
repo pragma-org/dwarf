@@ -1,0 +1,149 @@
+{
+  "gaps": [
+    {
+      "code": "unproven-in-package",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_verify_exact_target: listed as runnable but not yet proven by a package smoke.",
+      "phase": "setup",
+      "primitive": "runtime_verify_exact_target"
+    },
+    {
+      "code": "unproven-in-package",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_mark_baseline_window: listed as runnable but not yet proven by a package smoke.",
+      "phase": "setup",
+      "primitive": "runtime_mark_baseline_window"
+    },
+    {
+      "code": "unproven-in-package",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_mark_hostile_window: listed as runnable but not yet proven by a package smoke.",
+      "phase": "load",
+      "primitive": "runtime_mark_hostile_window"
+    },
+    {
+      "code": "unproven-in-package",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_mark_recovery_window: listed as runnable but not yet proven by a package smoke.",
+      "phase": "load",
+      "primitive": "runtime_mark_recovery_window"
+    },
+    {
+      "code": "unproven-in-package",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_target_health_and_progress: listed as runnable but not yet proven by a package smoke.",
+      "phase": "probes",
+      "primitive": "runtime_target_health_and_progress"
+    },
+    {
+      "code": "primitive-unsupported-on-antithesis",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_peer_session_health: Observes peers through docker exec.",
+      "phase": "probes",
+      "primitive": "runtime_peer_session_health"
+    },
+    {
+      "code": "unproven-in-package",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "target_progress_continues: listed as runnable but not yet proven by a package smoke.",
+      "phase": "assertions",
+      "primitive": "target_progress_continues"
+    },
+    {
+      "code": "assertion-evidence-unsupported",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "unrelated_peer_session_usable: Its evidence producer runtime_peer_session_health is skipped inside the package; without that proof the assertion can only fail.",
+      "phase": "assertions",
+      "primitive": "unrelated_peer_session_usable"
+    },
+    {
+      "code": "unproven-in-package",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "no_target_fatal_signal: listed as runnable but not yet proven by a package smoke.",
+      "phase": "assertions",
+      "primitive": "no_target_fatal_signal"
+    }
+  ],
+  "level": "partial",
+  "matrix": "antithesis-capabilities-v1",
+  "primitives": [
+    {
+      "note": "Package mode compares the scenario target with the package pin; the running image is not inspected (F182).",
+      "phase": "setup",
+      "primitive": "runtime_verify_exact_target",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "Phase marks through the package phase-marker proxy (F185): windows.ndjson in the run dir plus a dwarf_measurement_window event per mark; the measurements service does not scope its records to the window yet.",
+      "phase": "setup",
+      "primitive": "runtime_mark_baseline_window",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "The target host comes from the package runtime.json service name; 127.0.0.1 is not the node.",
+      "phase": "load",
+      "primitive": "runtime_txsubmission_window_pressure",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "Phase marks through the package phase-marker proxy (F185): windows.ndjson in the run dir plus a dwarf_measurement_window event per mark; the measurements service does not scope its records to the window yet.",
+      "phase": "load",
+      "primitive": "runtime_mark_hostile_window",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "Phase marks through the package phase-marker proxy (F185): windows.ndjson in the run dir plus a dwarf_measurement_window event per mark; the measurements service does not scope its records to the window yet.",
+      "phase": "load",
+      "primitive": "runtime_mark_recovery_window",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "Re-observes the target by TCP, mounted socket and mounted log; OOM and restart count are unmeasured (None) in the package (F181 A4).",
+      "phase": "probes",
+      "primitive": "runtime_target_health_and_progress",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "Observes peers through docker exec.",
+      "phase": "probes",
+      "primitive": "runtime_peer_session_health",
+      "status": "unsupported"
+    },
+    {
+      "note": "",
+      "phase": "assertions",
+      "primitive": "txsubmission_window_enforced",
+      "status": "runs"
+    },
+    {
+      "note": "Reads the target-health proof.",
+      "phase": "assertions",
+      "primitive": "target_progress_continues",
+      "status": "runs"
+    },
+    {
+      "note": "Its evidence producer runtime_peer_session_health is skipped inside the package; without that proof the assertion can only fail.",
+      "phase": "assertions",
+      "primitive": "unrelated_peer_session_usable",
+      "status": "unsupported"
+    },
+    {
+      "note": "Reads the target-health proof; unmeasured log signals never pass (F181 A4).",
+      "phase": "assertions",
+      "primitive": "no_target_fatal_signal",
+      "status": "runs-with-note"
+    }
+  ],
+  "reason": null,
+  "runnable_load": true,
+  "schema_version": 1
+}

@@ -1,0 +1,24 @@
+{
+  "delegated": "antithesis-package",
+  "network": "testnet_42",
+  "network_magic": 42,
+  "node_count": 2,
+  "nodes": {
+    "amaru1": {
+      "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+      "impl": "amaru",
+      "requested_version": "10.11.20260918",
+      "resolved_version": "10.11.20260918",
+      "role": "consumer"
+    },
+    "bootstrap-cardano": {
+      "image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+      "impl": "cardano-node",
+      "requested_version": "11.1.2",
+      "resolved_version": "11.1.2",
+      "role": "bootstrap-producer"
+    }
+  },
+  "satisfied": true,
+  "version_policy": "antithesis-package"
+}

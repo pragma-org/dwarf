@@ -1,0 +1,114 @@
+{
+  "amaru_nodes": [
+    {
+      "bootstrap_sentinel": "/inputs/amaru1-state/.bootstrap-complete",
+      "config_path": null,
+      "container_listen_address": "amaru1.example:3000",
+      "id": "amaru1",
+      "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+      "image_digest": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+      "impl": "amaru",
+      "implementation": "amaru",
+      "listen_address": "amaru1.example:3000",
+      "log_path": "/inputs/amaru1/amaru.log",
+      "name": "amaru1",
+      "observation_transport": "antithesis-package",
+      "port": 3000,
+      "role": "consumer",
+      "socket_path": null,
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "submit_api_url": "http://amaru1.example:3011/api/submit/tx",
+      "supporting": false,
+      "version": "10.11.20260918"
+    }
+  ],
+  "compose_mode": "docker",
+  "compose_project": "antithesis",
+  "haskell_nodes": [
+    {
+      "bootstrap_sentinel": null,
+      "config_path": "/inputs/bootstrap-cardano-configs/configs/config.json",
+      "container_listen_address": "bootstrap-cardano.example:3001",
+      "id": "bootstrap-cardano",
+      "image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+      "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+      "impl": "cardano-node",
+      "implementation": "cardano-node",
+      "listen_address": "bootstrap-cardano.example:3001",
+      "log_path": "/inputs/tracer/logs",
+      "name": "bootstrap-cardano",
+      "observation_transport": "antithesis-package",
+      "port": 3001,
+      "role": "bootstrap-producer",
+      "socket_path": "/inputs/bootstrap-cardano/node.socket",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "submit_api_url": null,
+      "supporting": true,
+      "version": "11.1.2"
+    }
+  ],
+  "network": "testnet_42",
+  "network_magic": 42,
+  "nodes": [
+    {
+      "bootstrap_sentinel": null,
+      "config_path": "/inputs/bootstrap-cardano-configs/configs/config.json",
+      "container_listen_address": "bootstrap-cardano.example:3001",
+      "id": "bootstrap-cardano",
+      "image": "ghcr.io/intersectmbo/cardano-node:11.1.2@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+      "image_digest": "sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f",
+      "impl": "cardano-node",
+      "implementation": "cardano-node",
+      "listen_address": "bootstrap-cardano.example:3001",
+      "log_path": "/inputs/tracer/logs",
+      "name": "bootstrap-cardano",
+      "observation_transport": "antithesis-package",
+      "port": 3001,
+      "role": "bootstrap-producer",
+      "socket_path": "/inputs/bootstrap-cardano/node.socket",
+      "source_revision": "fef83fed01d7926f3de83b3b917be5a4a48768b5",
+      "submit_api_url": null,
+      "supporting": true,
+      "version": "11.1.2"
+    },
+    {
+      "bootstrap_sentinel": "/inputs/amaru1-state/.bootstrap-complete",
+      "config_path": null,
+      "container_listen_address": "amaru1.example:3000",
+      "id": "amaru1",
+      "image": "ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+      "image_digest": "sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36",
+      "impl": "amaru",
+      "implementation": "amaru",
+      "listen_address": "amaru1.example:3000",
+      "log_path": "/inputs/amaru1/amaru.log",
+      "name": "amaru1",
+      "observation_transport": "antithesis-package",
+      "port": 3000,
+      "role": "consumer",
+      "socket_path": null,
+      "source_revision": "aedfe797a5b8ef00d8b362be40b47a52c3b4a379",
+      "submit_api_url": "http://amaru1.example:3011/api/submit/tx",
+      "supporting": false,
+      "version": "10.11.20260918"
+    }
+  ],
+  "observation_transport": "antithesis-package",
+  "profile_id": "profile-z-amaru-20260918-nanoseconds-v3",
+  "support_binaries": {
+    "cardano-cli": "/usr/local/bin/cardano-cli"
+  },
+  "target_implementation": "amaru",
+  "topology": {
+    "edges": [
+      {
+        "from": "bootstrap-cardano",
+        "to": "amaru1"
+      },
+      {
+        "from": "amaru1",
+        "to": "bootstrap-cardano"
+      }
+    ]
+  }
+}

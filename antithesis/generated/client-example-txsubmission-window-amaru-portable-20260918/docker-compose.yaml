@@ -1,0 +1,214 @@
+services:
+  configurator:
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/configurator@sha256:599a73a401e42b0922751458e92eb5ae432b5e3712153f8843def8ee15d79e4f
+    container_name: configurator
+    hostname: configurator.example
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    entrypoint:
+    - /bin/bash
+    - -lc
+    command:
+    - "set -euo pipefail\n/configurator.sh\nshelley_start=\"$$(jq -r '.systemStart'\
+      \ /configs/1/configs/shelley-genesis.json)\"\nbyron_start=\"$$(jq -r '.startTime'\
+      \ /configs/1/configs/byron-genesis.json)\"\nfor dir in /configs/*; do\n  shelley=\"\
+      $$dir/configs/shelley-genesis.json\"\n  byron=\"$$dir/configs/byron-genesis.json\"\
+      \n  jq --arg start \"$$shelley_start\" '.systemStart = $$start' \"$$shelley\"\
+      \ > \"$$shelley.tmp\"\n  mv \"$$shelley.tmp\" \"$$shelley\"\n  jq --argjson\
+      \ start \"$$byron_start\" '.startTime = $$start' \"$$byron\" > \"$$byron.tmp\"\
+      \n  mv \"$$byron.tmp\" \"$$byron\"\ndone\necho \"normalized all pool genesis\
+      \ start times to $$shelley_start / $$byron_start\"\n"
+    volumes:
+    - ./testnet.yaml:/testnet.yaml:ro
+    - bootstrap-cardano-configs:/configs/1
+    environment:
+      PEER_SHARING: 'false'
+    platform: linux/amd64
+    init: true
+  tracer:
+    image: ghcr.io/intersectmbo/cardano-tracer@sha256:da628263a851b419c38d020d3a7dc3b65b20ee84e730faeb74babd6d96f28efe
+    container_name: tracer
+    hostname: tracer.example
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    entrypoint: cardano-tracer
+    command:
+    - --config
+    - /tracer-config.yaml
+    volumes:
+    - tracer:/opt/cardano-tracer
+    - ./tracer-config.yaml:/tracer-config.yaml:ro
+    restart: always
+    platform: linux/amd64
+    init: true
+  log-tailer:
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/log-tailer@sha256:a5d23c42408a1003bb14208fd97dd2bdda102e7002e4e2a2804e71a80df56484
+    container_name: log-tailer
+    hostname: log-tailer.example
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    volumes:
+    - tracer:/tracer:ro
+    depends_on:
+      tracer:
+        condition: service_started
+    restart: always
+    platform: linux/amd64
+    init: true
+  bootstrap-cardano:
+    image: ghcr.io/intersectmbo/cardano-node@sha256:6365403f44713d0a046865fb0466503ef207b71beae1b1ffece7f4399356db9f
+    environment:
+      CARDANO_BLOCK_PRODUCER: true
+    command: "run --topology /configs/configs/topology.json\n  --config /configs/configs/config.json\n\
+      \  --database-path /state\n  --socket-path /state/node.socket\n  --tracer-socket-path-connect\
+      \ /tracer/tracer.socket\n  --shelley-operational-certificate /configs/keys/opcert.cert\n\
+      \  --shelley-kes-key /configs/keys/kes.skey\n  --shelley-vrf-key /configs/keys/vrf.skey\n\
+      \  --port 3001\n  --host-addr 0.0.0.0\n  +RTS -N -A16m -qg -qb -RTS\n"
+    restart: always
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+      tracer:
+        condition: service_started
+    container_name: bootstrap-cardano
+    hostname: bootstrap-cardano.example
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    volumes:
+    - bootstrap-cardano-configs:/configs:ro
+    - ./topology/bootstrap-cardano.json:/configs/configs/topology.json:ro
+    - bootstrap-cardano-state:/state
+    - bootstrap-cardano-evidence:/evidence
+    - tracer:/tracer
+    platform: linux/amd64
+    init: true
+  amaru1:
+    image: ghcr.io/lambdasistemi/amaru-bootstrap-producer@sha256:aabaf9e1fc1f58045329e14c1127c5424ba4794855d39bce05e3b426b7025c36
+    entrypoint:
+    - /bin/bash
+    - -euo
+    - pipefail
+    - -c
+    environment:
+      AMARU_LOG: debug
+      AMARU_COLOR: never
+      AMARU_NETWORK: testnet_42
+      AMARU_BOOTSTRAP_RETRY_SECONDS: '5'
+      AMARU_WAIT_DEADLINE_SECONDS: '30'
+      AMARU_CLUSTER_READY_DEADLINE_SECONDS: '30'
+      AMARU_POLL_INTERVAL_SECONDS: '5'
+      RELAY_NAME: amaru1
+      AMARU_PEER: bootstrap-cardano.example:3001
+      AMARU_RUN_EXTRA_ARGS: --listen-address 0.0.0.0:3000 --submit-api-address 0.0.0.0:3011
+      AMARU_BIN: /target/amaru-launch
+      AMARU_MIGRATE_CHAIN_DB: 'true'
+      AMARU_WITH_JSON_TRACES: 'true'
+    restart: always
+    container_name: amaru1
+    hostname: amaru1.example
+    volumes:
+    - bootstrap-cardano-state:/live:ro
+    - bootstrap-cardano-configs:/cardano/config:ro
+    - ./amaru-runtime:/amaru-runtime:ro
+    - amaru-startup:/startup
+    - amaru1-state:/srv/amaru
+    - amaru1-evidence:/evidence
+    - type: volume
+      source: amaru-target-bin
+      target: /target
+      read_only: true
+    depends_on:
+      bootstrap-cardano:
+        condition: service_started
+      amaru-target-extract:
+        condition: service_completed_successfully
+        required: true
+    command:
+    - 'exec > >(tee -a /evidence/amaru.log | sed -u ''/"level":"DEBUG"/d;/"level":"TRACE"/d'')
+      2>&1
+
+      exec amaru-relay-bootstrap
+
+      '
+    platform: linux/amd64
+    init: true
+  amaru-target-extract:
+    image: ghcr.io/pragma-org/amaru@sha256:2176f12085219a4052be17dca89742954897eb9a5321554c799d0458913c9c60
+    user: 0:0
+    entrypoint:
+    - /bin/sh
+    - -ec
+    command:
+    - "temporary=; cleanup() { status=$$?; trap - 0; [ -z \"$${temporary:-}\" ] ||\
+      \ rm -f \"$$temporary\" || true; exit \"$$status\"; }; abort() { status=$$1;\
+      \ trap - 0 1 2 3 15; [ -z \"$${temporary:-}\" ] || rm -f \"$$temporary\" ||\
+      \ true; exit \"$$status\"; }; trap cleanup 0; trap 'abort 129' 1; trap 'abort\
+      \ 130' 2; trap 'abort 131' 3; trap 'abort 143' 15; temporary=$$(mktemp /target/.amaru.XXXXXX);\
+      \ cp /usr/local/bin/amaru \"$$temporary\"; chmod 0755 \"$$temporary\"; mv -f\
+      \ \"$$temporary\" /target/amaru; temporary=$$(mktemp /target/.amaru-launch.XXXXXX);\
+      \ printf %s '#!/bin/sh\nset -eu\nextra=\nif [ \"$${1:-}\" = run ]; then\n  extra=\"\
+      $${AMARU_RUN_EXTRA_ARGS:-}\"\nfi\ncase \"$${1:-}\" in\n  run|bootstrap)\n  \
+      \  if /target/amaru node run --help >/dev/null 2>&1; then\n      exec /target/amaru\
+      \ node \"$$@\" $$extra\n    fi\n    ;;\nesac\nexec /target/amaru \"$$@\" $$extra\n\
+      ' > \"$$temporary\"; chmod 0755 \"$$temporary\"; mv -f \"$$temporary\" /target/amaru-launch;\
+      \ temporary=; trap - 0 1 2 3 15"
+    volumes:
+    - type: volume
+      source: amaru-target-bin
+      target: /target
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    platform: linux/amd64
+    container_name: amaru-target-extract
+    hostname: amaru-target-extract.example
+    init: true
+  dwarf-workload:
+    platform: linux/amd64
+    container_name: dwarf-workload
+    hostname: dwarf-workload.example
+    init: true
+    user: 0:0
+    environment:
+      DWARF_ANTITHESIS_PACKAGE_DIR: /opt/dwarf/package
+      DWARF_ANTITHESIS_READY_TIMEOUT: '2400'
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+      com.dwarf.build-network: none
+    volumes:
+    - bootstrap-cardano-state:/inputs/bootstrap-cardano:ro
+    - bootstrap-cardano-configs:/inputs/bootstrap-cardano-configs:ro
+    - tracer:/inputs/tracer:ro
+    - amaru1-evidence:/inputs/amaru1:ro
+    - amaru1-state:/inputs/amaru1-state:ro
+    - dwarf-workload-evidence:/evidence
+    depends_on:
+      bootstrap-cardano:
+        condition: service_started
+      amaru1:
+        condition: service_started
+      configurator:
+        condition: service_completed_successfully
+    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:618ae9b875d677eb8aa0cc62df990ffa133c7107eba74ec4baf6b484800ffe56
+  dwarf-measurements:
+    platform: linux/amd64
+    container_name: dwarf-measurements
+    hostname: dwarf-measurements
+    init: true
+    restart: always
+    volumes:
+    - dwarf-measurement-results:/evidence
+    - amaru1-evidence:/inputs/amaru1:ro
+    labels:
+      com.antithesis.exclude_from_faults: network,kill,pause,stop
+    image: ghcr.io/j-gainsec/dwarf-dwarf-measurements@sha256:fcff2ef0b33b80a71992f7754389627c349dbcc58281fbc733a49a35278d43ec
+volumes:
+  tracer: {}
+  bootstrap-cardano-configs: {}
+  bootstrap-cardano-state: {}
+  bootstrap-cardano-evidence: {}
+  amaru-startup: {}
+  amaru1-state: {}
+  amaru1-evidence: {}
+  amaru-target-bin: {}
+  dwarf-workload-evidence: {}
+  dwarf-measurement-results: {}
