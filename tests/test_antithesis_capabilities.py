@@ -24,9 +24,10 @@ FREEZE_YAML = json.dumps({
 }).encode()
 
 
-def test_substrate_observation_scenario_is_partial_with_delegated_lifecycle():
+def test_substrate_observation_scenario_is_full_with_delegated_lifecycle():
+    # Every primitive of this scenario is proven in a package since the 2026-11-11 smokes.
     result = classify(catalog('runtime-substrate-mempool-failure-containment-mixed-amaru'))
-    assert result['level'] == 'partial'
+    assert result['level'] == 'full'
     assert result['runnable_load'] is True
     assert result['reason'] is None
     statuses = {row['primitive']: row['status'] for row in result['primitives']}
@@ -35,8 +36,8 @@ def test_substrate_observation_scenario_is_partial_with_delegated_lifecycle():
     assert statuses['runtime_teardown_substrate'] == 'delegated'
     assert statuses['runtime_multi_node_observation'] == 'runs-with-note'
     assert statuses['all_nodes_responsive'] == 'runs'
-    assert statuses['runtime_mempool_failure_probe'] == 'runs'   # package-aware since F53; unproven until a package smoke
-    assert {gap['code'] for gap in result['gaps']} <= {'primitive-unsupported-on-antithesis', 'unproven-in-package', 'observation-unavailable-in-package'}
+    assert statuses['runtime_mempool_failure_probe'] == 'runs'
+    assert not [gap for gap in result['gaps'] if gap['code'] in ('primitive-unsupported-on-antithesis', 'unproven-in-package')]
     assert all(gap['kind'] == 'implementation-gap' and gap['primitive'] for gap in result['gaps'])
     assert [row['phase'] for row in result['primitives']][:2] == ['setup', 'setup']
 

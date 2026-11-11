@@ -51,7 +51,8 @@ def _sdk_lines(path):
 def _fake_bundle(run_dir, *, exit_status='fail', skipped=True):
     run_dir.mkdir(parents=True)
     rows = [{'primitive': 'all_nodes_responsive', 'params': {}, 'evaluated_value': {'ok': True}, 'data_points_used': 2, 'result': 'pass'},
-            {'primitive': 'mempool_failure_contained', 'params': {}, 'evaluated_value': 'x' * 900, 'data_points_used': 1, 'result': 'fail'}]
+            {'primitive': 'mempool_failure_contained', 'params': {}, 'evaluated_value': {'node_stayed_up': True, 'fatal_error_contained': False}, 'data_points_used': 1, 'result': 'fail'},
+            {'primitive': 'unlisted_assertion_y', 'params': {}, 'evaluated_value': 'x' * 900, 'data_points_used': 1, 'result': 'fail'}]
     if skipped:
         rows.append({'primitive': 'unknown_primitive_x', 'params': {}, 'evaluated_value': None, 'data_points_used': 0, 'result': 'skipped', 'note': 'unsupported'})
     (run_dir / 'assertions.json').write_text(json.dumps(rows))
@@ -69,8 +70,8 @@ def test_finish_emits_outcomes_and_status(tmp_path):
     rows = {r['antithesis_assert']['id']: r['antithesis_assert'] for r in _sdk_lines(tmp_path / 'out' / 'sdk.jsonl')}
     # Liveness under faults is a Sometimes (F174); the rest of the rows keep their Always.
     assert rows['dwarf_all_nodes_responsive']['assert_type'] == 'sometimes' and rows['dwarf_all_nodes_responsive']['condition'] is True
-    assert rows['dwarf_mempool_failure_contained']['condition'] is False
-    assert len(rows['dwarf_mempool_failure_contained']['details']['evaluated_value']) == 512
+    assert rows['dwarf_mempool_failure_contained']['condition'] is False   # measured (node stayed up) and violated
+    assert len(rows['dwarf_unlisted_assertion_y']['details']['evaluated_value']) == 512
     assert rows['dwarf_skipped_unknown_primitive_x']['assert_type'] == 'reachability'
     assert rows['dwarf_skipped_unknown_primitive_x']['details'] == {'policy': 'unsupported'}
     assert rows['dwarf_scenario_completed']['assert_type'] == 'sometimes' and rows['dwarf_scenario_completed']['condition'] is True
