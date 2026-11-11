@@ -347,7 +347,8 @@ def test_devnet_scenario_previews_through_the_generated_workload(monkeypatch):
     assert result['capabilities']['level'] == 'partial'
     assert 'environment/dwarf-workload/Dockerfile' in result['files']
     compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
-    assert set(compose['services']) == {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'amaru-target-extract', 'dwarf-workload'}
+    # Taps are on by default (F178): the measurement services ride along; the rig itself is unchanged.
+    assert {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'amaru-target-extract', 'dwarf-workload', 'dwarf-measurements'} <= set(compose['services'])
     assert compose['services']['node2']['environment']['AMARU_PEER'] == 'node1.example:3001'
     rows = {r['field']: r for r in result['engine_handoff']['inputs']}
     assert rows['scenario_id']['status'] == 'partial'
@@ -388,7 +389,8 @@ def test_cardano_only_scenario_starts_only_cardano_containers(monkeypatch):
     assert result['version_binding']['status'] == 'applied', result['version_binding']['issues']
     assert result['workload_binding']['status'] == 'applied' and result['workload_binding']['rig']['shape'] == 'cardano-only'
     compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
-    assert set(compose['services']) == {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'node3', 'dwarf-workload'}
+    assert {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'node3', 'dwarf-workload', 'dwarf-measurements'} <= set(compose['services'])
+    assert {s for s in compose['services'] if s.startswith('node')} == {'node1', 'node2', 'node3'}
     assert not any('amaru' in name for name in compose['services'])
     assert result['files']['environment/testnet.yaml'].count('poolCount: 3') == 1
     assert compose['services']['dwarf-workload']['environment']['DWARF_ANTITHESIS_READY_TIMEOUT'] == '900'

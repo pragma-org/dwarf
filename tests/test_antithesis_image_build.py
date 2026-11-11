@@ -127,10 +127,15 @@ def test_generated_build_materializes_separate_package_without_changing_selectio
     original = zipfile.ZipFile(io.BytesIO(base64.b64decode(prepared['archive_base64'])))
     before = yaml.safe_load(original.read('docker-compose.yaml'))
     after = yaml.safe_load(archive.read('docker-compose.yaml'))
+    built = {row['service']: row['reference'] for row in receipt['built_images']}
     expected = before['services']['sm-workload'].copy(); expected.pop('build')
-    expected['image'] = receipt['built_images'][0]['reference']
+    expected['image'] = built['sm-workload']
     assert after['services']['sm-workload'] == expected
-    before['services']['sm-workload'] = expected
+    # Every controller-built service (with taps on by default: the measurement services too) is
+    # rewritten to its built image; nothing else in the compose changes.
+    for name, service in before['services'].items():
+        if 'build' in service:
+            service.pop('build'); service['image'] = built[name]
     assert after == before
     assert receipt['built_images'][0]['reference'].startswith('dwarf-antithesis-')
     assert [c[0] for c in calls] == ['antithesis.image-build', 'execution.status']

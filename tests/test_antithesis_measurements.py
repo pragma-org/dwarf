@@ -413,3 +413,26 @@ def test_generated_rig_targets_use_their_own_evidence_volumes():
     compose=yaml.safe_load(files['environment/docker-compose.yaml'])
     assert 'node1-evidence:/inputs/node1:ro' in compose['services']['dwarf-measurements']['volumes']
     assert 'sm-cardano-runtime-evidence:/inputs/node1:ro' not in compose['services']['dwarf-measurements']['volumes']
+
+
+def test_taps_are_always_on_for_every_rig_node_unless_the_scenario_says_none(monkeypatch):
+    """F178 (user rule 2026-11-11): the generator attaches taps like the local path — each node
+    implementation's default profile (stock/patched by artifact mode) — when the request names
+    none, and to every rig node with an evidence volume, not only the faultable targets. Before,
+    the mixed chainhold package bound no tap (Amaru consumer is not a target) and a plain request
+    carried no measurements at all."""
+    from profile_manager.antithesis_package import preview_package
+    from test_antithesis_package import _catalog
+    _catalog(monkeypatch)
+    versions={'policy':'exact','versions':{'cardano-node':'10.7.1','amaru':'10.11.20260918'},'build_variant':'stock','experimental_intent':False}
+    result=preview_package(request(scenario_id='consensus-chainhold-upstream-differential',versions=versions,
+                                   measurements={'profile_id':None,'tap_ids':[]}))
+    binding=result['measurement_binding']
+    bound={t['service']:{e['id'] for e in t['entries']} for t in binding['targets']}
+    assert set(bound)=={'relay1','relay2','amaru-consumer'}, binding['issues']
+    assert 'amaru-stock-network' in bound['amaru-consumer'] and 'cardano-stock-network' in bound['relay1']
+    assert all(e['selection_source']=='implicit-default' for t in binding['targets'] for e in t['entries'])
+    compose=yaml.safe_load(result['files']['environment/docker-compose.yaml'])
+    assert 'dwarf-measurements' in compose['services']
+    # Taps the default profile names but no package collector exists for are a named gap, not silence.
+    assert any(i['field']=='measurements.amaru-stock-resources' for i in binding['issues'])

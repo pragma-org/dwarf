@@ -68,36 +68,64 @@ def cardano_config_program():
         +"    path.write_text(json.dumps(body,indent=2)+'\\n')\n")
 
 
-def _selections(request,scenario):
+_DEFAULT_PROFILES={('amaru','stock'):'amaru-security-default',('amaru','patched'):'amaru-security-patched',
+                   ('cardano-node','stock'):'cardano-security-default',('cardano-node','patched'):'cardano-security-patched'}
+
+
+def _node_services(versions):
+    """The rig's node services (not helpers such as amaru-target-extract)."""
+    return [r for r in (versions.get('services') or []) if r.get('implementation') in ('amaru','cardano-node') and r.get('requested_version')]
+
+
+def _selections(request,scenario,versions):
     chosen={}
     profile=request['profile_id'] or scenario.measurement_profile
-    if profile:
+    explicit=bool(profile) or bool(request['tap_ids']) or bool(scenario.measurements)
+    if profile and profile!='none':
         for row in load_definition('measurement-profiles',profile).data.get('measurements',[]):
-            chosen[row['id']]=dict(row)
+            chosen[row['id']]=dict(row,selection_source='profile')
     for item in scenario.measurements or []:
         row=asdict(item) if not isinstance(item,dict) else dict(item)
-        chosen[row['id']]=row
+        chosen[row['id']]=dict(row,selection_source='scenario')
     for identifier in request['tap_ids']:
-        chosen[identifier]={'id':identifier,'enabled':True}
+        chosen[identifier]={'id':identifier,'enabled':True,'selection_source':'request'}
+    if not explicit:
+        # Taps are always on, as in the local path (F178): each node implementation's default
+        # profile, stock or patched by its artifact mode. A scenario says 'none' to opt out.
+        for row in _node_services(versions):
+            mode=((versions.get('node_artifacts') or {}).get(row['implementation']) or {}).get('mode','stock')
+            default=_DEFAULT_PROFILES.get((row['implementation'],mode))
+            if not default:continue
+            for item in load_definition('measurement-profiles',default).data.get('measurements',[]):
+                chosen.setdefault(item['id'],dict(item,selection_source='implicit-default'))
     return [row for row in chosen.values() if row.get('enabled') is True]
 
 
 def bind_measurements(files, request, scenario, versions, workload):
-    selections=_selections(request,scenario)
+    selections=_selections(request,scenario,versions)
     report={'status':'not-requested' if not selections else 'partial',
             'targets':[],'issues':[],'requested':[s['id'] for s in selections],
             'runtime_verified':False}
     if not selections:return report
+    implicit={row['id'] for row in selections if row.get('selection_source')=='implicit-default'}
+    explicit_gaps=[]
     def gap(identifier,message):
-        report['issues'].append({'code':'collector-not-implemented','field':'measurements.'+identifier,
-                                'kind':'implementation-gap','message':message})
+        # A default-profile tap without a package collector is a declared gap, like an unavailable tap
+        # in a local run; only a tap someone asked for keeps the binding from being applied (F178).
+        code='tap-unavailable-in-package' if identifier in implicit else 'collector-not-implemented'
+        if code=='collector-not-implemented':explicit_gaps.append(identifier)
+        report['issues'].append({'code':code,'field':'measurements.'+identifier,'kind':'implementation-gap','message':message})
     if workload.get('status')!='applied' or versions.get('status')!='applied':
         for row in selections:gap(row['id'],'Connect the scenario target and workload before attaching this collector.')
         return report
     compose=yaml.safe_load(files['environment/docker-compose.yaml'])
     rows={r['service']:r for r in versions['services']}
     bound=set()
-    for service in workload['targets']:
+    evidence_volumes=workload.get('evidence_volumes') or {}
+    # Every rig node with its own evidence volume is measured, not only the faultable targets (F178).
+    services=list(workload['targets'])+[r['service'] for r in _node_services(versions)
+                                        if r['service'] not in workload['targets'] and r['service'] in evidence_volumes]
+    for service in services:
         row=rows[service];implementation=row['implementation']
         artifact=versions.get('node_artifacts',{}).get(implementation,{})
         identity={'implementation':implementation,'version':row['requested_version'],
@@ -140,7 +168,7 @@ def bind_measurements(files, request, scenario, versions, workload):
             record=load_definition('measurements',identifier)
             if record.data['compatibility']['implementation']!=implementation:continue
             if identifier not in supported:continue
-            entries.append({'id':identifier,'enabled':True,'source':'antithesis',
+            entries.append({'id':identifier,'enabled':True,'source':'antithesis','selection_source':selected.get('selection_source','request'),
                 'parameters':selected.get('parameters',{}),
                 'threshold_gate':selected.get('threshold_gate') or {'enabled':False,'thresholds':[]},
                 'definition':record.data,'definition_digest':'sha256:'+hashlib.sha256(record.source).hexdigest()})
@@ -208,5 +236,5 @@ def bind_measurements(files, request, scenario, versions, workload):
             'init':True,'restart':'always','volumes':mounts,
             'labels':{'com.antithesis.exclude_from_faults':'network,kill,pause,stop'}}
         files['environment/docker-compose.yaml']=yaml.safe_dump(compose,sort_keys=False)
-    if not report['issues']:report['status']='applied'
+    if not explicit_gaps:report['status']='applied'
     return report
