@@ -344,21 +344,21 @@ def test_devnet_scenario_previews_through_the_generated_workload(monkeypatch):
     assert result['workload_binding']['status'] == 'applied', result['workload_binding']['issues']
     assert result['workload_binding']['template'] == 'scenario-rig' and result['workload_binding']['rig']['shape'] == 'mixed'
     assert result['version_binding']['source'] == 'generated-rig' and result['version_binding']['status'] == 'applied'
-    assert result['capabilities']['level'] == 'partial'
+    assert result['capabilities']['level'] == 'full'   # every step proven in a package (2026-11-11 smokes)
     assert 'environment/dwarf-workload/Dockerfile' in result['files']
     compose = yaml.safe_load(result['files']['environment/docker-compose.yaml'])
     # Taps are on by default (F178): the measurement services ride along; the rig itself is unchanged.
     assert {'configurator', 'tracer', 'log-tailer', 'node1', 'node2', 'amaru-target-extract', 'dwarf-workload', 'dwarf-measurements'} <= set(compose['services'])
     assert compose['services']['node2']['environment']['AMARU_PEER'] == 'node1.example:3001'
     rows = {r['field']: r for r in result['engine_handoff']['inputs']}
-    assert rows['scenario_id']['status'] == 'partial'
+    assert rows['scenario_id']['status'] == 'applied'
     assert 'dwarf-workload' in rows['scenario_id']['detail']
     assert rows['topology']['status'] == 'applied' and 'scenario devnet' in rows['topology']['detail'].lower()
     assert result['engine_handoff']['renderer'] == 'scenario-rig'
     manifest = json.loads(result['files']['package-manifest.json'])
     assert manifest['capabilities'] == result['capabilities']
     codes = {issue['code'] for issue in result['issues']}
-    assert 'unproven-in-package' in codes
+    assert not codes & {'unproven-in-package', 'primitive-unsupported-on-antithesis'}
     assert 'scenario-harness-workload-not-implemented' not in codes
     assert any(image['service'] == 'dwarf-workload' for image in result['images'])
     assert 'environment/testnet.yaml' in result['files'] and 'environment/topology/node1.json' in result['files']
