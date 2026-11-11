@@ -1,0 +1,67 @@
+{
+  "compose_mode": "docker",
+  "compose_project": "antithesis",
+  "delegated": "antithesis-package",
+  "healthy": null,
+  "network": "testnet_42",
+  "network_magic": 42,
+  "node_count": 3,
+  "nodes": [
+    {
+      "healthy": null,
+      "id": "relay1",
+      "impl": "cardano-node",
+      "listen_address": "relay1.example:3001",
+      "role": "honest",
+      "version": "10.7.1"
+    },
+    {
+      "healthy": null,
+      "id": "relay2",
+      "impl": "cardano-node",
+      "listen_address": "relay2.example:3001",
+      "role": "honest",
+      "version": "10.7.1"
+    },
+    {
+      "healthy": null,
+      "id": "amaru-consumer",
+      "impl": "amaru",
+      "listen_address": "amaru-consumer.example:3000",
+      "role": "observer",
+      "version": "10.11.20261029"
+    }
+  ],
+  "runtime_metadata_path": "/opt/dwarf/package/runtime.json",
+  "support_binaries": {
+    "cardano-cli": "/usr/local/bin/cardano-cli"
+  },
+  "topology": {
+    "edges": [
+      {
+        "from": "relay1",
+        "to": "relay2"
+      },
+      {
+        "from": "relay2",
+        "to": "relay1"
+      },
+      {
+        "from": "amaru-consumer",
+        "to": "relay1"
+      },
+      {
+        "from": "relay1",
+        "to": "amaru-consumer"
+      },
+      {
+        "from": "amaru-consumer",
+        "to": "relay2"
+      },
+      {
+        "from": "relay2",
+        "to": "amaru-consumer"
+      }
+    ]
+  }
+}

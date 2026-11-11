@@ -129,7 +129,7 @@ services:
         condition: service_started
       configurator:
         condition: service_completed_successfully
-    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:448821fe7e71c9e0af554fdb6e384e27e55d657e4cb1fc214ce687411bbb1e70
+    image: ghcr.io/j-gainsec/dwarf-dwarf-workload@sha256:a738b199806fd5ea083a7dc0e7a9d526ac9617eda60bb9d3ea49789503237c09
 volumes:
   tracer: {}
   node1-configs: {}

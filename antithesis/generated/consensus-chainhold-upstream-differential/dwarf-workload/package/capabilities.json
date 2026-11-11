@@ -1,0 +1,55 @@
+{
+  "gaps": [
+    {
+      "code": "fault-delegated-to-platform",
+      "field": "scenario_id",
+      "kind": "implementation-gap",
+      "message": "runtime_network_partition: Needs docker network disconnect; platform network faults stand in.",
+      "phase": "faults",
+      "primitive": "runtime_network_partition"
+    }
+  ],
+  "level": "full",
+  "matrix": "antithesis-capabilities-v1",
+  "primitives": [
+    {
+      "note": "Node images are pinned in the package compose; the primitive reads install-report.json shipped with the package.",
+      "phase": "setup",
+      "primitive": "runtime_install_version",
+      "status": "delegated"
+    },
+    {
+      "note": "Antithesis starts the compose; the primitive reads the package-shipped runtime.json and compose-report.json.",
+      "phase": "setup",
+      "primitive": "runtime_compose_substrate",
+      "status": "delegated"
+    },
+    {
+      "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted node log; connection state is reported unavailable (no process access inside the package).",
+      "phase": "load",
+      "primitive": "runtime_multi_node_observation",
+      "status": "runs-with-note"
+    },
+    {
+      "note": "Needs docker network disconnect; platform network faults stand in.",
+      "phase": "faults",
+      "primitive": "runtime_network_partition",
+      "status": "delegated-fault"
+    },
+    {
+      "note": "Compares node tips from the in-package observation (cardano-cli for cardano-node, the node log for Amaru).",
+      "phase": "assertions",
+      "primitive": "chain_select_differential",
+      "status": "runs"
+    },
+    {
+      "note": "Antithesis owns the compose lifecycle; the primitive records a delegated teardown.",
+      "phase": "teardown",
+      "primitive": "runtime_teardown_substrate",
+      "status": "delegated"
+    }
+  ],
+  "reason": null,
+  "runnable_load": true,
+  "schema_version": 1
+}
