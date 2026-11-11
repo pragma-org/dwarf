@@ -256,6 +256,19 @@ def hooks_for(package, *, status_dir, environ):
     return hooks
 
 
+def hold(code, *, environ=None, sleep=time.sleep):
+    """Keep the workload container up after the scenario (F172).
+
+    Antithesis reports every container exit as unexpected, and an exit kills the Test Composer
+    driver that waits on /status/done. The outcome is already in the SDK events and /status/exit.
+    DWARF_ANTITHESIS_EXIT_AFTER_RUN=1 returns instead (local tooling)."""
+    environ = os.environ if environ is None else environ
+    if environ.get('DWARF_ANTITHESIS_EXIT_AFTER_RUN') == '1':
+        return code
+    while True:
+        sleep(3600)
+
+
 def _parser():
     parser = argparse.ArgumentParser(prog='cardano-profile antithesis workload')
     parser.add_argument('--package', default=None)

@@ -1598,7 +1598,7 @@ def cmd_antithesis(args):
             value = getattr(args, option)
             if value is not None:
                 argv += ["--" + option.replace("_", "-"), value]
-        return antithesis_workload.main(argv)
+        return antithesis_workload.hold(antithesis_workload.main(argv))
     if args.antithesis_command == "build":
         profile = find_profile(args.profile_id)
         registry = args.registry or DEFAULT_REGISTRY

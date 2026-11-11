@@ -279,6 +279,7 @@ def test_cli_wires_the_workload_subcommand(monkeypatch):
     from profile_manager import cli
     seen = {}
     monkeypatch.setattr(workload, 'main', lambda argv, environ=None: (seen.setdefault('argv', argv), 7)[1])
+    monkeypatch.setenv('DWARF_ANTITHESIS_EXIT_AFTER_RUN', '1')
     assert cli.main(['antithesis', 'workload', '--package', '/p']) == 7
     assert seen['argv'] == ['--package', '/p']
 
@@ -386,3 +387,29 @@ def test_finish_never_reports_pass_when_every_assertion_was_skipped(tmp_path, mo
     (run_dir / 'assertions.json').write_text(json.dumps([{'primitive': 'a', 'result': 'pass'}, {'primitive': 'b', 'result': 'skipped', 'note': 'x'}]))
     events.clear()
     assert workload.finish(run_dir, 'pass', status_dir=tmp_path / 'status2', environ={}) == 0
+
+
+def test_the_container_stays_up_after_the_scenario(monkeypatch):
+    """F172: Antithesis counts every workload container exit as 'unexpected' (157 in run dc774cde)
+    and the exit killed the driver command ('All commands were run to completion' failed).
+    After the run the entrypoint idles; only an explicit opt-out returns."""
+    naps = []
+
+    class Stop(Exception):
+        pass
+
+    def sleep(seconds):
+        naps.append(seconds)
+        if len(naps) == 3:
+            raise Stop()
+    with pytest.raises(Stop):
+        workload.hold(1, environ={}, sleep=sleep)
+    assert len(naps) == 3
+    assert workload.hold(1, environ={'DWARF_ANTITHESIS_EXIT_AFTER_RUN': '1'}, sleep=sleep) == 1
+
+
+def test_cli_holds_the_container_after_the_workload(monkeypatch):
+    from profile_manager import cli
+    monkeypatch.setattr(workload, 'main', lambda argv, environ=None: 3)
+    monkeypatch.setattr(workload, 'hold', lambda code, environ=None, sleep=None: ('held', code))
+    assert cli.main(['antithesis', 'workload']) == ('held', 3)
