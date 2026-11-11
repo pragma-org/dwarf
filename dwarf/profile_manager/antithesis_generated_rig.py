@@ -28,7 +28,11 @@ AMARU_RUN_EXTRA_ARGS = '--listen-address 0.0.0.0:%d --submit-api-address 0.0.0.0
 SUPPORT_SERVICES = ('configurator', 'tracer', 'log-tailer')
 PRODUCER_TEMPLATE, AMARU_TEMPLATE = 'p1', 'amaru-relay-1'
 AMARU_RUNTIME_INPUTS = ('amaru-runtime/era-history.json', 'amaru-runtime/global-parameters.json')
-AMARU_COMMAND = 'exec > >(tee -a /evidence/amaru.log) 2>&1\nexec amaru-relay-bootstrap\n'
+# F191: tee keeps the full JSON trace stream in the evidence file (the measurement taps read it);
+# stdout — the platform's "customer output" — drops DEBUG/TRACE lines so a 1 h mixed run stays
+# under the platform's 200 MB/core-hour guideline (Amaru's default trace filter is amaru=debug).
+AMARU_COMMAND = ('exec > >(tee -a /evidence/amaru.log | sed -u \'/"level":"DEBUG"/d;/"level":"TRACE"/d\') 2>&1\n'
+                 'exec amaru-relay-bootstrap\n')
 _POOL_COUNT = re.compile(r'^poolCount: 3$', re.MULTILINE)
 _PEER_SHARING = re.compile(r'^PeerSharing: true$', re.MULTILINE)
 _EXPERIMENTAL = re.compile(r'^ExperimentalProtocolsEnabled: (true|false)$', re.MULTILINE)

@@ -159,7 +159,13 @@ def test_amaru_only_profile_bootstraps_from_the_supporting_producer():
     assert FAULT not in (services['amaru1'].get('labels') or {})
     amaru = services['amaru1']
     assert amaru['entrypoint'] == ['/bin/bash', '-euo', 'pipefail', '-c']
-    assert amaru['command'] == ['exec > >(tee -a /evidence/amaru.log) 2>&1\nexec amaru-relay-bootstrap\n']
+    # F191: the evidence file keeps every JSON trace line (the taps read it); the container's
+    # stdout — what the platform counts as customer output — drops DEBUG/TRACE lines. Amaru's
+    # default trace filter is amaru=debug, which alone pushed mixed runs to ~290 MB/core-hour
+    # against the platform's 200 MB/core-hour guideline.
+    assert amaru['command'] == [
+        'exec > >(tee -a /evidence/amaru.log | sed -u \'/"level":"DEBUG"/d;/"level":"TRACE"/d\') 2>&1\n'
+        'exec amaru-relay-bootstrap\n']
     assert amaru['environment']['RELAY_NAME'] == 'amaru1' and amaru['environment']['AMARU_PEER'] == 'bootstrap-cardano.example:3001'
     assert amaru['environment']['AMARU_RUN_EXTRA_ARGS'] == '--listen-address 0.0.0.0:3000 --submit-api-address 0.0.0.0:3011'
     assert amaru['environment']['AMARU_NETWORK'] == 'testnet_42'
