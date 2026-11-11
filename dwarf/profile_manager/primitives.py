@@ -15055,6 +15055,91 @@ def _protocol_docker_result(command: list[str], *, timeout: float = 60.0):
     )
 
 
+def _package_observer(observer: dict[str, Any]) -> bool:
+    return observer.get("observation_transport") == "antithesis-package"
+
+
+def _package_node_state(observer: dict[str, Any]) -> dict[str, Any]:
+    """What a package can see of another service: whether its address accepts a connection (A4).
+    Exit code, OOM and restart count are not observable there and stay None (unmeasured)."""
+    import socket
+
+    host, _, port = str(observer.get("listen_address") or "").rpartition(":")
+    reachable = False
+    try:
+        with socket.create_connection((host, int(port or 0)), timeout=2.0):
+            reachable = True
+    except (OSError, ValueError):
+        reachable = False
+    return {"running": reachable, "status": "reachable" if reachable else "unreachable",
+            "exit_code": None, "oom_killed": None, "restart_count": None, "basis": "tcp-connect"}
+
+
+def _package_cardano_tip(socket_path: str | None, network_magic: int) -> dict[str, Any] | None:
+    """cardano-cli query tip with the workload's own CLI on a mounted node socket (A4)."""
+    import shutil
+
+    cli = shutil.which("cardano-cli")
+    if not cli or not socket_path:
+        return None
+    try:
+        result = subprocess.run([cli, "query", "tip", "--socket-path", str(socket_path), "--testnet-magic",
+                                 str(network_magic)], capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        candidate = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    height = candidate.get("block")
+    if isinstance(height, int) and not isinstance(height, bool) and candidate.get("hash"):
+        return {"block_height": height, "hash": candidate.get("hash"), "slot": candidate.get("slot")}
+    return None
+
+
+_PACKAGE_LOG_TAIL_BYTES = 8 * 1024 * 1024
+
+
+def _package_node_logs(observer: dict[str, Any], since: str | None) -> str | None:
+    """Node output a package can read: Amaru's mounted log file, or cardano-node's tracer directory
+    (one sub-directory per forwarder, named <host>_<port>). None when nothing is readable, so a
+    consumer can say "unmeasured" instead of "no fatal signal" (A4)."""
+    path = observer.get("log_path")
+    if not path:
+        return None
+    root = Path(str(path))
+    files: list[Path] = []
+    if root.is_file():
+        files = [root]
+    elif root.is_dir():
+        host = str(observer.get("listen_address") or "").rpartition(":")[0]
+        subdirs = [d for d in sorted(root.iterdir()) if d.is_dir()]
+        chosen = [d for d in subdirs if host and d.name.startswith(host)] or subdirs
+        for directory in chosen:
+            files.extend(sorted(f for f in directory.rglob("*") if f.is_file() and f.suffix in (".json", ".log")))
+    if not files:
+        return None
+    chunks = []
+    for item in files:
+        try:
+            with item.open("rb") as handle:
+                handle.seek(max(0, item.stat().st_size - _PACKAGE_LOG_TAIL_BYTES))
+                chunks.append(handle.read().decode("utf-8", errors="replace"))
+        except OSError:
+            continue
+    text = "\n".join(chunks)
+    if since and since != "0":
+        kept = []
+        for line in text.splitlines():
+            match = re.search(r'"at"\s*:\s*"([^"]+)"', line)
+            if match is None or match.group(1) >= since:
+                kept.append(line)
+        text = "\n".join(kept)
+    return text
+
+
 def _protocol_container_state(container: str) -> dict[str, Any]:
     result = _protocol_docker_result(["inspect", container])
     if result.returncode != 0:
@@ -15071,6 +15156,15 @@ def _protocol_container_state(container: str) -> dict[str, Any]:
 
 
 def _observe_protocol_peer(observer: dict[str, Any]) -> dict[str, Any]:
+    observed_at = datetime.now(timezone.utc).timestamp()
+    if observer.get("unavailable"):
+        # No independent peer the package can query: unmeasured, never "unusable".
+        return {"observed_at_epoch_seconds": observed_at, "peer_id": observer.get("peer_id"),
+                "container": None, "usable": None, "tip": None}
+    if _package_observer(observer):
+        tip = _package_cardano_tip(observer.get("socket_path"), int(observer.get("network_magic", 42)))
+        return {"observed_at_epoch_seconds": observed_at, "peer_id": observer.get("peer_id"),
+                "container": None, "usable": tip is not None, "tip": tip}
     container = str(observer.get("container") or "")
     if not container:
         raise RuntimeError("peer observer has no container identity")
@@ -15120,6 +15214,22 @@ def _amaru_tip_lookback_since(since: str) -> str:
 
 def _observe_protocol_target(observer: dict[str, Any]) -> dict[str, Any]:
     implementation = str(observer.get("implementation") or "")
+    if _package_observer(observer) and implementation in {"amaru", "cardano-node"}:
+        from scripts.qualify_node_versions import classify_log_signals
+
+        state = _package_node_state(observer)
+        since = str(observer.get("started_at") or "0")
+        window_text = _package_node_logs(observer, since)
+        if implementation == "amaru":
+            from scripts.runtime_amaru_measurement_calibration import extract_latest_adopted_tip
+
+            whole = _package_node_logs(observer, None)
+            tip = extract_latest_adopted_tip(whole) if whole else None
+        else:
+            tip = _package_cardano_tip(observer.get("socket_path"), int(observer.get("network_magic", 42)))
+        return {"state": state, "tip": tip if isinstance(tip, dict) else None,
+                "log_signals": classify_log_signals(window_text) if window_text is not None else None,
+                "log_source": observer.get("log_path") if window_text is not None else None}
     container = str(observer.get("container") or "")
     if implementation not in {"amaru", "cardano-node"} or not container:
         raise RuntimeError("target observer has no supported implementation and container")
@@ -15163,6 +15273,21 @@ def _probe_evidence_observers(
     honest peer (the same peer the calibration leg uses)."""
     runtime = json.loads(Path(runtime_identity_path).read_text(encoding="utf-8"))
     implementation = str(target.get("implementation") or "")
+    if target.get("observation_transport") == "antithesis-package":
+        # Inside the package (A4): the target by its service address, mounted socket and log; the
+        # peer is another cardano node whose socket is mounted, or unavailable.
+        network_magic = int(runtime.get("network_magic", 42))
+        target_observer = {"implementation": implementation, "container": None,
+                           "observation_transport": "antithesis-package", "service": target.get("id"),
+                           "listen_address": str(target.get("listen_host") or "") + ":" + str(target.get("listen_port") or 0),
+                           "socket_path": target.get("socket_path"), "log_path": target.get("log_path"),
+                           "network_magic": network_magic, "started_at": _utc_now_iso()}
+        peer = next((n for n in runtime.get("nodes") or [] if n.get("id") != target.get("id")
+                     and n.get("impl") == "cardano-node" and n.get("socket_path")), None)
+        if peer is None:
+            return target_observer, {"peer_id": None, "container": None, "unavailable": True, "network_magic": network_magic}
+        return target_observer, {"peer_id": peer.get("id"), "container": None, "observation_transport": "antithesis-package",
+                                 "socket_path": peer.get("socket_path"), "network_magic": network_magic}
     container = str(target.get("container") or "")
     if implementation not in {"amaru", "cardano-node"} or not container:
         raise RuntimeError("probe evidence capture needs the prepared target's implementation and container")
@@ -15221,7 +15346,7 @@ def _finish_probe_evidence(evidence: dict[str, Any], report: dict[str, Any]) -> 
         "after": after.get("state"),
         "tip_before": before.get("tip"),
         "tip_after": after.get("tip"),
-        "log_signals": after.get("log_signals") or {},
+        "log_signals": after.get("log_signals"),
         "checks": {},
         "observer": evidence["target_observer"],
     }
@@ -15234,6 +15359,20 @@ def _finish_probe_evidence(evidence: dict[str, Any], report: dict[str, Any]) -> 
         "observer": evidence["peer_observer"],
     }
     return report
+
+
+def _target_health_checks(before, after, log_signals, before_position, after_position) -> dict[str, Any]:
+    """Each check is True, False or None (unmeasured). A package sees no OOM, restart count or,
+    without a mounted log, no signals; None is never a pass (A4)."""
+    restart = (before.get("restart_count"), after.get("restart_count"))
+    return {
+        "no_fatal_signals": (not bool(log_signals.get("fatal"))) if isinstance(log_signals, dict) else None,
+        "target_not_oom_killed": (after.get("oom_killed") is False) if after.get("oom_killed") is not None else None,
+        "target_restart_count_unchanged": (restart[0] == restart[1]) if None not in restart else None,
+        "target_running_after": after.get("running") is True,
+        "target_running_before": before.get("running") is True,
+        "target_progressed": after_position > before_position,
+    }
 
 
 class RuntimeTargetHealthAndProgress(ProbePrimitive):
@@ -15263,22 +15402,12 @@ class RuntimeTargetHealthAndProgress(ProbePrimitive):
             if progress_reference == "load-start" or not observation
             else tip_hostile_end
         )
-        log_signals = observation.get("log_signals") or health.get("log_signals") or {}
+        log_signals = observation.get("log_signals") if "log_signals" in observation else health.get("log_signals")
         before_position = _tip_position(tip_before)
         after_position = _tip_position(tip_after)
         if before_position is None or after_position is None:
             raise RuntimeError("target health evidence has no comparable chain positions")
-        checks = {
-            "no_fatal_signals": not bool(log_signals.get("fatal")),
-            "target_not_oom_killed": after.get("oom_killed") is False,
-            "target_restart_count_unchanged": (
-                before.get("restart_count") is not None
-                and after.get("restart_count") == before.get("restart_count")
-            ),
-            "target_running_after": after.get("running") is True,
-            "target_running_before": before.get("running") is True,
-            "target_progressed": after_position > before_position,
-        }
+        checks = _target_health_checks(before, after, log_signals, before_position, after_position)
         evidence = {
             "before": before,
             "after": after,
@@ -15842,20 +15971,27 @@ def _observe_client_target_tip(target: dict[str, Any]) -> dict[str, Any]:
             "socket_path": target.get("socket_path"),
             "network_magic": target.get("network_magic", 42),
             "peer_id": target.get("id"),
+            "observation_transport": target.get("observation_transport"),
         }
         result = _observe_protocol_peer(observer)
         if not result.get("usable"):
             raise RuntimeError("Cardano target tip is unavailable")
         return dict(result["tip"])
     if implementation == "amaru":
-        result = _protocol_docker_result(
-            ["logs", "--tail", "12000", str(target.get("container"))], timeout=120
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "cannot read Amaru target logs")
         from scripts.runtime_amaru_measurement_calibration import extract_latest_adopted_tip
 
-        tip = extract_latest_adopted_tip(result.stdout + "\n" + result.stderr)
+        if target.get("observation_transport") == "antithesis-package":
+            text = _package_node_logs(target, None)
+            if text is None:
+                raise RuntimeError("Amaru target log is unavailable in the package")
+            tip = extract_latest_adopted_tip(text)
+        else:
+            result = _protocol_docker_result(
+                ["logs", "--tail", "12000", str(target.get("container"))], timeout=120
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "cannot read Amaru target logs")
+            tip = extract_latest_adopted_tip(result.stdout + "\n" + result.stderr)
         if not isinstance(tip, dict):
             raise RuntimeError("Amaru target tip is unavailable")
         return dict(tip)
@@ -16368,14 +16504,15 @@ def _canonical_progress_checks(
     )
     before = target_health.get("before") or {}
     after = target_health.get("after") or {}
-    signals = target_health.get("log_signals") or {}
+    signals = target_health.get("log_signals")
     health_clean = (
         before.get("running") is True
         and after.get("running") is True
-        and before.get("oom_killed") is not True
-        and after.get("oom_killed") is not True
+        and before.get("oom_killed") is False
+        and after.get("oom_killed") is False
+        and before.get("restart_count") is not None
         and before.get("restart_count") == after.get("restart_count")
-        and not (signals.get("fatal") or [])
+        and isinstance(signals, dict) and not (signals.get("fatal") or [])
     )
     checks = {
         "bounded_canonical_progress": progress_checks.get("bounded_canonical_progress") is True,

@@ -436,3 +436,7 @@ def test_taps_are_always_on_for_every_rig_node_unless_the_scenario_says_none(mon
     assert 'dwarf-measurements' in compose['services']
     # Taps the default profile names but no package collector exists for are a named gap, not silence.
     assert any(i['field']=='measurements.amaru-stock-resources' for i in binding['issues'])
+    # A4: the workload reads each cardano node's tracer output (the node writes through its own tracer).
+    assert 'measurement-tracer-relay1:/inputs/tracer-relay1:ro' in compose['services']['dwarf-workload']['volumes']
+    runtime=json.loads(result['files']['environment/dwarf-workload/package/runtime.json'])
+    assert {n['id']:n.get('log_path') for n in runtime['nodes']}['relay1']=='/inputs/tracer-relay1/logs'

@@ -209,6 +209,17 @@ def bind_measurements(files, request, scenario, versions, workload):
                 volumes=[tracer_volume+':/opt/cardano-tracer','./measurements/tracer-config.yaml:/tracer-config.yaml:ro'])
             compose['services'][tracer_name]=tracer
             target['volumes']=[tracer_volume+':/tracer' if isinstance(m,str) and m.split(':')[1:2]==['/tracer'] else m for m in target['volumes']]
+            # The node now writes through its own tracer: the workload reads that one (A4).
+            workload_service=compose['services'].get('dwarf-workload')
+            if workload_service is not None:
+                workload_service.setdefault('volumes',[]).append(tracer_volume+':/inputs/tracer-'+service+':ro')
+                runtime_file='environment/dwarf-workload/package/runtime.json'
+                if runtime_file in files:
+                    runtime_body=json.loads(files[runtime_file])
+                    for node in [*runtime_body.get('nodes',[]),*runtime_body.get('haskell_nodes',[])]:
+                        if node.get('name')==service or node.get('id')==service:
+                            node['log_path']='/inputs/tracer-'+service+'/logs'
+                    files[runtime_file]=json.dumps(runtime_body,sort_keys=True)
             target.setdefault('depends_on',{})[tracer_name]={'condition':'service_started'}
             files['environment/measurements/tracer-config.yaml']=files['environment/tracer-config.yaml']
             patterns=['/inputs/'+tracer_volume+'/logs/**/*.json','/inputs/'+tracer_volume+'/logs/**/*.log']

@@ -210,3 +210,36 @@ def test_client_target_prefers_the_package_identity_over_the_frozen_launch_plan(
     handle._run_service_plan_sha256 = 'a' * 64
     target = primitives._resolve_client_runtime_target(handle, {'profile_id': None, 'runtime_metadata_path': str(package / 'runtime.json')})
     assert target['id'] == 'node2' and target['observation_transport'] == 'antithesis-package'
+
+
+def test_probe_evidence_is_observed_without_docker_and_unmeasured_checks_are_none(package, tmp_path, monkeypatch):
+    """A4: inside a package the target health observers use the service address (TCP), the
+    workload's cardano-cli on the mounted socket and the mounted log. OOM, restart count and,
+    without a readable log, fatal signals are unmeasured (None), never a pass."""
+    import socket, subprocess, shutil
+    runtime_path = tmp_path / 'runtime.json'
+    runtime_path.write_text(json.dumps(RUNTIME))
+
+    class _Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    monkeypatch.setattr(socket, 'create_connection', lambda addr, timeout=None: _Conn())
+    monkeypatch.setattr(shutil, 'which', lambda name: '/usr/local/bin/' + name)
+    tips = iter([{'block': 10, 'hash': 'a' * 64, 'slot': 100}, {'block': 12, 'hash': 'b' * 64, 'slot': 120}] * 4)
+
+    def run(argv, **kw):
+        assert argv[:3] == ['/usr/local/bin/cardano-cli', 'query', 'tip'] and '--socket-path' in argv
+        return subprocess.CompletedProcess(argv, 0, json.dumps(next(tips)), '')
+    monkeypatch.setattr(subprocess, 'run', run)
+    target = primitives._package_client_runtime_target(RUNTIME, 'cardano-node', runtime_path)
+    evidence = primitives._begin_probe_evidence(target, str(runtime_path))
+    report = primitives._finish_probe_evidence(evidence, {})
+    health = report['target_health']
+    assert health['before']['running'] is True and health['before']['restart_count'] is None
+    assert health['tip_before']['block_height'] == 10 and health['tip_after']['block_height'] == 12
+    assert health['log_signals'] is None                      # no cardano log mounted in this runtime
+    assert report['peer_session']['before']['usable'] is None  # the only other node is Amaru: no cli peer
+    checks = primitives._target_health_checks(health['before'], health['after'], health['log_signals'], 10, 12)
+    assert checks['target_running_before'] is True and checks['target_progressed'] is True
+    assert checks['no_fatal_signals'] is None and checks['target_not_oom_killed'] is None
+    assert checks['target_restart_count_unchanged'] is None

@@ -86,7 +86,8 @@ def _rig_routes(node, compose):
         return {'log_path': '/inputs/' + node['id'] + '/amaru.log',
                 'submit_api_url': 'http://' + node['id'] + '.example:' + str(AMARU_SUBMIT_PORT) + '/api/submit/tx' if modern else None,
                 'bootstrap_sentinel': '/inputs/' + node['id'] + '-state/.bootstrap-complete'}
-    return {'socket_path': '/inputs/' + node['id'] + '/node.socket'}
+    # cardano-node writes through the shared tracer; its per-forwarder directory is <host>_<port> (A4).
+    return {'socket_path': '/inputs/' + node['id'] + '/node.socket', 'log_path': '/inputs/tracer/logs'}
 
 
 def runtime_metadata(scenario, devnet, services, version_binding, compose, *, attached):
@@ -163,6 +164,8 @@ def _rig_mounts(runtime):
     for record in runtime['nodes']:
         if record['impl'] == 'cardano-node':
             mounts.append(record['id'] + '-state:/inputs/' + record['id'] + ':ro')
+            if 'tracer:/inputs/tracer:ro' not in mounts:
+                mounts.append('tracer:/inputs/tracer:ro')
         else:
             mounts.append(record['id'] + '-evidence:/inputs/' + record['id'] + ':ro')
             mounts.append(record['id'] + '-state:/inputs/' + record['id'] + '-state:ro')
