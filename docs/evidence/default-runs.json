@@ -1181,6 +1181,18 @@
       "group": "Antithesis runs"
     },
     {
+      "url": "runs/antithesis-chainhold-f192-20261111.tar.gz",
+      "size_bytes": 25606,
+      "sha256": "6e7ade7e4766a6ed442ac37a597962bbe7825a99db673c70c6f9c82e48269987",
+      "run_id": "external-antithesis-3a5587c84bf7bf0bc76312d9",
+      "implementation": "amaru",
+      "version": "10.11.20261029",
+      "format": "dwarf-antithesis-run",
+      "coverage_exception": "Antithesis run a8a450b8 (chainhold package rebuilt with F191/F192: Amaru 10.11.20261029 consumer + cardano-node 10.7.1 relays, default taps, faults on): 'Customer output volume' passes; no crashes or exits; chain_select_differential 19/23 \u2014 the sampled miss is a 5-slot gap 6 s after a platform restart of relay2 where the new ancestry probe (ChainSync FindIntersect) said the consumer's tip is not on the relays' chain; whether the consumer was ahead of the restarted relay (lag, not a fork) needs the ancestry answers, which the next build publishes first in the details (F192b); redacted public export (F190)",
+      "title": "Antithesis: chainhold (F192)",
+      "group": "Antithesis runs"
+    },
+    {
       "url": "runs/antithesis-taps-20261022.tar.gz",
       "size_bytes": 1593136,
       "sha256": "afb3518b3bb43b95c6336766a074d40c8dff2aa840198137fca0bb7aac9115f3",
