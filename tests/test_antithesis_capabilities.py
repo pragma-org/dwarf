@@ -203,3 +203,15 @@ def test_resolved_plan_scenarios_are_not_an_unknown_release():
     from test_antithesis_package import request
     result = preview_package(request(scenario_id="runtime-substrate-byzantine-blockfetch-example-smoke"))
     assert "unknown-release" not in {issue.get("code") for issue in result["issues"]}
+
+
+def test_process_observations_make_the_scenario_partial_with_a_named_gap():
+    """F168: resource_profile / syscall_trace need process access the package does not have.
+    The observation still runs (tips, TCP), so the scenario is partial, not full, and says why."""
+    result = classify(catalog('runtime-substrate-resource-cpu-host-pressure-example-smoke'))
+    assert result['level'] == 'partial'
+    gaps = [g for g in result['gaps'] if g['code'] == 'observation-unavailable-in-package']
+    assert len(gaps) == 1 and gaps[0]['primitive'] == 'runtime_multi_node_observation'
+    assert 'resource_profile' in gaps[0]['message']
+    window = classify(catalog('runtime-substrate-txsubmission-window-pressure-example-smoke'))
+    assert window['level'] == 'full' and not window['gaps']

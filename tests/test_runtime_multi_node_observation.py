@@ -218,3 +218,43 @@ def test_package_mode_connection_state_uses_tcp_only_and_reports_no_process_acce
     assert result["socket_observation"] == {"status": "unavailable", "reason": "no process access inside the Antithesis package"}
     assert result["peer_nodes_connected"] is None and result["ss_match_count"] is None
     assert result["responsiveness_basis"] == ["tcp-connect"]
+
+
+def test_package_nodes_report_process_observations_unavailable_instead_of_crashing(monkeypatch, tmp_path):
+    """Inside an Antithesis package the node is another compose service: no pid, no /proc, no docker.
+    resource_profile / syscall_trace must be recorded as unavailable (with the reason) while the
+    connection observation still runs; before F168 resolve_target_pid raised and the whole
+    observation exited 1, failing all_nodes_responsive in the resource-pressure scenarios."""
+    nodes = [{"id": n, "name": n, "port": 3001, "listen_address": n + ".example:3001",
+              "container_listen_address": n + ".example:3001", "observation_transport": "antithesis-package"}
+             for n in ("node1", "node2")]
+    runtime = tmp_path / "runtime.json"
+    runtime.write_text(json.dumps({"network_magic": 42, "nodes": nodes}))
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("package mode must not resolve node processes")
+
+    monkeypatch.setattr(observation, "resolve_sampling_target", forbidden)
+
+    class _Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(observation.socket, "create_connection", lambda address, timeout=None: _Conn())
+    result = observation.run_multi_node_observation(
+        runtime_metadata_path=runtime, node_ids=["node1", "node2"], observation_window_seconds=1,
+        observation_primitives=["connection_state", "resource_profile", "syscall_trace"],
+        output_dir=tmp_path / "out", sample_interval_seconds=1,
+    )
+    text = json.dumps(result)
+    assert "could not resolve runtime pid" not in text
+    for node_id in ("node1", "node2"):
+        record = json.loads((tmp_path / "out" / "per-node" / node_id / "resource-profile.json").read_text())
+        assert record == {"status": "unavailable", "reason": "no process access inside the Antithesis package"}
+        trace = json.loads((tmp_path / "out" / "per-node" / node_id / "syscall-trace.json").read_text())
+        assert trace["status"] == "unavailable"
+    summary = json.loads((tmp_path / "out" / "observation-summary.json").read_text()) if (tmp_path / "out" / "observation-summary.json").exists() else result
+    assert "responsive_node_count" in json.dumps(summary)

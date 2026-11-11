@@ -57,7 +57,13 @@
     },
     "runtime_multi_node_observation": {
       "status": "runs-with-note",
-      "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted node log; connection state is reported unavailable (no process access inside the package)."
+      "note": "Cardano tips are read with cardano-cli over the mounted node socket and Amaru tips from the mounted node log; connection state is reported unavailable (no process access inside the package).",
+      "unavailable_params": {
+        "observation_primitives": [
+          "resource_profile",
+          "syscall_trace"
+        ]
+      }
     },
     "runtime_substrate_tip_warmup": {
       "status": "runs-with-note",

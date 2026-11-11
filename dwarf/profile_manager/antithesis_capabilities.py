@@ -47,11 +47,11 @@ def _steps(scenario):
         for phase in scenario.phases:
             for name in _PHASES:
                 for ref in getattr(phase, name):
-                    yield phase.id + ':' + name, name, ref.primitive
+                    yield phase.id + ':' + name, name, ref.primitive, dict(ref.params or {})
         return
     for name in _PHASES:
         for ref in getattr(scenario, name):
-            yield name, name, ref.primitive
+            yield name, name, ref.primitive, dict(ref.params or {})
 
 
 def _entry(matrix, primitive):
@@ -66,10 +66,10 @@ def classify(scenario):
     # skipped with a gap naming it, instead of failing for a file the package
     # can never write (AT-2b). A producer absent from the scenario is a scenario
     # defect, not a package gap, so the assertion keeps its own status.
-    present = {primitive for _, _, primitive in steps}
-    skipped_producers = {primitive for _, _, primitive in steps if _entry(matrix, primitive)['status'] in _SKIPPED}
-    rows, gaps, runnable_load = [], [], False
-    for label, phase, primitive in steps:
+    present = {primitive for _, _, primitive, _ in steps}
+    skipped_producers = {primitive for _, _, primitive, _ in steps if _entry(matrix, primitive)['status'] in _SKIPPED}
+    rows, gaps, runnable_load, degraded = [], [], False, False
+    for label, phase, primitive, params in steps:
         entry = _entry(matrix, primitive)
         status, note, code = entry['status'], entry.get('note', ''), _GAP_CODES.get(entry['status'])
         producer = entry.get('evidence_producer')
@@ -83,6 +83,15 @@ def classify(scenario):
         if code:
             gaps.append({'kind': 'implementation-gap', 'code': code, 'field': 'scenario_id', 'primitive': primitive, 'phase': label,
                          'message': primitive + ': ' + (note or status)})
+        # A primitive that runs can still be asked for parts that need process access the package lacks
+        # (F168): it runs, reports those parts unavailable, and the scenario is partial with a named gap.
+        unavailable = sorted(value for key, values in (entry.get('unavailable_params') or {}).items()
+                             for value in values if value in (params.get(key) or []))
+        if unavailable and status in _RUNNABLE:
+            degraded = True
+            gaps.append({'kind': 'implementation-gap', 'code': 'observation-unavailable-in-package', 'field': 'scenario_id',
+                         'primitive': primitive, 'phase': label,
+                         'message': primitive + ': ' + ', '.join(unavailable) + ' need process access; inside the package they are reported unavailable.'})
     reason = None
     if scenario.runtime in _NO_SUT_RUNTIMES:
         reason = 'no-faultable-sut'
@@ -104,7 +113,7 @@ def classify(scenario):
         reason = 'no-evaluable-assertion'
     if reason:
         level = 'none'
-    elif any(row['status'] == 'unsupported' for row in rows):
+    elif degraded or any(row['status'] == 'unsupported' for row in rows):
         level = 'partial'
     else:
         level = 'full'

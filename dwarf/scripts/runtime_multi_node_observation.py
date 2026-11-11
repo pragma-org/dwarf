@@ -613,6 +613,9 @@ def _observe_connection_state(
     }
 
 
+_PACKAGE_UNAVAILABLE = {"status": "unavailable", "reason": "no process access inside the Antithesis package"}
+
+
 def _observe_resource_profile(
     *,
     runtime_metadata_path: Path,
@@ -968,7 +971,12 @@ def run_multi_node_observation(
             )
             node_record["connection_state"] = connection_state
             _write_json(node_output_dir / "connection-state.json", connection_state)
-        if "resource_profile" in requested:
+        in_package = node.get("observation_transport") == "antithesis-package"
+        if in_package and "resource_profile" in requested:
+            # The node is another compose service: no pid, /proc or docker to sample (F168).
+            node_record["resource_profile"] = dict(_PACKAGE_UNAVAILABLE)
+            _write_json(node_output_dir / "resource-profile.json", node_record["resource_profile"])
+        elif "resource_profile" in requested:
             resource_profile = _observe_resource_profile(
                 runtime_metadata_path=runtime_metadata_path,
                 target_node=node_id,
@@ -977,7 +985,10 @@ def run_multi_node_observation(
             )
             node_record["resource_profile"] = resource_profile
             _write_json(node_output_dir / "resource-profile.json", resource_profile)
-        if "syscall_trace" in requested:
+        if in_package and "syscall_trace" in requested:
+            node_record["syscall_trace"] = dict(_PACKAGE_UNAVAILABLE)
+            _write_json(node_output_dir / "syscall-trace.json", node_record["syscall_trace"])
+        elif "syscall_trace" in requested:
             syscall_trace = _observe_syscall_trace(
                 runtime_metadata_path=runtime_metadata_path,
                 target_node=node_id,
